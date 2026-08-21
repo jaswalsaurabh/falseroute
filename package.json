@@ -21,7 +21,7 @@
     "check:source-policy": "node scripts/check-source-policy.mjs",
     "check:design-tokens": "node scripts/check-design-tokens.mjs",
     "check:repo": "node scripts/check-repo.mjs",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:repo"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm check:repo"
   },
   "devDependencies": {
     "@false-route/typescript-config": "workspace:*",

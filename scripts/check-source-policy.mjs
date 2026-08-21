@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, extname } from 'node:path';
+import ts from 'typescript';
 
 const ROOT = process.cwd();
 
@@ -101,6 +102,27 @@ const PROHIBITED_PRODUCT_VALUES = [
   /sample-event-data/i,
 ];
 
+function getContractExportNames() {
+  const indexPath = resolve(ROOT, 'packages/contracts/src/index.ts');
+  if (!existsSync(indexPath)) return new Set();
+  const content = readFileSync(indexPath, 'utf8');
+  const sourceFile = ts.createSourceFile(indexPath, content, ts.ScriptTarget.Latest, true);
+
+  const exportNames = new Set();
+  function visit(node) {
+    if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+      for (const element of node.exportClause.elements) {
+        exportNames.add(element.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return exportNames;
+}
+
+const CANONICAL_CONTRACT_NAMES = getContractExportNames();
+
 for (const filePath of allSourceFiles) {
   const relPath = filePath.replace(ROOT + '/', '');
   const content = readFileSync(filePath, 'utf8');
@@ -141,6 +163,50 @@ for (const filePath of allSourceFiles) {
         }
       }
     });
+  }
+
+  // 3. Prohibit duplicate contract declarations outside packages/contracts using AST canonical-name collision inspection
+  const isContractsPackage = relPath.startsWith('packages/contracts/');
+  if (
+    !isContractsPackage &&
+    !isTest &&
+    (extname(filePath) === '.ts' ||
+      extname(filePath) === '.tsx' ||
+      extname(filePath) === '.js' ||
+      extname(filePath) === '.mjs')
+  ) {
+    try {
+      const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+      function visitNode(node) {
+        let declaredName = null;
+        if (
+          ts.isInterfaceDeclaration(node) ||
+          ts.isTypeAliasDeclaration(node) ||
+          ts.isClassDeclaration(node) ||
+          ts.isEnumDeclaration(node)
+        ) {
+          declaredName = node.name?.text;
+        } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+          declaredName = node.name.text;
+        }
+
+        if (declaredName && CANONICAL_CONTRACT_NAMES.has(declaredName)) {
+          const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart(sourceFile),
+          );
+          error(
+            `File ${relPath}:${line + 1}:${character + 1} structurally declares canonical contract '${declaredName}'. Import canonical schema/type from '@false-route/contracts' instead.`,
+          );
+        }
+
+        ts.forEachChild(node, visitNode);
+      }
+
+      visitNode(sourceFile);
+    } catch (parseErr) {
+      error(`Failed to parse AST for ${relPath}: ${parseErr.message}`);
+    }
   }
 }
 
