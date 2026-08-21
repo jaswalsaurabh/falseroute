@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+
+# Turborepo
+.turbo/
+
+# Build and distribution outputs
+dist/
+build/
+out/
+.next/
+
+# Coverage and test artifacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Local environment and secret files
+.env
+.env.*
+.env*.local
+*.env
+*.env.*
+!.env.example
+!.env*.example
+
+# Credentials, private keys, and certificates
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.pkcs12
+*service-account*.json
+*serviceAccount*.json
+*gcp-key*.json
+*credentials*.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Scratch and temporary files
+scratch/
+tmp/
+*.tmp
+
+# Markdown is internal by default. Public documentation requires an explicit allowlist entry.
+*.md
+!/README.md
+!/docs/architecture/engineering-principles.md
+!/docs/architecture/frontend.md
+!/docs/architecture/overview.md
+!/docs/architecture/quality-gates.md
+!/docs/architecture/threat-model.md

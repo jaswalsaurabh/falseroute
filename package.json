@@ -1,0 +1,34 @@
+{
+  "name": "false-route",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": "24.19.0",
+    "pnpm": "11.22.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "oxlint --deny-warnings && turbo run lint",
+    "lint:fix": "oxlint --fix && turbo run lint:fix",
+    "typecheck": "tsc --noEmit && turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:dependencies": "node scripts/check-dependencies.mjs",
+    "check:source-policy": "node scripts/check-source-policy.mjs",
+    "check:design-tokens": "node scripts/check-design-tokens.mjs",
+    "check:repo": "node scripts/check-repo.mjs",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:repo"
+  },
+  "devDependencies": {
+    "@false-route/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:"
+  }
+}

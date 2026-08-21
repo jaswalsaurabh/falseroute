@@ -1,0 +1,9 @@
+node_modules
+.turbo
+dist
+build
+coverage
+test-results
+playwright-report
+blob-report
+pnpm-lock.yaml

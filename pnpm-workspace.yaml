@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'tests/*'
+
+catalog:
+  '@types/node': 24.13.3
+  oxlint: 1.79.0
+  prettier: 3.9.6
+  turbo: 2.10.10
+  typescript: 6.0.2
