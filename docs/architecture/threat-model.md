@@ -2,12 +2,15 @@
 
 > **Status: Approved for initial implementation**  
 > **Approved:** August 21, 2026
+> **Last updated:** August 22, 2026
 
 ## Scope and Security Claim
 
 This threat model covers the first simulated intrusion-to-deception flow. FalseRoute accepts an event from a development simulator, evaluates one deterministic policy, uses Gemini for bounded enrichment and recommendation, records a simulated false-route decision, and displays the result.
 
 The initial release does **not** claim to contain a real attacker or protect a production network. Its containment guarantee is limited to preventing model output and simulated attacker input from causing real network, host, or infrastructure changes.
+
+Security controls evolve with each feature and trust-boundary change. OWASP ASVS 5.0 Level 2 is the target baseline for hosted Web and API surfaces, but neither that baseline nor this threat list is a claim to cover every known or future attack.
 
 ## Assets
 
@@ -55,23 +58,51 @@ The application must validate model output against a strict schema and action al
 
 ## Initial Threats and Controls
 
-| Threat                                           | Initial control                                                                                                                                     |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Malformed or oversized event input               | Strict Zod schemas, request limits, and rejection before persistence or processing                                                                  |
-| Prompt injection inside event fields             | Treat event content as data, use bounded prompts, require structured output, and enforce the action allowlist                                       |
-| Hallucinated or unauthorized action              | Deterministic policy validation; reject destinations or actions not defined by application code                                                     |
-| Secret or personal-data disclosure to Gemini     | Send only minimized fictional demonstration data; never include credentials or environment secrets                                                  |
-| Replay or duplicate events                       | Preserve event and correlation identifiers; define idempotency before public deployment                                                             |
-| Tampered policy or decision data                 | Restrict writes to service/repository boundaries and create an audit record for every decision                                                      |
-| Sensitive data in logs or traces                 | Pino/OpenTelemetry redaction and explicit field allowlists before hosted deployment                                                                 |
-| Unauthenticated public access                    | Keep the initial demo controlled; authentication and authorization are required before production exposure                                          |
-| Decoy escape into real infrastructure            | Simulated mode only, fictional data only, and no network or host-control capability                                                                 |
-| Gemini unavailability                            | Record a degraded result and continue the deterministic safe path without retry storms                                                              |
-| Unauthenticated AI spend or side-effect requests | Require authentication, authorization, input-size limits, rate/concurrency budgets, and fail-closed production configuration before public exposure |
-| Unsafe outbound URL or redirect behavior         | Route outbound HTTP through a hardened adapter that validates scheme, resolved address, every redirect, streaming size, and full-operation deadline |
-| Cross-environment data exposure                  | Use separate credentials and data resources for development, test, staging, and production; never depend on naming conventions alone                |
-| Misleading capability claims                     | Persist explicit `SIMULATED`, `PROPOSED`, `RECORDED`, or verified execution state and use matching operator language                                |
-| Diagnostic information exposure                  | Keep public liveness minimal and protect metrics, readiness detail, queue state, and provider diagnostics by network policy or authorization        |
+| Threat                                            | Initial control                                                                                                                                                                        |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malformed or oversized event input                | Strict Zod schemas, request limits, and rejection before persistence or processing                                                                                                     |
+| Prompt injection inside event fields              | Treat event content as data, use bounded prompts, require structured output, and enforce the action allowlist                                                                          |
+| Hallucinated or unauthorized action               | Deterministic policy validation; reject destinations or actions not defined by application code                                                                                        |
+| Secret or personal-data disclosure to Gemini      | Send only minimized fictional demonstration data; never include credentials or environment secrets                                                                                     |
+| Replay or duplicate events                        | Preserve event and correlation identifiers; define idempotency before public deployment                                                                                                |
+| Tampered policy or decision data                  | Restrict writes to service/repository boundaries and create an audit record for every decision                                                                                         |
+| Sensitive data in logs or traces                  | Pino/OpenTelemetry redaction and explicit field allowlists before hosted deployment                                                                                                    |
+| Unauthenticated public access                     | Keep the initial demo controlled; authentication and authorization are required before production exposure                                                                             |
+| Decoy escape into real infrastructure             | Simulated mode only, fictional data only, and no network or host-control capability                                                                                                    |
+| Gemini unavailability                             | Record a degraded result and continue the deterministic safe path without retry storms                                                                                                 |
+| Unauthenticated AI spend or side-effect requests  | Require authentication, authorization, input-size limits, rate/concurrency budgets, and fail-closed production configuration before public exposure                                    |
+| Unsafe outbound URL or redirect behavior          | Route outbound HTTP through a hardened adapter that validates scheme, resolved address, every redirect, streaming size, and full-operation deadline                                    |
+| Cross-environment data exposure                   | Use separate credentials and data resources for development, test, staging, and production; never depend on naming conventions alone                                                   |
+| Misleading capability claims                      | Persist explicit `SIMULATED`, `PROPOSED`, `RECORDED`, or verified execution state and use matching operator language                                                                   |
+| Diagnostic information exposure                   | Keep public liveness minimal and protect metrics, readiness detail, queue state, and provider diagnostics by network policy or authorization                                           |
+| Volumetric or application-layer denial of service | Combine edge filtering and capacity controls with request-size limits, hierarchical rate limits, concurrency budgets, backpressure, and load shedding before database or provider work |
+| Shared rate-limit exhaustion                      | Keep the service safety ceiling separate from per-principal and per-IP quotas so one actor cannot consume every client's allowance                                                     |
+| Distributed rate-limit inconsistency              | Label in-memory limits process-local; use atomic shared enforcement at the edge, gateway, or an approved distributed store before claiming cross-instance limits                       |
+| Credential stuffing or password guessing          | Apply per-account and per-source failure budgets, progressive delay where appropriate, generic responses, monitoring, and secure recovery without attacker-controlled lockout          |
+| Cross-site request forgery                        | When ambient browser credentials are introduced, require same-site cookie policy, origin validation, and anti-CSRF tokens where the chosen flow requires them                          |
+| Cross-site scripting and credential theft         | Encode untrusted output, avoid unsafe HTML execution, enforce browser security policy, and keep bearer credentials out of script-readable persistence where practical                  |
+| Cascading dependency failure                      | Apply deadlines, bounded retries with jitter, concurrency isolation, backpressure, explicit degraded states, and fail-closed behavior for security-critical dependencies               |
+| Retry amplification or provider cost exhaustion   | Bound retry attempts, total operation time, concurrency, per-principal work, and deployment-wide spend; never retry invalid or unauthorized work                                       |
+
+## Rate-Limiting and Availability Policy
+
+FalseRoute uses complementary controls rather than choosing between global-only and endpoint-only limiting:
+
+1. Infrastructure rejects volumetric traffic and enforces a load-tested service capacity ceiling before application resources are exhausted.
+2. The API applies a default per-authenticated-principal quota, with a trusted-proxy-aware source-IP fallback and secondary IP abuse boundary.
+3. Routes apply stricter class-specific budgets for authentication failures, writes, and expensive or side-effecting work.
+4. Slow or paid work has concurrency and spend budgets in addition to request-rate budgets.
+5. A quota rejection uses `429` with retry guidance; service-wide load shedding is reported separately and does not pretend that a particular principal exceeded its allowance.
+
+The current API limiter is a demo-safe, process-local fixed window of 100 requests per minute per source address across all routes. It is not a cross-instance production guarantee. The approved migration constraints and provisional starting budgets are maintained in the internal implementation plan and require capacity and abuse testing before public exposure.
+
+## Dependency Failure Policy
+
+- PostgreSQL is integrity-critical: writes and decisions fail closed when durable state cannot be verified. Readiness reports the dependency failure without exposing connection details.
+- Gemini is optional enrichment: timeout, invalid output, or unavailability produces an explicit degraded result while deterministic application policy remains authoritative.
+- An unavailable dashboard must not change stored policy decisions; an unavailable worker may delay processing but must not cause the API to claim completion.
+- Failures must remain bounded by full-operation deadlines, concurrency limits, backpressure, and finite retry budgets. No service may create an unbounded retry or connection storm against another service.
+- “Loosely coupled” means independently owned contracts and contained failure effects. It does not mean that every dependent capability remains available when its required dependency is down.
 
 ## Assumptions
 

@@ -2,6 +2,7 @@
 
 > **Status: Approved for implementation**  
 > **Approved:** August 21, 2026
+> **Last updated:** August 22, 2026
 
 ## Guiding Principle
 
@@ -74,12 +75,40 @@ The Worker follows the same separation: entry point -> processor/orchestrator ->
 
 ## Security and Operational Closure
 
+- Security is delivered with each feature rather than postponed to a separate hardening phase. Every change reviews affected assets, actors, trust boundaries, abuse cases, data sensitivity, authorization, external costs or side effects, and failure modes; it updates the threat model and regression coverage when those boundaries change.
+- OWASP ASVS 5.0 Level 2 is the verification target for hosted Web and API surfaces. The applicable requirements are a maintained baseline, not a claim that FalseRoute prevents every known or future attack; threat modeling and evidence determine additional controls.
 - Security findings require severity, owner, target date, regression coverage, and closure evidence or explicit risk acceptance.
 - Protect every external cost or side-effect boundary with authentication, authorization, input/size limits, rate/concurrency budgets, and fail-closed production configuration.
 - Centralize outbound HTTP and enforce URL scheme, address, redirect, timeout, response-size, and concurrency policy.
 - Run containers as non-root by default and isolate development, test, staging, and production data and credentials.
 - Describe queue and idempotency semantics honestly. Do not claim exactly-once without an atomic durable proof for the named side effect.
 - A demo-safe in-memory mechanism must be labeled process-local and must not be presented as horizontally scalable or restart-safe.
+
+### Authentication and credential fixtures
+
+- Production credentials come only from approved secret-management or environment boundaries and never appear in source, fixtures, documentation, logs, snapshots, or errors.
+- Test and example credentials must be unmistakably synthetic and include an approved marker such as `not-a-real`, `dummy`, or `example`. Prefer a shared fixture factory once two real consumers need the convention.
+- A fixture must cooperate with the credential guard; it must not imitate a provider token, private key, credential-bearing URL, or production secret. Do not weaken a detection rule or add a broad path exclusion merely to make a test pass.
+- A necessary scanner exception is narrow, documented, and covered by a positive fixture that remains allowed plus a negative fixture proving the credential-shaped value remains blocked.
+- Password handling tests still verify hashing, comparison, reset, lockout, and redaction behavior as applicable; the synthetic marker changes test data, not the security assertion.
+
+### Layered abuse and availability controls
+
+- Rate limiting is hierarchical: edge or gateway protection and a capacity-based service safety ceiling; a default per-authenticated-principal limit with a source-IP fallback; endpoint-class limits for reads, writes, authentication, and expensive operations; and independent concurrency or spend budgets for slow or paid dependencies.
+- Do not use a single shared client quota as the only control because one actor could exhaust it for everyone. Do not protect only expensive endpoints because cheap requests can still exhaust connections, CPU, memory, or database capacity.
+- Keys derive from verified identity or credential fingerprints where available and use trusted-proxy-aware source addresses as a secondary boundary. Never trust arbitrary forwarded-address headers.
+- Limit responses are predictable and observable: use `429` with a retry indication for client quotas, distinguish service overload from client abuse, avoid account-enumeration details, and emit bounded metrics without logging secrets.
+- Volumetric denial-of-service mitigation is shared with deployment infrastructure. Edge filtering, request and connection limits, capacity controls, and load shedding must reject work before scarce application, database, or provider resources are consumed.
+- When browser requests use cookies or another ambient credential, state-changing routes require an applicable CSRF defense such as same-site cookie policy, origin validation, and an anti-CSRF token where the design requires it. Bearer-only flows must instead protect the token from disclosure and cross-origin misuse.
+- Numeric budgets are configuration with one executable owner. Start with the approved implementation-plan values, then tune them from capacity, traffic, abuse, and cost evidence rather than copying constants across routes.
+
+### Failure containment and graceful degradation
+
+- Every remote or independently deployable dependency has an owner, explicit timeout, bounded concurrency, retry policy, idempotency requirement where applicable, and documented degraded or fail-closed behavior.
+- Use bounded retries with jitter and retry only errors known to be transient. Prevent retry storms with budgets, backpressure, dead-letter or terminal states where applicable, and cancellation or full-operation deadlines.
+- Add circuit breakers, bulkheads, queues, caches, or fallback data only when a concrete dependency and failure mode justify them. These mechanisms must not weaken authorization, return stale security decisions as current facts, or invent successful side effects.
+- A dependency outage may reduce related capability, but it must not propagate unbounded resource consumption, corrupt unrelated state, expand authority, or silently convert failure into success. Critical security and integrity dependencies fail closed; optional enrichment may degrade explicitly.
+- Health, readiness, metrics, and alerts distinguish local health from dependency readiness and degraded operation without exposing sensitive diagnostics publicly.
 
 ## Quality Gates
 
@@ -141,6 +170,8 @@ Do not copy an external rule blindly. Repository decisions and approved security
 - Are names and types doing work that unnecessary comments would otherwise do?
 - Are new dependencies and abstractions justified?
 - Are security constraints and failure modes preserved?
+- Did the change assess its trust boundaries, abuse limits, CSRF applicability, credential handling, and dependency-failure behavior?
+- Are rate and concurrency budgets keyed, scoped, observable, and enforceable at the deployment topology being claimed?
 - Are claims, provenance, uncertainty, and side-effect semantics honest?
 - Is every mandatory new rule enforceable or paired with an enforcement plan?
 - Can a new contributor trace the change without hidden context?

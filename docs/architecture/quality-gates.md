@@ -7,31 +7,34 @@ This document defines the automated quality gates and activation schedule for Fa
 
 ## Quality Gate Matrix
 
-| Quality Gate                           | Enforcement Command                                    | Current Status | Activation Phase / Condition                    | Blocks Acceptance |
-| -------------------------------------- | ------------------------------------------------------ | -------------- | ----------------------------------------------- | ----------------- |
-| **Code Formatting**                    | `pnpm format:check`                                    | **Active**     | Phase 2 (All files)                             | Yes               |
-| **Linting & Code Quality**             | `pnpm lint`                                            | **Active**     | Phase 2 (JS/TS/MJS)                             | Yes               |
-| **Type Integrity**                     | `pnpm typecheck`                                       | **Active**     | Phase 2 (TypeScript 6 strict mode)              | Yes               |
-| **Public Documentation Boundary**      | `pnpm check:docs`                                      | **Active**     | Phase 2 (Allowlist, links, Git ignore policy)   | Yes               |
-| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                              | **Active**     | Phase 2 (Exact versions, no pre-release)        | Yes               |
-| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                             | **Active**     | Phase 2 base; active on all first-party source  | Yes               |
-| **Design Token Guardrails**            | `pnpm check:design-tokens`                             | **Active**     | Phase 2 base; evaluates 3-tier token hierarchy  | Yes               |
-| **Pre-Commit Staged Guard**            | `pnpm precommit:check`                                 | **Active**     | Phase 2 (Husky 9 & lint-staged 17 hook)         | Yes               |
-| **Secret & Credential Commit Guard**   | `pnpm check:secrets`                                   | **Active**     | Full tree in CI; staged files before commit     | Yes               |
-| **Composite Quality Gate**             | `pnpm check`                                           | **Active**     | Root automated gate                             | Yes               |
-| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`            | **Active**     | Phase 3A (Zod contracts creation)               | Yes               |
-| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`               | **Active**     | Phase 3A (Environment schemas creation)         | Yes               |
-| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                              | **Active**     | All foundation packages & apps                  | Yes               |
-| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma:validate`  | **Active**     | Phase 3B (Database package creation)            | Yes               |
-| **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**     | PostgreSQL integration tests                    | Yes               |
-| **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**     | Secret and credential redaction                 | Yes               |
-| **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**     | Operator token verification                     | Yes               |
-| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**     | Express 5 API unit & integration                | Yes               |
-| **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**     | Worker orchestration & policy determinism       | Yes               |
-| **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**     | React component & session state tests           | Yes               |
-| **System Integration Pipeline**        | `pnpm test:integration`                                | **Active**     | Full API -> DB -> Worker -> API integration     | Yes               |
-| **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**     | GitHub Actions automated validation             | Yes               |
-| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**   | Local backlog (reconsider before public deploy) | No                |
+| Quality Gate                           | Enforcement Command                                    | Current Status  | Activation Phase / Condition                    | Blocks Acceptance   |
+| -------------------------------------- | ------------------------------------------------------ | --------------- | ----------------------------------------------- | ------------------- |
+| **Code Formatting**                    | `pnpm format:check`                                    | **Active**      | Phase 2 (All files)                             | Yes                 |
+| **Linting & Code Quality**             | `pnpm lint`                                            | **Active**      | Phase 2 (JS/TS/MJS)                             | Yes                 |
+| **Type Integrity**                     | `pnpm typecheck`                                       | **Active**      | Phase 2 (TypeScript 6 strict mode)              | Yes                 |
+| **Public Documentation Boundary**      | `pnpm check:docs`                                      | **Active**      | Phase 2 (Allowlist, links, Git ignore policy)   | Yes                 |
+| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                              | **Active**      | Phase 2 (Exact versions, no pre-release)        | Yes                 |
+| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                             | **Active**      | Phase 2 base; active on all first-party source  | Yes                 |
+| **Design Token Guardrails**            | `pnpm check:design-tokens`                             | **Active**      | Phase 2 base; evaluates 3-tier token hierarchy  | Yes                 |
+| **Pre-Commit Staged Guard**            | `pnpm precommit:check`                                 | **Active**      | Phase 2 (Husky 9 & lint-staged 17 hook)         | Yes                 |
+| **Secret & Credential Commit Guard**   | `pnpm check:secrets`                                   | **Active**      | Full tree in CI; staged files before commit     | Yes                 |
+| **Composite Quality Gate**             | `pnpm check`                                           | **Active**      | Root automated gate                             | Yes                 |
+| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`            | **Active**      | Phase 3A (Zod contracts creation)               | Yes                 |
+| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`               | **Active**      | Phase 3A (Environment schemas creation)         | Yes                 |
+| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                              | **Active**      | All foundation packages & apps                  | Yes                 |
+| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma:validate`  | **Active**      | Phase 3B (Database package creation)            | Yes                 |
+| **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**      | PostgreSQL integration tests                    | Yes                 |
+| **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**      | Secret and credential redaction                 | Yes                 |
+| **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**      | Operator token verification                     | Yes                 |
+| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                | Yes                 |
+| **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism       | Yes                 |
+| **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests           | Yes                 |
+| **System Integration Pipeline**        | `pnpm test:integration`                                | **Active**      | Full API -> DB -> Worker -> API integration     | Yes                 |
+| **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation             | Yes                 |
+| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy) | No                  |
+| **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary     | Yes                 |
+| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Planned**     | Before public or horizontally scaled deployment | Yes when active     |
+| **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added    | Yes when applicable |
 
 ---
 
@@ -141,6 +144,37 @@ This document defines the automated quality gates and activation schedule for Fa
 - **Scope:** Validates Prisma 7 schema syntax, relational integrity, and migration configuration through `scripts/prisma-guard.ts`.
 - **Safety Policy:** Blocks reset and direct database commands, prohibits data-loss flags, and permits development migrations only with `--create-only`.
 
+### 14. Feature Security Review
+
+- **Enforcement:** Acceptance review plus the automated tests applicable to the changed boundary.
+- **Required evidence:** Changed assets, actors, trust boundaries, authentication or authorization, data sensitivity, input/output constraints, abuse and cost limits, CSRF applicability, dependency failures, and degraded or fail-closed behavior have been considered.
+- **Baseline:** Hosted Web and API behavior targets applicable OWASP ASVS 5.0 Level 2 requirements. The reviewer records non-applicable controls by rationale rather than adding unused mechanisms.
+- **Closure:** A newly identified risk is fixed with regression coverage, tracked with severity/owner/target date, or explicitly accepted. P0/P1 findings remain release-blocking.
+
+### 15. Synthetic Credential Fixture Verification
+
+- Test and example passwords, access tokens, connection credentials, and similar values contain an approved synthetic marker such as `not-a-real`, `dummy`, or `example` and do not imitate a provider-issued secret.
+- `pnpm check:secrets` and `pnpm check:secrets:staged` continue to scan tests and examples; no broad test-directory exclusion is permitted.
+- Any new scanner exception includes a permitted positive fixture and a blocked credential-shaped negative fixture. The scanner must report only location and category, never the matched value.
+
+### 16. Abuse, Rate-Limit, and Overload Verification
+
+Before the API is publicly exposed or horizontally scaled, focused tests must prove:
+
+- Default per-principal behavior, trusted-proxy-aware IP fallback, and isolation between two principals.
+- Endpoint-class overrides for reads, writes, authentication failures, and expensive work.
+- Burst allowance, window/refill behavior, retry guidance, and bounded response payloads.
+- Concurrency and spend budgets for Gemini or another slow/paid provider.
+- One abusive principal cannot consume every client's allowance.
+- Cross-instance enforcement is atomic at the chosen edge, gateway, or distributed store; process-local state is never described as global.
+- Service overload is distinguished from a client quota rejection, and neither path reaches protected database/provider work after rejection.
+
+The current process-local `100 requests/minute/source address` middleware is a demo control and has no focused regression suite yet. Therefore this gate is **planned**, not reported as passed.
+
+### 17. Dependency Failure Isolation
+
+When a remote or separately deployable dependency is introduced or its behavior changes, relevant tests must cover timeout, cancellation, finite retries, retryable versus terminal errors, concurrency saturation, backpressure, recovery, and the documented degraded or fail-closed result. Circuit breakers, bulkheads, queues, or fallbacks are required only when the concrete failure mode justifies them.
+
 ---
 
 ## Deferred Quality Gates
@@ -150,3 +184,6 @@ The following quality gates remain deferred in the local backlog and will be act
 - **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging.
 - **Container Build & Non-Root User Verification:** Automated validation of container image security and non-root execution.
 - **Outbound HTTP Security Checks:** Enforcement of scheme policy, DNS/IP validation, and streaming byte limits for outbound HTTP adapters.
+- **Distributed Rate and Concurrency Enforcement:** Atomic cross-instance quotas, endpoint-class budgets, trusted-proxy behavior, retry guidance, and load-shedding verification before public or horizontally scaled deployment.
+- **Infrastructure DDoS and Capacity Verification:** Evidence that edge filtering, connection/request limits, autoscaling bounds, provider quotas, and overload behavior match load-tested application capacity before public exposure.
+- **CSRF Verification:** Activate when the browser uses cookies or another ambient credential for state-changing requests; verify cookie policy, origin handling, and anti-CSRF token behavior where required.
