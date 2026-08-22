@@ -91,6 +91,7 @@ export function sanitizeErrorMessage(message: string): string {
  * - Retry only transient server errors (500, 502, 503, 504), rate limits (429), network resets, and per-request timeouts.
  */
 export function classifyProviderError(err: unknown): ClassifiedProviderError {
+  // 1. Schema/Syntax errors
   if (
     err instanceof ZodError ||
     (typeof err === 'object' && err !== null && (err as { name?: string }).name === 'ZodError')
@@ -115,7 +116,6 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     };
   }
 
-  const httpStatus = extractHttpStatus(err);
   const rawMessage =
     err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unknown error';
   const lowerMessage = rawMessage.toLowerCase();
@@ -123,6 +123,116 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     typeof err === 'object' && err !== null && 'code' in err
       ? String((err as Record<string, unknown>)['code'])
       : '';
+
+  // 2. Explicit cancellation and overall deadline state
+  if (
+    lowerMessage.includes('operation deadline') ||
+    lowerMessage.includes('overall deadline') ||
+    (err instanceof Error && err.name === 'AbortError' && lowerMessage.includes('deadline'))
+  ) {
+    return {
+      kind: 'TIMEOUT',
+      isRetriable: false,
+      status: 'TIMEOUT',
+      sanitizedReason: 'Operation deadline exceeded',
+    };
+  }
+
+  if (lowerMessage.includes('cancelled') || lowerMessage.includes('canceled')) {
+    return {
+      kind: 'CANCELLED',
+      isRetriable: false,
+      status: 'TIMEOUT',
+      sanitizedReason: 'Provider request cancelled',
+    };
+  }
+
+  const httpStatus = extractHttpStatus(err);
+
+  // 3. Explicit terminal HTTP statuses (take strict precedence over conflicting message words)
+  if (httpStatus === 400) {
+    return {
+      kind: 'CLIENT_ERROR',
+      isRetriable: false,
+      status: 'INVALID_OUTPUT',
+      sanitizedReason: 'Provider client error or invalid argument (HTTP 400)',
+      httpStatus: 400,
+    };
+  }
+
+  if (httpStatus === 401 || httpStatus === 403) {
+    return {
+      kind: 'AUTH_OR_CONFIG',
+      isRetriable: false,
+      status: 'UNAVAILABLE',
+      sanitizedReason: `Provider authentication or authorization failure (HTTP ${httpStatus})`,
+      httpStatus,
+    };
+  }
+
+  if (httpStatus === 404) {
+    return {
+      kind: 'AUTH_OR_CONFIG',
+      isRetriable: false,
+      status: 'UNAVAILABLE',
+      sanitizedReason: 'Provider resource or model not found (HTTP 404)',
+      httpStatus: 404,
+    };
+  }
+
+  // 4. Explicit 429 Rate Limiting
+  if (httpStatus === 429) {
+    return {
+      kind: 'TRANSIENT',
+      isRetriable: true,
+      status: 'UNAVAILABLE',
+      sanitizedReason: 'Provider rate limit or quota reached (HTTP 429)',
+      httpStatus: 429,
+    };
+  }
+
+  // 5. Explicit supported 5xx Transient Server Errors
+  if (httpStatus === 500 || httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+    return {
+      kind: 'TRANSIENT',
+      isRetriable: true,
+      status: 'UNAVAILABLE',
+      sanitizedReason: `Transient upstream server error (HTTP ${httpStatus})`,
+      httpStatus,
+    };
+  }
+
+  // 6. Known network error codes and timeout types
+  if (
+    errorCode === 'ETIMEDOUT' ||
+    errorCode === 'UND_ERR_CONNECT_TIMEOUT' ||
+    (err instanceof Error && err.name === 'AbortError')
+  ) {
+    return {
+      kind: 'TRANSIENT',
+      isRetriable: true,
+      status: 'TIMEOUT',
+      sanitizedReason: 'Provider request timeout',
+      httpStatus: 504,
+    };
+  }
+
+  const transientNetworkCodes = new Set([
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'EPIPE',
+    'UND_ERR_SOCKET',
+  ]);
+  if (transientNetworkCodes.has(errorCode)) {
+    return {
+      kind: 'TRANSIENT',
+      isRetriable: true,
+      status: 'UNAVAILABLE',
+      sanitizedReason: 'Transient network failure',
+    };
+  }
 
   // Concurrency saturation
   if (
@@ -135,56 +245,25 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       isRetriable: false,
       status: 'UNAVAILABLE',
       sanitizedReason: 'Provider capacity saturated',
-      httpStatus,
     };
   }
 
-  // Operation deadline / overall timeout / abort / cancellation
-  if (
-    lowerMessage.includes('operation deadline') ||
-    lowerMessage.includes('overall deadline') ||
-    (err instanceof Error && err.name === 'AbortError' && lowerMessage.includes('deadline'))
-  ) {
-    return {
-      kind: 'TIMEOUT',
-      isRetriable: false,
-      status: 'TIMEOUT',
-      sanitizedReason: 'Operation deadline exceeded',
-      httpStatus,
-    };
-  }
-
-  if (lowerMessage.includes('cancelled') || lowerMessage.includes('canceled')) {
-    return {
-      kind: 'CANCELLED',
-      isRetriable: false,
-      status: 'TIMEOUT',
-      sanitizedReason: 'Provider request cancelled',
-      httpStatus,
-    };
-  }
-
-  // Single request timeout (retriable if within overall deadline)
+  // 7. Message heuristics only when no authoritative status or code is available
   if (
     lowerMessage.includes('timeout') ||
     lowerMessage.includes('timed out') ||
-    lowerMessage.includes('deadline') ||
-    (err instanceof Error && err.name === 'AbortError') ||
-    errorCode === 'ETIMEDOUT' ||
-    errorCode === 'UND_ERR_CONNECT_TIMEOUT'
+    lowerMessage.includes('deadline')
   ) {
     return {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'TIMEOUT',
       sanitizedReason: 'Provider request timeout',
-      httpStatus: httpStatus ?? 504,
+      httpStatus: 504,
     };
   }
 
-  // HTTP 429 Rate Limiting
   if (
-    httpStatus === 429 ||
     lowerMessage.includes('resource_exhausted') ||
     lowerMessage.includes('rate limit') ||
     lowerMessage.includes('quota')
@@ -198,12 +277,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     };
   }
 
-  // HTTP 5xx Transient Server Errors
   if (
-    httpStatus === 500 ||
-    httpStatus === 502 ||
-    httpStatus === 503 ||
-    httpStatus === 504 ||
     lowerMessage.includes('unavailable') ||
     lowerMessage.includes('bad gateway') ||
     lowerMessage.includes('gateway timeout')
@@ -212,38 +286,21 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'UNAVAILABLE',
-      sanitizedReason: `Transient upstream server error (HTTP ${httpStatus ?? 503})`,
-      httpStatus: httpStatus ?? 503,
+      sanitizedReason: 'Transient upstream server error (HTTP 503)',
+      httpStatus: 503,
     };
   }
 
-  // Network transient socket errors
-  const transientNetworkCodes = new Set([
-    'ECONNRESET',
-    'EAI_AGAIN',
-    'ENOTFOUND',
-    'ECONNREFUSED',
-    'EPIPE',
-    'UND_ERR_SOCKET',
-  ]);
-  if (
-    transientNetworkCodes.has(errorCode) ||
-    lowerMessage.includes('socket hang up') ||
-    lowerMessage.includes('fetch failed')
-  ) {
+  if (lowerMessage.includes('socket hang up') || lowerMessage.includes('fetch failed')) {
     return {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'UNAVAILABLE',
       sanitizedReason: 'Transient network failure',
-      httpStatus,
     };
   }
 
-  // HTTP 401 / 403 Authentication / Authorization errors (terminal)
   if (
-    httpStatus === 401 ||
-    httpStatus === 403 ||
     lowerMessage.includes('unauthenticated') ||
     lowerMessage.includes('permission_denied') ||
     lowerMessage.includes('invalid api key')
@@ -252,13 +309,12 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'AUTH_OR_CONFIG',
       isRetriable: false,
       status: 'UNAVAILABLE',
-      sanitizedReason: `Provider authentication or authorization failure (HTTP ${httpStatus ?? 401})`,
-      httpStatus: httpStatus ?? 401,
+      sanitizedReason: 'Provider authentication or authorization failure (HTTP 401)',
+      httpStatus: 401,
     };
   }
 
-  // HTTP 404 Model / Resource Not Found (terminal)
-  if (httpStatus === 404 || lowerMessage.includes('not found')) {
+  if (lowerMessage.includes('not found')) {
     return {
       kind: 'AUTH_OR_CONFIG',
       isRetriable: false,
@@ -268,12 +324,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     };
   }
 
-  // HTTP 400 Bad Request / Invalid Argument (terminal)
-  if (
-    httpStatus === 400 ||
-    lowerMessage.includes('invalid_argument') ||
-    lowerMessage.includes('bad request')
-  ) {
+  if (lowerMessage.includes('invalid_argument') || lowerMessage.includes('bad request')) {
     return {
       kind: 'CLIENT_ERROR',
       isRetriable: false,
@@ -283,7 +334,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     };
   }
 
-  // Generic unclassified terminal error
+  // 8. Generic unclassified terminal error
   return {
     kind: 'TERMINAL',
     isRetriable: false,
@@ -291,6 +342,6 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     sanitizedReason: httpStatus
       ? `Provider upstream failure (HTTP ${httpStatus})`
       : 'Provider upstream failure',
-    httpStatus,
+    ...(httpStatus !== undefined ? { httpStatus } : {}),
   };
 }

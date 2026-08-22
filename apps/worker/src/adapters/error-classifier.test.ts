@@ -234,6 +234,50 @@ describe('error-classifier', () => {
       expect(classified.sanitizedReason).toBe('Provider capacity saturated');
     });
 
+    it('prioritizes explicit numeric HTTP status codes over conflicting message heuristics', () => {
+      // 401 with "service unavailable" -> 401 AUTH_OR_CONFIG wins
+      const err401 = Object.assign(new Error('service unavailable at endpoint'), { status: 401 });
+      const res401 = classifyProviderError(err401);
+      expect(res401.kind).toBe('AUTH_OR_CONFIG');
+      expect(res401.isRetriable).toBe(false);
+      expect(res401.httpStatus).toBe(401);
+
+      // 403 with "quota exceeded" -> 403 AUTH_OR_CONFIG wins
+      const err403 = Object.assign(new Error('quota exceeded on project'), { status: 403 });
+      const res403 = classifyProviderError(err403);
+      expect(res403.kind).toBe('AUTH_OR_CONFIG');
+      expect(res403.isRetriable).toBe(false);
+      expect(res403.httpStatus).toBe(403);
+
+      // 404 with "gateway timeout" -> 404 AUTH_OR_CONFIG wins
+      const err404 = Object.assign(new Error('gateway timeout'), { status: 404 });
+      const res404 = classifyProviderError(err404);
+      expect(res404.kind).toBe('AUTH_OR_CONFIG');
+      expect(res404.isRetriable).toBe(false);
+      expect(res404.httpStatus).toBe(404);
+
+      // 400 with "request timed out" -> 400 CLIENT_ERROR wins
+      const err400 = Object.assign(new Error('request timed out'), { status: 400 });
+      const res400 = classifyProviderError(err400);
+      expect(res400.kind).toBe('CLIENT_ERROR');
+      expect(res400.isRetriable).toBe(false);
+      expect(res400.httpStatus).toBe(400);
+
+      // 429 with "unauthenticated" -> 429 TRANSIENT wins
+      const err429 = Object.assign(new Error('unauthenticated access attempt'), { status: 429 });
+      const res429 = classifyProviderError(err429);
+      expect(res429.kind).toBe('TRANSIENT');
+      expect(res429.isRetriable).toBe(true);
+      expect(res429.httpStatus).toBe(429);
+
+      // 503 with "invalid argument" -> 503 TRANSIENT wins
+      const err503 = Object.assign(new Error('invalid argument'), { status: 503 });
+      const res503 = classifyProviderError(err503);
+      expect(res503.kind).toBe('TRANSIENT');
+      expect(res503.isRetriable).toBe(true);
+      expect(res503.httpStatus).toBe(503);
+    });
+
     it('bounds all allowlisted reason strings to 500 characters', () => {
       const errors = [
         new ZodError([]),
