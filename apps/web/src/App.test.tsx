@@ -69,7 +69,7 @@ describe('Web Dashboard Unit Tests', () => {
     expect(screen.queryByText('demo-secret-token-123')).toBeNull();
   });
 
-  it('renders deterministic ASSIGN_FALSE_ROUTE decision with SIMULATED badges', () => {
+  it('renders deterministic ASSIGN_FALSE_ROUTE decision with SIMULATED badges and truthful simulated effect evidence', () => {
     const mockDecision: DeceptionDecision = {
       id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
       eventId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -87,12 +87,41 @@ describe('Web Dashboard Unit Tests', () => {
       },
     };
 
-    render(<DecisionCard decision={mockDecision} />);
+    const mockSimulatedEffect = {
+      id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+      decisionId: mockDecision.id,
+      correlationId: mockDecision.correlationId,
+      effectKind: 'ASSIGN_FALSE_ROUTE' as const,
+      status: 'RECORDED' as const,
+      containmentMode: 'SIMULATED' as const,
+      assignedFalseRoute: 'mock-admin-decoy' as const,
+      provenance: 'DERIVED' as const,
+      recordedAt: '2026-08-22T00:00:01.000Z',
+      adapterVersion: 'simulated-deception-agent-v1',
+    };
 
+    const { container } = render(
+      <DecisionCard decision={mockDecision} simulatedEffect={mockSimulatedEffect} />,
+    );
+
+    // Required truthful wording
     expect(screen.getByText('ASSIGN_FALSE_ROUTE')).toBeDefined();
-    expect(screen.getByText('mock-admin-decoy')).toBeDefined();
+    expect(screen.getAllByText('mock-admin-decoy').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('SIMULATED').length).toBeGreaterThan(0);
-    expect(screen.getByText('2026.08.1')).toBeDefined();
+    expect(screen.getByText('Simulated assignment recorded')).toBeDefined();
+    expect(screen.getByText('RECORDED')).toBeDefined();
+    expect(
+      screen.getByText(
+        'No real traffic or infrastructure change occurred. Simulated agent effect recorded to audit ledger.',
+      ),
+    ).toBeDefined();
+
+    // Prohibited misleading claims strictly absent
+    const renderedText = container.textContent ?? '';
+    expect(renderedText).not.toContain('Executed');
+    expect(renderedText).not.toContain('Redirect succeeded');
+    expect(renderedText).not.toContain('Attacker contained');
+    expect(renderedText).not.toContain('Traffic redirected');
   });
 
   it('renders degraded Gemini model result honestly', () => {
@@ -245,7 +274,8 @@ describe('Web Dashboard Unit Tests', () => {
     // Verify modal automatically re-renders with the decision card
     await waitFor(() => {
       expect(screen.getByText('ASSIGN_FALSE_ROUTE')).toBeDefined();
-      expect(screen.getByText('mock-admin-decoy')).toBeDefined();
+      expect(screen.getAllByText('mock-admin-decoy').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Simulated assignment recorded')).toBeDefined();
       expect(
         screen.queryByText(
           'Processing in background... Click refresh or wait for the worker tick to record the decision.',

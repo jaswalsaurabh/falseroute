@@ -1,9 +1,10 @@
 import React from 'react';
-import { type DeceptionDecision } from '@false-route/contracts';
+import { type DeceptionDecision, type SimulatedDeceptionEffect } from '@false-route/contracts';
 import { Badge, type BadgeVariant } from '../../components/Badge.js';
 
 export interface DecisionCardProps {
   readonly decision: DeceptionDecision;
+  readonly simulatedEffect?: SimulatedDeceptionEffect | null | undefined;
 }
 
 function getActionBadgeVariant(action: string): BadgeVariant {
@@ -21,7 +22,7 @@ function getActionBadgeVariant(action: string): BadgeVariant {
   }
 }
 
-export const DecisionCard: React.FC<DecisionCardProps> = ({ decision }) => {
+export const DecisionCard: React.FC<DecisionCardProps> = ({ decision, simulatedEffect }) => {
   const enrichment = decision.modelEnrichment;
 
   return (
@@ -117,7 +118,107 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({ decision }) => {
         </div>
       </div>
 
-      {/* 2. Advisory Model Enrichment or Degraded Status */}
+      {/* 2. Safe Simulated Deception Agent Boundary Evidence */}
+      {decision.action === 'ASSIGN_FALSE_ROUTE' && (
+        <div
+          data-testid="simulated-effect-card"
+          style={{
+            padding: 'var(--space-unit-md)',
+            backgroundColor: 'var(--surface-card)',
+            border: '1px solid var(--status-simulated-border)',
+            borderRadius: 'var(--radius-card)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 'var(--space-unit-sm)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 'var(--text-size-xs)',
+                fontWeight: 700,
+                color: 'var(--status-simulated-text)',
+              }}
+            >
+              SIMULATED AGENT CONTAINMENT EVIDENCE
+            </span>
+            <div style={{ display: 'flex', gap: 'var(--space-unit-xs)' }}>
+              <Badge variant="neutral">
+                PROVENANCE: {simulatedEffect?.provenance ?? 'DERIVED'}
+              </Badge>
+              <Badge variant="simulated">{simulatedEffect?.status ?? 'RECORDED'}</Badge>
+            </div>
+          </div>
+
+          <div
+            style={{
+              fontSize: 'var(--text-size-sm)',
+              color: 'var(--text-body)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-unit-xs)',
+            }}
+          >
+            <p>
+              <strong>Status:</strong>{' '}
+              <span style={{ color: 'var(--status-simulated-text)', fontWeight: 600 }}>
+                Simulated assignment recorded
+              </span>
+            </p>
+            <p>
+              <strong>Assigned False Route Target:</strong>{' '}
+              <code>{simulatedEffect?.assignedFalseRoute ?? decision.assignedFalseRoute}</code>
+            </p>
+            <div
+              style={{
+                padding: 'var(--space-unit-sm)',
+                backgroundColor: 'var(--surface-card-accent)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-input)',
+                marginTop: 'var(--space-unit-xs)',
+                fontSize: 'var(--text-size-xs)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <p>
+                <strong>Containment Mode:</strong> {simulatedEffect?.containmentMode ?? 'SIMULATED'}
+              </p>
+              <p style={{ marginTop: 'var(--space-unit-xs)', color: 'var(--text-muted)' }}>
+                No real traffic or infrastructure change occurred. Simulated agent effect recorded
+                to audit ledger.
+              </p>
+            </div>
+
+            {simulatedEffect && (
+              <div
+                style={{
+                  marginTop: 'var(--space-unit-xs)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: 'var(--text-size-xs)',
+                  color: 'var(--text-muted)',
+                  flexWrap: 'wrap',
+                  gap: 'var(--space-unit-xs)',
+                }}
+              >
+                <span>
+                  Adapter: <strong>{simulatedEffect.adapterVersion}</strong>
+                </span>
+                <span>
+                  Recorded At:{' '}
+                  <strong>{new Date(simulatedEffect.recordedAt).toLocaleTimeString()}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Advisory Model Enrichment or Degraded Status */}
       {enrichment && (
         <div
           style={{

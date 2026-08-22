@@ -1,5 +1,9 @@
 import React from 'react';
-import { type IntrusionEvent, type DeceptionDecision } from '@false-route/contracts';
+import {
+  type IntrusionEvent,
+  type DeceptionDecision,
+  type SimulatedDeceptionEffect,
+} from '@false-route/contracts';
 import { Modal } from '../../components/Modal.js';
 import { Badge } from '../../components/Badge.js';
 import { DecisionCard } from './DecisionCard.js';
@@ -9,6 +13,7 @@ export interface EventDetailModalProps {
   readonly onClose: () => void;
   readonly event: IntrusionEvent | null;
   readonly decision: DeceptionDecision | null;
+  readonly simulatedEffect?: SimulatedDeceptionEffect | null | undefined;
 }
 
 export const EventDetailModal: React.FC<EventDetailModalProps> = ({
@@ -16,6 +21,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onClose,
   event,
   decision,
+  simulatedEffect,
 }) => {
   if (!event) return null;
 
@@ -132,7 +138,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             EVALUATED DECEPTION OUTCOME
           </h4>
           {decision ? (
-            <DecisionCard decision={decision} />
+            <DecisionCard decision={decision} simulatedEffect={simulatedEffect} />
           ) : (
             <div
               style={{
