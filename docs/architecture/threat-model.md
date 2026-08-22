@@ -86,15 +86,18 @@ The application must validate model output against a strict schema and action al
 
 ## Rate-Limiting and Availability Policy
 
-FalseRoute uses complementary controls rather than choosing between global-only and endpoint-only limiting:
+FalseRoute uses layered, hierarchical abuse controls rather than relying solely on global-only or endpoint-only limiting:
 
-1. Infrastructure rejects volumetric traffic and enforces a load-tested service capacity ceiling before application resources are exhausted.
-2. The API applies a default per-authenticated-principal quota, with a trusted-proxy-aware source-IP fallback and secondary IP abuse boundary.
-3. Routes apply stricter class-specific budgets for authentication failures, writes, and expensive or side-effecting work.
-4. Slow or paid work has concurrency and spend budgets in addition to request-rate budgets.
-5. A quota rejection uses `429` with retry guidance; service-wide load shedding is reported separately and does not pretend that a particular principal exceeded its allowance.
+1. Edge infrastructure (when deployed) rejects volumetric traffic and enforces edge capacity ceilings before application resources are reached. Application rate limiting does not replace edge volumetric DDoS protection.
+2. The API implements process-local in-memory token-bucket rate limiting before request-body parsing:
+   - Evaluates authenticated principal identity when present, with a trusted-proxy-aware source IP fallback.
+   - Enforces a secondary per-IP abuse boundary for unauthenticated or unverified principals to prevent principal spoofing across different IP origins.
+   - Rejects quota violations with `HTTP 429 Too Many Requests` and explicit `Retry-After` headers.
+3. A service-wide overload guard sheds excess in-flight requests under high local load with `HTTP 503 Service Unavailable` and `Retry-After`, distinctly separated from client quota rejections.
+4. Request payload parsing (enforcing 64KB general / 8KB event limits) executes strictly after abuse filtering.
+5. Outbound provider dependencies (Gemini) are bounded by process-local concurrency limits, execution deadlines, and bounded retries with jitter.
 
-The current API limiter is a demo-safe, process-local fixed window of 100 requests per minute per source address across all routes. It is not a cross-instance production guarantee. The approved migration constraints and provisional starting budgets are maintained in the internal implementation plan and require capacity and abuse testing before public exposure.
+These controls are process-local in-memory safeguards per service instance. They do not constitute distributed rate limiting or cross-instance global guarantees. Atomic distributed enforcement (e.g., Redis-backed or gateway-level) is deferred to multi-instance/edge deployment.
 
 ## Dependency Failure Policy
 

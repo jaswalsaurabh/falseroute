@@ -33,7 +33,7 @@ This document defines the automated quality gates and activation schedule for Fa
 | **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation             | Yes                 |
 | **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy) | No                  |
 | **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary     | Yes                 |
-| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Planned**     | Before public or horizontally scaled deployment | Yes when active     |
+| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls  | Yes                 |
 | **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added    | Yes when applicable |
 
 ---
@@ -159,17 +159,15 @@ This document defines the automated quality gates and activation schedule for Fa
 
 ### 16. Abuse, Rate-Limit, and Overload Verification
 
-Before the API is publicly exposed or horizontally scaled, focused tests must prove:
-
-- Default per-principal behavior, trusted-proxy-aware IP fallback, and isolation between two principals.
-- Endpoint-class overrides for reads, writes, authentication failures, and expensive work.
-- Burst allowance, window/refill behavior, retry guidance, and bounded response payloads.
-- Concurrency and spend budgets for Gemini or another slow/paid provider.
-- One abusive principal cannot consume every client's allowance.
-- Cross-instance enforcement is atomic at the chosen edge, gateway, or distributed store; process-local state is never described as global.
-- Service overload is distinguished from a client quota rejection, and neither path reaches protected database/provider work after rejection.
-
-The current process-local `100 requests/minute/source address` middleware is a demo control and has no focused regression suite yet. Therefore this gate is **planned**, not reported as passed.
+- **Command:** `pnpm --filter @false-route/api test`
+- **Scope:** Validates API pipeline order, token bucket rate limiter, secondary IP boundary, overload guard, and request size limits.
+- **Rules Enforced:**
+  - Overload guard sheds excess requests with `HTTP 503` before body parsing.
+  - Principal identifier evaluates authenticated identity or falls back to trusted-proxy client IP.
+  - Secondary IP boundary prevents cross-origin quota spoofing for unauthenticated requests.
+  - Token-bucket counter correctly refills and tracks burst allowances.
+  - Request body limits (64KB general, 8KB event payload) execute strictly after rate-limiting.
+  - Process-local in-memory state is never described as a global/distributed guarantee. Distributed cross-instance rate limiting remains deferred for multi-instance deployment.
 
 ### 17. Dependency Failure Isolation
 
