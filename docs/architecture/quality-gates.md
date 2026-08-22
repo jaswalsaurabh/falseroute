@@ -29,8 +29,9 @@ This document defines the automated quality gates and activation schedule for Fa
 | **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                | Yes                 |
 | **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism       | Yes                 |
 | **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests           | Yes                 |
-| **System Integration Pipeline**        | `pnpm test:integration`                                | **Active**      | Full API -> DB -> Worker -> API integration     | Yes                 |
 | **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation             | Yes                 |
+| **Container Security & Verification**  | `pnpm verify:containers`                               | **Active**      | Non-root, read-only FS, probe verification      | Yes                 |
+| **Cloud Run Template Validation**      | `pnpm check:templates`                                 | **Active**      | Knative schema, zero-secret, single-instance    | Yes                 |
 | **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy) | No                  |
 | **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary     | Yes                 |
 | **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls  | Yes                 |
@@ -173,14 +174,34 @@ This document defines the automated quality gates and activation schedule for Fa
 
 When a remote or separately deployable dependency is introduced or its behavior changes, relevant tests must cover timeout, cancellation, finite retries, retryable versus terminal errors, concurrency saturation, backpressure, recovery, and the documented degraded or fail-closed result. Circuit breakers, bulkheads, queues, or fallbacks are required only when the concrete failure mode justifies them.
 
+### 18. Container Security & Packaging Verification
+
+- **Command:** `pnpm verify:containers`
+- **Script:** [scripts/verify-containers.ts](../../scripts/verify-containers.ts)
+- **Rules Enforced:**
+  - Multi-stage Docker builds pin `node:24.19.0-bookworm-slim` and `pnpm 11.22.0`.
+  - Non-root runtime user (`node`, UID 1000) verified via container metadata inspection.
+  - Prohibits `.env` files, `.git` metadata, and private documentation in container filesystems.
+  - Container smoke verification asserts probe responses (API `/api/v1/health` 200, Web `/health` 200), read-only root filesystem compatibility, and graceful `SIGTERM` shutdown.
+
+### 19. Cloud Run Deployment Template Validation
+
+- **Command:** `pnpm check:templates`
+- **Script:** [scripts/validate-cloud-run-templates.ts](../../scripts/validate-cloud-run-templates.ts)
+- **Rules Enforced:**
+  - Knative Serving schema compliance for all declarative service templates in `infrastructure/cloud-run/`.
+  - Enforces `autoscaling.knative.dev/maxScale: "1"` single-instance constraint while abuse controls remain process-local.
+  - Enforces always-on CPU allocation (`run.googleapis.com/cpu-throttling: "false"`) and `minScale: "1"` for worker services.
+  - Prohibits plaintext credentials; sensitive environment variables must resolve via `secretKeyRef`.
+  - Prohibits local filesystem path references.
+
 ---
 
 ## Deferred Quality Gates
 
 The following quality gates remain deferred in the local backlog and will be activated when corresponding production infrastructure or tooling is introduced:
 
-- **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging.
-- **Container Build & Non-Root User Verification:** Automated validation of container image security and non-root execution.
+- **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging (tracked in `BACKLOG.md`).
 - **Outbound HTTP Security Checks:** Enforcement of scheme policy, DNS/IP validation, and streaming byte limits for outbound HTTP adapters.
 - **Distributed Rate and Concurrency Enforcement:** Atomic cross-instance quotas, endpoint-class budgets, trusted-proxy behavior, retry guidance, and load-shedding verification before public or horizontally scaled deployment.
 - **Infrastructure DDoS and Capacity Verification:** Evidence that edge filtering, connection/request limits, autoscaling bounds, provider quotas, and overload behavior match load-tested application capacity before public exposure.

@@ -198,6 +198,12 @@ pnpm test
 pnpm db:setup:test
 TEST_DATABASE_URL="postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public" pnpm test:integration
 
+# Verify production container packaging, non-root user, read-only FS, and smoke tests
+pnpm verify:containers
+
+# Validate declarative Cloud Run service templates and zero-secret policies
+pnpm check:templates
+
 # Scan tracked and unignored repository files for secrets and credentials
 pnpm check:secrets
 ```

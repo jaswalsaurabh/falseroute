@@ -68,14 +68,26 @@ Use of a known decoy credential deterministically produces an `ASSIGN_FALSE_ROUT
 
 - **Hackathon track:** The Taskmaster
 - **AI:** Gemini 3.5 or newer through the Google Gen AI SDK for TypeScript
-- **Compute:** Cloud Run for the initial deployable services
+- **Compute:** Cloud Run for the deployable services (`falseroute-api`, `falseroute-worker`, `falseroute-web`)
+- **Packaging:** Multi-stage production container images pinned to `node:24.19.0-bookworm-slim`, running under a dedicated non-root user (`node`, UID 1000) with read-only root filesystem support and exec-form commands.
 - **Database:** Cloud SQL for PostgreSQL
 - **Telemetry:** Pino and OpenTelemetry, exported to Google Cloud during production hardening
 
-The Web hosting shape and the Worker delivery mechanism can be refined during deployment design without changing the approved application boundaries.
+## Runtime Lifecycle & Draining
+
+- **API Lifecycle:** Implements connection tracking (`Set<Socket>`), graceful `SIGTERM`/`SIGINT` handling, immediate `503 SERVICE_UNAVAILABLE` signaling on `/api/v1/ready` upon shutdown commencement, bounded socket draining (default 10s `SHUTDOWN_TIMEOUT_MS`), forced socket destruction on timeout, database disconnection, and telemetry flushing.
+- **Worker Lifecycle:** Halts active polling loops on `SIGTERM`/`SIGINT`, waits for active claim processing to complete within `WORKER_SHUTDOWN_TIMEOUT_MS`, safely disconnects database client, and flushes telemetry.
+
+## Provisional Cloud Run Deployment Contracts
+
+- **Declarative Templates:** Defined in `infrastructure/cloud-run/` (`api.service.yaml`, `worker.service.yaml`, `web.service.yaml`) using Knative Serving schema.
+- **Single-Instance Constraint:** API and Worker enforce `autoscaling.knative.dev/maxScale: "1"` while abuse controls, rate limiting, and claim concurrency remain process-local.
+- **Worker CPU Allocation:** Worker template explicitly configures `run.googleapis.com/cpu-throttling: "false"` and `minScale: "1"` to guarantee continuous background polling loops.
+- **Zero-Secret Templates:** Secrets (`DATABASE_URL`, `OPERATOR_ACCESS_TOKEN`, `GEMINI_API_KEY`) are resolved via Secret Manager (`secretKeyRef`), never plain environment values.
+- **Zero-Auto-Migration:** Service containers do not execute database schema migrations on ordinary startup; schema migrations remain separated and guarded via `scripts/prisma-guard.ts`.
 
 ## Deferred Architecture
 
-The initial implementation excludes a privileged deception agent, real traffic routing, host access, packet processing, Redis, and an automatically selected queue. These require documented operational and security requirements before introduction.
+The initial implementation excludes a privileged deception agent, real traffic routing, host access, packet processing, Redis, distributed cross-instance rate limits, and an automatically selected queue. In-memory rate limiting and overload shedding remain process-local safeguards requiring single-instance deployment until a distributed state layer is introduced. Browser-based Playwright end-to-end verification remains deferred in the local backlog.
 
-Security boundaries and non-goals are detailed in the [initial threat model](threat-model.md). Repository-wide boundaries and commenting rules are defined in the [engineering principles](engineering-principles.md), and Web-specific organization is defined in the [frontend architecture](frontend.md).
+Security boundaries and non-goals are detailed in the [initial threat model](threat-model.md). Repository-wide boundaries and commenting rules are defined in the [engineering principles](engineering-principles.md), quality gate activations are listed in [quality gates](quality-gates.md), and Web-specific organization is defined in the [frontend architecture](frontend.md).
