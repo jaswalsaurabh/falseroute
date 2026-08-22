@@ -90,6 +90,9 @@ function createMockRepository(): {
       releasedClaims.push({ eventId, claimToken, outcome });
       return outcome;
     },
+    async checkHealth() {
+      return true;
+    },
   };
 
   return { repository, persistedDecisions, claimedEvents, releasedClaims };

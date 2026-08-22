@@ -59,6 +59,7 @@ export interface WorkerRepository {
     claimToken: string,
     options?: { maxAttempts?: number | undefined },
   ): Promise<ClaimReleaseOutcome>;
+  checkHealth(): Promise<boolean>;
 }
 
 export class PrismaWorkerRepository implements WorkerRepository {
@@ -71,6 +72,15 @@ export class PrismaWorkerRepository implements WorkerRepository {
   ) {
     this.claimLeaseDurationMs = options?.claimLeaseDurationMs ?? 15000;
     this.maxProcessingAttempts = options?.maxProcessingAttempts ?? 3;
+  }
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      await this.db.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

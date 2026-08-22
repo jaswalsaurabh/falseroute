@@ -1,3 +1,5 @@
+import http from 'node:http';
+import type { Socket } from 'node:net';
 import { createDatabaseClient, type DatabaseClient } from '@false-route/database';
 import {
   createLogger,
@@ -36,13 +38,37 @@ export interface WorkerInstance {
   readonly db: DatabaseClient;
   readonly telemetry: TelemetryHandle;
   readonly logger: Logger;
+  readonly healthServer: http.Server | null;
   readonly isReady: () => boolean;
   readonly stop: (reason?: string) => Promise<void>;
 }
 
 /**
+ * Helper to run a task with an explicit timeout.
+ */
+async function withTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([task, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Starts the FalseRoute background worker with runtime lifecycle management,
- * durable claim lease protection, bounded shutdown timeouts, and sanitized logging.
+ * Cloud Run-compatible HTTP health server, discrete readiness states, durable
+ * claim lease protection, bounded shutdown timeouts, and sanitized logging.
  */
 export async function startWorker(options: StartWorkerOptions = {}): Promise<WorkerInstance> {
   const config = options.config ?? parseWorkerConfig(options.env ?? process.env);
@@ -64,10 +90,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     });
 
   let isReadyState = false;
-  const isReady = (): boolean => isReadyState;
+  let isStopping = false;
+  const isReady = (): boolean => isReadyState && !isStopping;
 
   let db: DatabaseClient | null = null;
   let orchestrator: WorkerOrchestrator | null = null;
+  let healthServer: http.Server | null = null;
+  const trackedSockets = new Set<Socket>();
 
   try {
     db = options.db ?? createDatabaseClient({ connectionString: config.DATABASE_URL });
@@ -79,6 +108,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         claimLeaseDurationMs: config.WORKER_CLAIM_LEASE_MS,
         maxProcessingAttempts: config.WORKER_MAX_PROCESSING_ATTEMPTS,
       });
+
+    // 1. Validate database connectivity prior to declaring readiness
+    const dbHealthy = await repository.checkHealth();
+    if (!dbHealthy) {
+      throw new Error('Initial database connectivity check failed during worker startup');
+    }
 
     let geminiAdapter: GeminiEnrichmentAdapter;
     if (options.geminiAdapter) {
@@ -124,8 +159,80 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     });
 
     orchestrator.start();
+
+    // 2. Start Cloud Run-compatible HTTP health server
+    healthServer = http.createServer(async (req, res) => {
+      const urlPath = (req.url || '/').split('?')[0] || '/';
+      res.setHeader('Content-Type', 'application/json');
+
+      if (req.method !== 'GET') {
+        res.writeHead(405);
+        res.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' }));
+        return;
+      }
+
+      // Minimal liveness endpoint
+      if (urlPath === '/health' || urlPath === '/healthz') {
+        res.writeHead(200);
+        res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+        return;
+      }
+
+      // Dependency-backed readiness endpoint
+      if (urlPath === '/ready' || urlPath === '/readyz') {
+        if (!isReady()) {
+          res.writeHead(503);
+          res.end(
+            JSON.stringify({
+              error: 'SERVICE_UNAVAILABLE',
+              message: isStopping ? 'Worker is shutting down' : 'Worker is not ready',
+            }),
+          );
+          return;
+        }
+
+        const healthy = await repository.checkHealth().catch(() => false);
+        if (!healthy || !isReady()) {
+          res.writeHead(503);
+          res.end(
+            JSON.stringify({
+              error: 'SERVICE_UNAVAILABLE',
+              message: 'Database connection failed',
+            }),
+          );
+          return;
+        }
+
+        res.writeHead(200);
+        res.end(
+          JSON.stringify({
+            status: 'ready',
+            database: 'connected',
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
+
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: 'NOT_FOUND', message: 'Route not found' }));
+    });
+
+    await new Promise<http.Server>((resolve, reject) => {
+      healthServer!.listen(config.PORT, '0.0.0.0', () => resolve(healthServer!));
+      healthServer!.once('error', reject);
+    });
+
+    healthServer.on('connection', (socket: Socket) => {
+      trackedSockets.add(socket);
+      socket.once('close', () => trackedSockets.delete(socket));
+    });
+
     isReadyState = true;
-    logger.info('FalseRoute worker service initialized and polling');
+    logger.info(
+      { port: config.PORT, env: config.NODE_ENV },
+      'FalseRoute worker service initialized, polling, and listening for health checks',
+    );
 
     let shutdownPromise: Promise<void> | null = null;
 
@@ -135,46 +242,89 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       }
 
       shutdownPromise = (async () => {
+        isStopping = true;
         isReadyState = false;
+
+        const totalTimeoutMs = config.WORKER_SHUTDOWN_TIMEOUT_MS ?? 8000;
+        const drainTimeoutMs = config.WORKER_DRAIN_TIMEOUT_MS ?? 5000;
+        const dbTimeoutMs = config.WORKER_DB_DISCONNECT_TIMEOUT_MS ?? 2000;
+        const telemetryTimeoutMs = config.WORKER_TELEMETRY_TIMEOUT_MS ?? 1000;
+
         logger.info(
-          { reason, timeoutMs: config.WORKER_SHUTDOWN_TIMEOUT_MS },
-          'Worker shutdown initiated; stopping polling loop',
+          { reason, totalTimeoutMs, drainTimeoutMs, dbTimeoutMs, telemetryTimeoutMs },
+          'Worker shutdown initiated; stopping polling loop and health server',
         );
 
-        if (orchestrator) {
-          const stopTask = orchestrator.stop();
-          let shutdownTimer: NodeJS.Timeout | null = null;
-          const timeoutTask = new Promise<void>((resolve) => {
-            shutdownTimer = setTimeout(() => {
-              logger.warn(
-                { timeoutMs: config.WORKER_SHUTDOWN_TIMEOUT_MS },
-                'Worker active claim exceeded shutdown deadline; exiting without false completion for lease recovery',
-              );
-              resolve();
-            }, config.WORKER_SHUTDOWN_TIMEOUT_MS);
-          });
-
-          await Promise.race([stopTask, timeoutTask]);
-          if (shutdownTimer) clearTimeout(shutdownTimer);
-        }
-
-        if (db) {
+        const shutdownTask = (async () => {
+          // Phase 1: Drain in-flight claims and close health server within drain budget
           try {
-            await db.$disconnect();
-          } catch (dbErr) {
-            const errorType = dbErr instanceof Error ? dbErr.constructor.name : 'UnknownError';
-            logger.error({ errorType }, 'Error disconnecting database during worker shutdown');
+            const drainPromises: Promise<void>[] = [];
+
+            if (healthServer) {
+              const currentServer = healthServer;
+              drainPromises.push(
+                new Promise<void>((resolve) => {
+                  currentServer.close(() => resolve());
+                }),
+              );
+            }
+
+            if (orchestrator) {
+              drainPromises.push(orchestrator.stop());
+            }
+
+            await withTimeout(
+              Promise.all(drainPromises),
+              drainTimeoutMs,
+              'Worker drain timeout exceeded',
+            );
+          } catch (drainErr) {
+            const errorType =
+              drainErr instanceof Error ? drainErr.constructor.name : 'UnknownError';
+            logger.warn(
+              { errorType, drainTimeoutMs },
+              'Worker active claim or health server drain reached sub-deadline; active claims left uncompleted for lease recovery',
+            );
+            for (const socket of trackedSockets) {
+              socket.destroy();
+            }
           }
-        }
+
+          // Phase 2: Disconnect database within DB timeout sub-budget
+          if (db) {
+            try {
+              await withTimeout(
+                db.$disconnect(),
+                dbTimeoutMs,
+                'Database disconnect timeout exceeded during worker shutdown',
+              );
+            } catch (dbErr) {
+              const errorType = dbErr instanceof Error ? dbErr.constructor.name : 'UnknownError';
+              logger.error({ errorType }, 'Error disconnecting database during worker shutdown');
+            }
+          }
+
+          // Phase 3: Flush telemetry within telemetry timeout sub-budget
+          try {
+            await withTimeout(
+              telemetry.shutdown(),
+              telemetryTimeoutMs,
+              'Telemetry shutdown timeout exceeded during worker shutdown',
+            );
+          } catch (telErr) {
+            const errorType = telErr instanceof Error ? telErr.constructor.name : 'UnknownError';
+            logger.error({ errorType }, 'Error shutting down telemetry during worker shutdown');
+          }
+        })();
 
         try {
-          await telemetry.shutdown();
-        } catch (telErr) {
-          const errorType = telErr instanceof Error ? telErr.constructor.name : 'UnknownError';
-          logger.error({ errorType }, 'Error shutting down telemetry during worker shutdown');
+          await withTimeout(shutdownTask, totalTimeoutMs, 'Total worker shutdown budget exceeded');
+        } catch (totalErr) {
+          const errorType = totalErr instanceof Error ? totalErr.constructor.name : 'UnknownError';
+          logger.error({ errorType }, 'Worker shutdown exceeded total platform budget');
         }
 
-        logger.info('FalseRoute worker service shutdown cleanly');
+        logger.info('FalseRoute worker service shutdown completed');
       })();
 
       return shutdownPromise;
@@ -187,6 +337,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       db,
       telemetry,
       logger,
+      healthServer,
       isReady,
       stop,
     };
@@ -220,6 +371,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     const errorType = startupErr instanceof Error ? startupErr.constructor.name : 'UnknownError';
     logger.error({ errorType }, 'Fatal worker startup error; aborting startup');
 
+    if (healthServer) {
+      try {
+        healthServer.close();
+      } catch {
+        // Suppress secondary health server close errors
+      }
+    }
     if (db) {
       try {
         await db.$disconnect();

@@ -346,6 +346,7 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
         releaseOutcome = await repository.releaseOrFailClaim(claimedEventId, claimToken, options);
         return releaseOutcome;
       },
+      checkHealth: () => repository.checkHealth(),
     };
 
     const processor = new EventProcessor({

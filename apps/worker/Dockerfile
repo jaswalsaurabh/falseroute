@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=8080
+EXPOSE 8080
 
 # Copy pruned production application from builder stage
 COPY --from=builder --chown=node:node /app/pruned ./
