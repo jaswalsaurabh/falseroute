@@ -21,6 +21,7 @@ export interface AppOptions {
   readonly db: DatabaseClient;
   readonly logger: Logger;
   readonly repository?: ApiRepository | undefined;
+  readonly clock?: (() => number) | undefined;
 }
 
 /**
@@ -28,7 +29,7 @@ export interface AppOptions {
  * route composition, middleware pipeline, and error handling boundaries.
  */
 export function createApp(options: AppOptions): Express {
-  const { config, db, logger } = options;
+  const { config, db, logger, clock } = options;
 
   const app = express();
 
@@ -55,6 +56,13 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '64kb' }));
   app.use(createOverloadGuard());
 
+  // Global Default Quota Boundary (applies to all routes: valid, unknown, unsupported methods)
+  const defaultLimiter = createRateLimiter({
+    className: 'default',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  app.use(defaultLimiter);
+
   // Component Composition
   const repository = options.repository ?? new PrismaApiRepository(db);
   const eventService = new EventService(repository);
@@ -63,12 +71,23 @@ export function createApp(options: AppOptions): Express {
 
   const authMiddleware = operatorAuthMiddleware({
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
+    ...(clock !== undefined ? { clock } : {}),
   });
 
-  // Named request-class budgets (process-local, see config/rate-limits.ts)
-  const readLimiter = createRateLimiter({ className: 'read' });
-  const writeLimiter = createRateLimiter({ className: 'write' });
-  const healthLimiter = createRateLimiter({ className: 'health' });
+  // Stricter request-class budgets (process-local, see config/rate-limits.ts)
+  const readLimiter = createRateLimiter({
+    className: 'read',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  const writeLimiter = createRateLimiter({
+    className: 'write',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  const healthLimiter = createRateLimiter({
+    className: 'health',
+    keyMode: 'ip',
+    ...(clock !== undefined ? { clock } : {}),
+  });
 
   // Mount API Endpoints
   const healthRouter = createHealthRouter({

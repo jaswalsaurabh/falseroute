@@ -7,86 +7,171 @@ import {
 } from '../config/rate-limits.js';
 import { formatLimiterKey, resolveLimiterIdentity } from './principal.js';
 
-interface WindowRecord {
-  count: number;
-  resetAt: number;
+export interface BucketRecord {
+  tokens: number;
+  lastRefillMs: number;
+  lastAccessMs: number;
 }
 
-export interface FixedWindowCounterOptions {
+export interface TokenBucketOptions {
   readonly budget: Readonly<RequestClassBudget>;
-  readonly clock?: () => number;
+  readonly maxKeys?: number | undefined;
+  readonly clock?: (() => number) | undefined;
 }
 
 export interface ConsumeResult {
   readonly allowed: boolean;
   readonly retryAfterMs: number;
+  readonly remainingTokens: number;
 }
 
+const DEFAULT_MAX_KEYS = 10_000;
+
 /**
- * Process-local fixed-window counter. A fresh window resets the full allowance.
- * Enforces budgets only within the current process; never cross-instance.
+ * Process-local Token Bucket Rate Limiter.
+ * Supports burst capacity with smooth monotonic token refill.
+ * Uses bounded LRU memory storage with automatic eviction to remain safe under rotating attacker IPs.
+ *
+ * NOTE: This is explicitly process-local: it enforces budgets only for the
+ * current process and does not coordinate across instances.
  */
-export class FixedWindowCounter {
-  private readonly records = new Map<string, WindowRecord>();
+export class TokenBucketCounter {
+  private readonly records = new Map<string, BucketRecord>();
+  private readonly budget: Readonly<RequestClassBudget>;
+  private readonly maxKeys: number;
   private readonly now: () => number;
 
-  constructor(private readonly options: FixedWindowCounterOptions) {
+  constructor(options: TokenBucketOptions) {
+    this.budget = options.budget;
+    this.maxKeys = options.maxKeys ?? DEFAULT_MAX_KEYS;
     this.now = options.clock ?? Date.now;
   }
 
-  consume(key: string): ConsumeResult {
+  get size(): number {
+    return this.records.size;
+  }
+
+  getRecord(key: string): BucketRecord | undefined {
+    return this.records.get(key);
+  }
+
+  /**
+   * Removes idle entries whose tokens are completely refilled and have not been accessed
+   * for more than idleMs (default: twice the windowMs).
+   */
+  pruneExpired(idleMs = this.budget.windowMs * 2): number {
     const currentTime = this.now();
-    const record = this.records.get(key);
-    if (!record || currentTime >= record.resetAt) {
-      this.records.set(key, {
-        count: 1,
-        resetAt: currentTime + this.options.budget.windowMs,
-      });
-      return { allowed: true, retryAfterMs: 0 };
+    let pruned = 0;
+    for (const [key, record] of this.records.entries()) {
+      if (currentTime - record.lastAccessMs > idleMs) {
+        this.records.delete(key);
+        pruned += 1;
+      }
+    }
+    return pruned;
+  }
+
+  consume(key: string, tokensToConsume = 1): ConsumeResult {
+    const currentTime = this.now();
+    const refillRatePerMs = this.budget.refillRatePerSecond / 1000;
+    const capacity = this.budget.burstCapacity;
+
+    let record = this.records.get(key);
+
+    if (!record) {
+      // Ensure capacity ceiling is maintained before inserting new keys
+      if (this.records.size >= this.maxKeys) {
+        this.pruneExpired();
+        if (this.records.size >= this.maxKeys) {
+          // LRU eviction: remove the oldest accessed entry
+          const oldestKey = this.records.keys().next().value;
+          if (oldestKey !== undefined) {
+            this.records.delete(oldestKey);
+          }
+        }
+      }
+
+      if (capacity >= tokensToConsume) {
+        const remaining = capacity - tokensToConsume;
+        this.records.set(key, {
+          tokens: remaining,
+          lastRefillMs: currentTime,
+          lastAccessMs: currentTime,
+        });
+        return { allowed: true, retryAfterMs: 0, remainingTokens: remaining };
+      }
+
+      const deficit = tokensToConsume - capacity;
+      const retryAfterMs = Math.ceil(deficit / refillRatePerMs);
+      return { allowed: false, retryAfterMs, remainingTokens: 0 };
     }
 
-    if (record.count >= this.options.budget.maxRequests) {
-      return {
-        allowed: false,
-        retryAfterMs: record.resetAt - currentTime,
+    // Move to end of Map for LRU freshness
+    this.records.delete(key);
+
+    // Calculate monotonic token refill
+    const elapsedMs = Math.max(0, currentTime - record.lastRefillMs);
+    const refilledTokens = record.tokens + elapsedMs * refillRatePerMs;
+    const currentTokens = Math.min(capacity, refilledTokens);
+
+    if (currentTokens >= tokensToConsume) {
+      const remaining = currentTokens - tokensToConsume;
+      record = {
+        tokens: remaining,
+        lastRefillMs: currentTime,
+        lastAccessMs: currentTime,
       };
+      this.records.set(key, record);
+      return { allowed: true, retryAfterMs: 0, remainingTokens: remaining };
     }
 
-    record.count += 1;
-    return { allowed: true, retryAfterMs: 0 };
+    const deficit = tokensToConsume - currentTokens;
+    const retryAfterMs = Math.ceil(deficit / refillRatePerMs);
+
+    record = {
+      tokens: currentTokens,
+      lastRefillMs: currentTime,
+      lastAccessMs: currentTime,
+    };
+    this.records.set(key, record);
+
+    return { allowed: false, retryAfterMs, remainingTokens: currentTokens };
   }
 }
 
 export interface RateLimiterOptions {
   readonly className: RequestClassName;
+  readonly keyMode?: 'composite' | 'ip' | 'principal' | undefined;
   /**
    * Injectable monotonic clock (milliseconds) for deterministic window tests.
    */
-  readonly clock?: () => number;
+  readonly clock?: (() => number) | undefined;
+  readonly maxKeys?: number | undefined;
+  readonly customBudget?: RequestClassBudget | undefined;
 }
 
 /**
- * Process-local fixed-window request budget keyed by verified principal or
- * trusted-proxy-aware source IP.
- *
- * This limiter is explicitly process-local: it enforces budgets only for the
- * current process and does not coordinate across instances.
+ * Creates an Express rate-limiting middleware enforcing process-local request budgets.
+ * Returns 429 Too Many Requests with Retry-After header and bounded JSON payload upon exhaustion.
  */
 export function createRateLimiter(options: RateLimiterOptions) {
-  const counter = new FixedWindowCounter({
-    budget: getRequestClassBudget(options.className),
+  const budget = options.customBudget ?? getRequestClassBudget(options.className);
+  const counter = new TokenBucketCounter({
+    budget,
+    maxKeys: options.maxKeys,
     ...(options.clock !== undefined ? { clock: options.clock } : {}),
   });
 
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const key = formatLimiterKey(resolveLimiterIdentity(req));
+  const middleware = (req: Request, res: Response, next: NextFunction): void => {
+    const identity = resolveLimiterIdentity(req);
+    const key = formatLimiterKey(identity, options.keyMode);
     const result = counter.consume(key);
 
     if (!result.allowed) {
       const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
       const errorResponse: ApiErrorResponse = {
         error: 'TOO_MANY_REQUESTS',
-        message: `Request budget exceeded for ${options.className} operations; retry after the window resets`,
+        message: `Request budget exceeded for ${options.className} operations; retry after ${retryAfterSeconds}s`,
         correlationId: req.correlationId,
       };
       res.setHeader('Retry-After', String(retryAfterSeconds));
@@ -96,4 +181,7 @@ export function createRateLimiter(options: RateLimiterOptions) {
 
     next();
   };
+
+  middleware.counter = counter;
+  return middleware;
 }

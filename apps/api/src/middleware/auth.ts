@@ -2,11 +2,16 @@ import { type Request, type Response, type NextFunction } from 'express';
 import { verifyOperatorToken, extractBearerToken } from '@false-route/security';
 import { type ApiErrorResponse } from '@false-route/contracts';
 import { getRequestClassBudget } from '../config/rate-limits.js';
-import { FixedWindowCounter } from './rate-limit.js';
-import { formatLimiterKey, resolveLimiterIdentity } from './principal.js';
+import { TokenBucketCounter } from './rate-limit.js';
+import {
+  computeCredentialFingerprint,
+  formatLimiterKey,
+  resolveLimiterIdentity,
+} from './principal.js';
 
 export interface AuthMiddlewareOptions {
   readonly expectedToken: string;
+  readonly clock?: (() => number) | undefined;
 }
 
 /**
@@ -16,24 +21,26 @@ export interface AuthMiddlewareOptions {
  * with the 'abuse' request-class budget; failed attempts never reach controllers.
  */
 export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
-  const failureBudget = new FixedWindowCounter({
+  const failureBudget = new TokenBucketCounter({
     budget: getRequestClassBudget('abuse'),
+    ...(options.clock !== undefined ? { clock: options.clock } : {}),
   });
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const bearerToken = extractBearerToken(req.headers.authorization);
 
-    if (!verifyOperatorToken(bearerToken, options.expectedToken)) {
-      const key = formatLimiterKey(resolveLimiterIdentity(req));
+    if (!verifyOperatorToken(bearerToken, options.expectedToken) || bearerToken === null) {
+      const key = formatLimiterKey(resolveLimiterIdentity(req), 'ip');
       const attempt = failureBudget.consume(key);
 
       if (!attempt.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(attempt.retryAfterMs / 1000));
         const errorResponse: ApiErrorResponse = {
           error: 'TOO_MANY_REQUESTS',
           message: 'Too many failed authentication attempts; retry after the window resets',
           correlationId: req.correlationId,
         };
-        res.setHeader('Retry-After', String(Math.max(1, Math.ceil(attempt.retryAfterMs / 1000))));
+        res.setHeader('Retry-After', String(retryAfterSeconds));
         res.status(429).json(errorResponse);
         return;
       }
@@ -48,9 +55,11 @@ export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
       return;
     }
 
-    // Verified non-secret principal label used as the rate-limit key base.
-    // The bearer token is never stored, logged, or used as a limiter key.
-    req.principalId = 'operator';
+    // Verified non-secret principal fingerprint used as the rate-limit identity base.
+    // The raw bearer token is never stored, logged, or used as a limiter key.
+    if (!req.principalId) {
+      req.principalId = computeCredentialFingerprint(bearerToken, 'operator');
+    }
     next();
   };
 }
