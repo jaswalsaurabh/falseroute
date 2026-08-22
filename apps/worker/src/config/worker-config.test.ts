@@ -37,4 +37,28 @@ describe('worker configuration claim lease safety margin', () => {
       }),
     ).toThrow(ConfigurationError);
   });
+
+  it('rejects shutdown timeouts where sub-budgets exceed the total shutdown timeout', () => {
+    expect(() =>
+      parseWorkerConfig({
+        ...validWorkerEnv,
+        WORKER_SHUTDOWN_TIMEOUT_MS: '5000',
+        WORKER_DRAIN_TIMEOUT_MS: '4000',
+        WORKER_DB_DISCONNECT_TIMEOUT_MS: '2000',
+        WORKER_TELEMETRY_TIMEOUT_MS: '1000',
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('accepts shutdown timeouts where sub-budgets fit cleanly within total timeout', () => {
+    const config = parseWorkerConfig({
+      ...validWorkerEnv,
+      WORKER_SHUTDOWN_TIMEOUT_MS: '8000',
+      WORKER_DRAIN_TIMEOUT_MS: '5000',
+      WORKER_DB_DISCONNECT_TIMEOUT_MS: '2000',
+      WORKER_TELEMETRY_TIMEOUT_MS: '1000',
+    });
+    expect(config.WORKER_SHUTDOWN_TIMEOUT_MS).toBe(8000);
+    expect(config.WORKER_DRAIN_TIMEOUT_MS).toBe(5000);
+  });
 });

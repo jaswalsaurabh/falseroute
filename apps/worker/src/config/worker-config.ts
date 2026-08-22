@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseEnvironmentSchema, ConfigurationError } from '@false-route/config';
 
 export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
+  PORT: z.coerce.number().int().min(0).max(65535).default(8080),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -22,29 +23,57 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   WORKER_CLAIM_PERSISTENCE_MARGIN_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(15000),
   WORKER_MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
-  WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(10000),
+  WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
+  WORKER_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(5000),
+  WORKER_DB_DISCONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(2000),
+  WORKER_TELEMETRY_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(1000),
   ENABLE_TELEMETRY: z
     .string()
     .optional()
     .transform((val) => val === 'true'),
-}).refine(
-  (config) => {
-    return (
-      config.WORKER_CLAIM_LEASE_MS >=
-      config.GEMINI_OPERATION_DEADLINE_MS + config.WORKER_CLAIM_PERSISTENCE_MARGIN_MS
-    );
-  },
-  {
-    message:
-      'WORKER_CLAIM_LEASE_MS must be at least GEMINI_OPERATION_DEADLINE_MS plus WORKER_CLAIM_PERSISTENCE_MARGIN_MS',
-    path: ['WORKER_CLAIM_LEASE_MS'],
-  },
-);
+})
+  .refine(
+    (config) => {
+      return (
+        config.WORKER_CLAIM_LEASE_MS >=
+        config.GEMINI_OPERATION_DEADLINE_MS + config.WORKER_CLAIM_PERSISTENCE_MARGIN_MS
+      );
+    },
+    {
+      message:
+        'WORKER_CLAIM_LEASE_MS must be at least GEMINI_OPERATION_DEADLINE_MS plus WORKER_CLAIM_PERSISTENCE_MARGIN_MS',
+      path: ['WORKER_CLAIM_LEASE_MS'],
+    },
+  )
+  .refine(
+    (config) => {
+      return (
+        config.WORKER_DRAIN_TIMEOUT_MS +
+          config.WORKER_DB_DISCONNECT_TIMEOUT_MS +
+          config.WORKER_TELEMETRY_TIMEOUT_MS <=
+        config.WORKER_SHUTDOWN_TIMEOUT_MS
+      );
+    },
+    {
+      message:
+        'Sum of drain, database disconnect, and telemetry timeouts must not exceed total shutdown timeout',
+      path: ['WORKER_SHUTDOWN_TIMEOUT_MS'],
+    },
+  );
 
 type ParsedWorkerConfig = z.infer<typeof WorkerConfigSchema>;
 
-export type WorkerConfig = Omit<ParsedWorkerConfig, 'WORKER_SHUTDOWN_TIMEOUT_MS'> & {
+export type WorkerConfig = Omit<
+  ParsedWorkerConfig,
+  | 'WORKER_SHUTDOWN_TIMEOUT_MS'
+  | 'WORKER_DRAIN_TIMEOUT_MS'
+  | 'WORKER_DB_DISCONNECT_TIMEOUT_MS'
+  | 'WORKER_TELEMETRY_TIMEOUT_MS'
+> & {
   WORKER_SHUTDOWN_TIMEOUT_MS?: number;
+  WORKER_DRAIN_TIMEOUT_MS?: number;
+  WORKER_DB_DISCONNECT_TIMEOUT_MS?: number;
+  WORKER_TELEMETRY_TIMEOUT_MS?: number;
 };
 
 export function parseWorkerConfig(env: Record<string, string | undefined>): Readonly<WorkerConfig> {

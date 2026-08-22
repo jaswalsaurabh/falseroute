@@ -22,14 +22,31 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
     .string()
     .optional()
     .transform((val) => val === 'true'),
-  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(10000),
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
+  SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(5000),
+  SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(2000),
+  SHUTDOWN_TELEMETRY_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(1000),
   /**
    * Number of trusted reverse-proxy hops for source-IP resolution. Defaults to
    * 0 (fail closed): client-supplied forwarding headers are ignored unless the
    * deployment explicitly declares trusted proxy hops.
    */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
-});
+}).refine(
+  (config) => {
+    return (
+      config.SHUTDOWN_DRAIN_TIMEOUT_MS +
+        config.SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS +
+        config.SHUTDOWN_TELEMETRY_TIMEOUT_MS <=
+      config.SHUTDOWN_TIMEOUT_MS
+    );
+  },
+  {
+    message:
+      'Sum of drain, database disconnect, and telemetry timeouts must not exceed total shutdown timeout',
+    path: ['SHUTDOWN_TIMEOUT_MS'],
+  },
+);
 
 type ParsedApiConfig = z.infer<typeof ApiConfigSchema>;
 
@@ -37,9 +54,19 @@ type ParsedApiConfig = z.infer<typeof ApiConfigSchema>;
  * ApiConfig consumers outside the app may construct config objects without the
  * optional deployment-only keys; the schema still defaults them at parse time.
  */
-export type ApiConfig = Omit<ParsedApiConfig, 'TRUST_PROXY_HOPS' | 'SHUTDOWN_TIMEOUT_MS'> & {
+export type ApiConfig = Omit<
+  ParsedApiConfig,
+  | 'TRUST_PROXY_HOPS'
+  | 'SHUTDOWN_TIMEOUT_MS'
+  | 'SHUTDOWN_DRAIN_TIMEOUT_MS'
+  | 'SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS'
+  | 'SHUTDOWN_TELEMETRY_TIMEOUT_MS'
+> & {
   TRUST_PROXY_HOPS?: number;
   SHUTDOWN_TIMEOUT_MS?: number;
+  SHUTDOWN_DRAIN_TIMEOUT_MS?: number;
+  SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS?: number;
+  SHUTDOWN_TELEMETRY_TIMEOUT_MS?: number;
 };
 
 export function parseApiConfig(env: Record<string, string | undefined>): Readonly<ApiConfig> {

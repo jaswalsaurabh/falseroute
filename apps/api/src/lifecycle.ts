@@ -35,6 +35,28 @@ export interface ApiServerInstance {
 }
 
 /**
+ * Helper to run a task with an explicit timeout.
+ */
+async function withTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([task, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Starts the FalseRoute API server with full runtime lifecycle management,
  * discrete readiness state, connection tracking, and bounded graceful draining.
  */
@@ -80,7 +102,7 @@ export async function startApiServer(
 
     // Start listening only after initialization succeeds
     server = await new Promise<Server>((resolve, reject) => {
-      const s = app.listen(config.PORT, () => resolve(s));
+      const s = app.listen(config.PORT, '0.0.0.0', () => resolve(s));
       s.once('error', reject);
     });
 
@@ -103,55 +125,83 @@ export async function startApiServer(
       shutdownPromise = (async () => {
         // 1. Immediately mark the process unready to fail incoming readiness probes
         isReadyState = false;
+
+        const totalTimeoutMs = config.SHUTDOWN_TIMEOUT_MS ?? 8000;
+        const drainTimeoutMs = config.SHUTDOWN_DRAIN_TIMEOUT_MS ?? 5000;
+        const dbTimeoutMs = config.SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS ?? 2000;
+        const telemetryTimeoutMs = config.SHUTDOWN_TELEMETRY_TIMEOUT_MS ?? 1000;
+
         logger.info(
-          { reason, timeoutMs: config.SHUTDOWN_TIMEOUT_MS },
-          'API server draining connections',
+          { reason, totalTimeoutMs, drainTimeoutMs, dbTimeoutMs, telemetryTimeoutMs },
+          'API server draining connections and initiating graceful shutdown',
         );
 
-        // 2. Stop accepting new HTTP connections
-        if (server) {
-          const currentServer = server;
-          const drainPromise = new Promise<void>((resolve) => {
-            currentServer.close(() => resolve());
-          });
+        const shutdownTask = (async () => {
+          // Phase 1: Stop accepting new HTTP connections and drain active sockets within drain sub-budget
+          if (server) {
+            const currentServer = server;
+            const drainPromise = new Promise<void>((resolve) => {
+              currentServer.close(() => resolve());
+            });
 
-          // 3. Bound draining to SHUTDOWN_TIMEOUT_MS before forcing socket destruction
-          let drainTimer: NodeJS.Timeout | null = null;
-          const timeoutPromise = new Promise<void>((resolve) => {
-            drainTimer = setTimeout(() => {
+            try {
+              await withTimeout(
+                drainPromise,
+                drainTimeoutMs,
+                'API server graceful drain timeout exceeded',
+              );
+            } catch (drainErr) {
+              const errorType =
+                drainErr instanceof Error ? drainErr.constructor.name : 'UnknownError';
               logger.warn(
-                { openSockets: trackedSockets.size, timeoutMs: config.SHUTDOWN_TIMEOUT_MS },
+                { openSockets: trackedSockets.size, errorType, drainTimeoutMs },
                 'Graceful drain timeout exceeded; forcefully destroying remaining sockets',
               );
               for (const socket of trackedSockets) {
                 socket.destroy();
               }
-              resolve();
-            }, config.SHUTDOWN_TIMEOUT_MS);
-          });
-
-          await Promise.race([drainPromise, timeoutPromise]);
-          if (drainTimer) clearTimeout(drainTimer);
-        }
-
-        // 4. Disconnect PostgreSQL and flush telemetry
-        if (db) {
-          try {
-            await db.$disconnect();
-          } catch (dbErr) {
-            const errorType = dbErr instanceof Error ? dbErr.constructor.name : 'UnknownError';
-            logger.error({ errorType }, 'Error disconnecting database during API shutdown');
+            }
           }
-        }
+
+          // Phase 2: Disconnect PostgreSQL within DB sub-budget
+          if (db) {
+            try {
+              await withTimeout(
+                db.$disconnect(),
+                dbTimeoutMs,
+                'Database disconnect timeout exceeded during API shutdown',
+              );
+            } catch (dbErr) {
+              const errorType = dbErr instanceof Error ? dbErr.constructor.name : 'UnknownError';
+              logger.error({ errorType }, 'Error disconnecting database during API shutdown');
+            }
+          }
+
+          // Phase 3: Flush telemetry within telemetry sub-budget
+          try {
+            await withTimeout(
+              telemetry.shutdown(),
+              telemetryTimeoutMs,
+              'Telemetry shutdown timeout exceeded during API shutdown',
+            );
+          } catch (telErr) {
+            const errorType = telErr instanceof Error ? telErr.constructor.name : 'UnknownError';
+            logger.error({ errorType }, 'Error shutting down telemetry during API shutdown');
+          }
+        })();
 
         try {
-          await telemetry.shutdown();
-        } catch (telErr) {
-          const errorType = telErr instanceof Error ? telErr.constructor.name : 'UnknownError';
-          logger.error({ errorType }, 'Error shutting down telemetry during API shutdown');
+          await withTimeout(
+            shutdownTask,
+            totalTimeoutMs,
+            'Total API shutdown platform budget exceeded',
+          );
+        } catch (totalErr) {
+          const errorType = totalErr instanceof Error ? totalErr.constructor.name : 'UnknownError';
+          logger.error({ errorType }, 'API shutdown exceeded total platform budget');
         }
 
-        logger.info('FalseRoute API server shutdown cleanly');
+        logger.info('FalseRoute API server shutdown completed');
       })();
 
       return shutdownPromise;
