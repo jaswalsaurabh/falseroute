@@ -39,6 +39,7 @@ function isGenerated(filename, fullPath) {
     fullPath.includes('/node_modules/') ||
     fullPath.includes('/coverage/') ||
     fullPath.includes('/prisma/migrations/') ||
+    fullPath.includes('/generated/') ||
     fullPath.includes('/.turbo/')
   );
 }
@@ -54,10 +55,12 @@ function findSourceFiles(dir) {
         entry.name === 'node_modules' ||
         entry.name === 'dist' ||
         entry.name === 'build' ||
+        entry.name === 'generated' ||
         entry.name === '.turbo'
       ) {
         continue;
       }
+
       results.push(...findSourceFiles(fullPath));
     } else if (entry.isFile()) {
       const ext = extname(entry.name);

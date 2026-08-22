@@ -1,0 +1,28 @@
+{
+  "name": "@false-route/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "oxlint --deny-warnings",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests --exclude 'src/**/*.integration.test.ts'",
+    "test:integration": "vitest run src/system.integration.test.ts"
+  },
+  "dependencies": {
+    "@false-route/api": "workspace:*",
+    "@false-route/contracts": "workspace:*",
+    "@false-route/database": "workspace:*",
+    "@false-route/observability": "workspace:*",
+    "@false-route/worker": "workspace:*"
+  },
+  "devDependencies": {
+    "@false-route/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/supertest": "catalog:",
+    "supertest": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

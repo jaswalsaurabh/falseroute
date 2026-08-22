@@ -9,6 +9,9 @@ dist/
 build/
 out/
 .next/
+graphify-out/
+src/generated/
+packages/database/src/generated/
 
 # Coverage and test artifacts
 coverage/

@@ -1,0 +1,26 @@
+# Local development infrastructure only.
+# This compose file is not an alternative production deployment configuration.
+
+services:
+  postgres:
+    image: postgres:18.4
+    container_name: falseroute-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: falseroute
+      POSTGRES_PASSWORD: falseroute
+      POSTGRES_DB: falseroute_dev
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - falseroute_postgres_data:/var/lib/postgresql
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U falseroute -d falseroute_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  falseroute_postgres_data:
+    name: falseroute_postgres_data

@@ -3,9 +3,10 @@
   "extends": "./packages/typescript-config/node.json",
   "compilerOptions": {
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "checkJs": false,
     "noEmit": true
   },
-  "include": ["scripts/**/*.mjs"],
+  "include": ["lint-staged.config.ts", "scripts/**/*.mjs", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

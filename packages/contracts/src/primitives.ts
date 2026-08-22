@@ -67,5 +67,9 @@ export type FalseRouteIdentifier = z.infer<typeof FalseRouteIdentifierSchema>;
 /**
  * Application-defined deterministic deception policies.
  */
-export const PolicyIdentifierSchema = z.enum(['DECOY_CREDENTIAL_TRIGGER']);
+export const PolicyIdentifierSchema = z.enum([
+  'DECOY_CREDENTIAL_TRIGGER',
+  'HIGH_RISK_THRESHOLD',
+  'DEFAULT_OBSERVATION',
+]);
 export type PolicyIdentifier = z.infer<typeof PolicyIdentifierSchema>;

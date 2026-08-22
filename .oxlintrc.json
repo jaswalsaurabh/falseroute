@@ -7,6 +7,7 @@
     "perf": "warn"
   },
   "rules": {
+    "import/no-unassigned-import": "off",
     "no-unused-vars": [
       "error",
       {
@@ -39,7 +40,9 @@
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "tests/**/*.ts"],
-      "rules": {}
+      "rules": {
+        "no-await-in-loop": "off"
+      }
     }
   ]
 }

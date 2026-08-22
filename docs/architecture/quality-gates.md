@@ -1,31 +1,37 @@
 # Repository Quality Gates
 
 > **Status: Active engineering specification**  
-> **Last verified:** August 21, 2026
+> **Last verified:** August 22, 2026
 
 This document defines the automated quality gates and activation schedule for FalseRoute. It implements the public requirements in the [Repository Engineering Principles](engineering-principles.md).
 
 ## Quality Gate Matrix
 
-| Quality Gate                           | Enforcement Command                                   | Current Status          | Activation Phase / Condition                   | Blocks Acceptance |
-| -------------------------------------- | ----------------------------------------------------- | ----------------------- | ---------------------------------------------- | ----------------- |
-| **Code Formatting**                    | `pnpm format:check`                                   | **Active**              | Phase 2 (All files)                            | Yes               |
-| **Linting & Code Quality**             | `pnpm lint`                                           | **Active**              | Phase 2 (JS/TS/MJS)                            | Yes               |
-| **Type Integrity**                     | `pnpm typecheck`                                      | **Active**              | Phase 2 (TypeScript 6 strict mode)             | Yes               |
-| **Public Documentation Boundary**      | `pnpm check:docs`                                     | **Active**              | Phase 2 (Allowlist, links, Git ignore policy)  | Yes               |
-| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                             | **Active**              | Phase 2 (Exact versions, no pre-release)       | Yes               |
-| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                            | **Active**              | Phase 2 base; active on all first-party source | Yes               |
-| **Design Token Guardrails**            | `pnpm check:design-tokens`                            | **Active** (Clean skip) | Phase 2 base; evaluates on Web UI creation     | Yes               |
-| **Composite Quality Gate**             | `pnpm check`                                          | **Active**              | Phase 2 base; updated for Phase 3A             | Yes               |
-| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`           | **Active**              | Phase 3A (Zod contracts creation)              | Yes               |
-| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`              | **Active**              | Phase 3A (Environment schemas creation)        | Yes               |
-| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                             | **Active**              | Phase 3A (Shared foundation packages)          | Yes               |
-| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma validate` | **Deferred**            | Phase 3B (Database package creation)           | Yes               |
-| **Application Unit & Integration**     | `pnpm test` (apps/* suites)                           | **Deferred**            | Phase 4 (Application services creation)        | Yes               |
-| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                 | **Deferred**            | Phase 4 (Web dashboard & vertical slice)       | Yes               |
-| **Deterministic AI Replay Harness**    | `pnpm --filter @false-route/worker test:replay`       | **Deferred**            | Phase 4 (Gemini adapter creation)              | Yes               |
-| **CI Automation & Container Scans**    | `.github/workflows/ci.yml`                            | **Deferred**            | Phase 5 (Production hardening)                 | Yes               |
-| **Outbound HTTP & SSRF Hardening**     | `pnpm test:security`                                  | **Deferred**            | Phase 5 (Security boundaries)                  | Yes               |
+| Quality Gate                           | Enforcement Command                                    | Current Status | Activation Phase / Condition                    | Blocks Acceptance |
+| -------------------------------------- | ------------------------------------------------------ | -------------- | ----------------------------------------------- | ----------------- |
+| **Code Formatting**                    | `pnpm format:check`                                    | **Active**     | Phase 2 (All files)                             | Yes               |
+| **Linting & Code Quality**             | `pnpm lint`                                            | **Active**     | Phase 2 (JS/TS/MJS)                             | Yes               |
+| **Type Integrity**                     | `pnpm typecheck`                                       | **Active**     | Phase 2 (TypeScript 6 strict mode)              | Yes               |
+| **Public Documentation Boundary**      | `pnpm check:docs`                                      | **Active**     | Phase 2 (Allowlist, links, Git ignore policy)   | Yes               |
+| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                              | **Active**     | Phase 2 (Exact versions, no pre-release)        | Yes               |
+| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                             | **Active**     | Phase 2 base; active on all first-party source  | Yes               |
+| **Design Token Guardrails**            | `pnpm check:design-tokens`                             | **Active**     | Phase 2 base; evaluates 3-tier token hierarchy  | Yes               |
+| **Pre-Commit Staged Guard**            | `pnpm precommit:check`                                 | **Active**     | Phase 2 (Husky 9 & lint-staged 17 hook)         | Yes               |
+| **Secret & Credential Commit Guard**   | `pnpm check:secrets`                                   | **Active**     | Full tree in CI; staged files before commit     | Yes               |
+| **Composite Quality Gate**             | `pnpm check`                                           | **Active**     | Root automated gate                             | Yes               |
+| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`            | **Active**     | Phase 3A (Zod contracts creation)               | Yes               |
+| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`               | **Active**     | Phase 3A (Environment schemas creation)         | Yes               |
+| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                              | **Active**     | All foundation packages & apps                  | Yes               |
+| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma:validate`  | **Active**     | Phase 3B (Database package creation)            | Yes               |
+| **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**     | PostgreSQL integration tests                    | Yes               |
+| **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**     | Secret and credential redaction                 | Yes               |
+| **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**     | Operator token verification                     | Yes               |
+| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**     | Express 5 API unit & integration                | Yes               |
+| **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**     | Worker orchestration & policy determinism       | Yes               |
+| **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**     | React component & session state tests           | Yes               |
+| **System Integration Pipeline**        | `pnpm test:integration`                                | **Active**     | Full API -> DB -> Worker -> API integration     | Yes               |
+| **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**     | GitHub Actions automated validation             | Yes               |
+| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**   | Local backlog (reconsider before public deploy) | No                |
 
 ---
 
@@ -87,7 +93,7 @@ This document defines the automated quality gates and activation schedule for Fa
 - **Command:** `pnpm check:design-tokens`
 - **Script:** [scripts/check-design-tokens.mjs](../../scripts/check-design-tokens.mjs)
 - **Rules Enforced:**
-  - Clean skip during Phase 2 while Web UI directories are unpopulated.
+  - Enforces three-tier design token hierarchy across all Web and UI source files (`apps/web/src`, `packages/ui/src`).
   - Prohibits raw hexadecimal and RGB/HSL color literals outside token definition files.
   - Prohibits direct primitive token consumption in component code where semantic tokens are required.
 
@@ -96,32 +102,51 @@ This document defines the automated quality gates and activation schedule for Fa
 - **Command:** `pnpm check`
 - **Scope:** Runs `format:check`, `lint`, `typecheck`, `build`, `test`, and `check:repo` in sequence.
 
-### 9. Contract Schema Verification
+### 9. Pre-Commit Staged Guard
+
+- **Hook:** `.husky/pre-commit` (installed via `prepare: husky`)
+- **Command:** `pnpm precommit:check` (runs `lint-staged`, `check:docs`, `guard:credentials`, and `guard:prisma`)
+- **Configuration:** `lint-staged.config.ts`
+- **Actions Executed on Staged Changes:**
+  1. Formats staged files with Prettier (`--write --ignore-unknown`) and automatically re-stages them.
+  2. Runs Oxlint (`--deny-warnings`) against staged JavaScript and TypeScript files.
+  3. Validates public documentation boundaries and markdown links (`pnpm check:docs`).
+  4. Scans staged changes for committed credentials and secrets (`pnpm guard:credentials`).
+  5. Validates Prisma schema syntax and relations (`pnpm guard:prisma`).
+- **Boundary & CI Separation:** Pre-commit provides fast feedback during local development and intentionally avoids heavy operations (whole-repository typechecking, builds, unit tests, and integration test suites). Because developer hooks can be bypassed locally, secret scanning (`pnpm check:secrets`) and Prisma validation/migrations (`pnpm guard:prisma` and `migrate:deploy`) are independently executed and strictly enforced across the complete repository tree in CI.
+
+### 10. Secret & Credential Commit Guard
+
+- **Commands:** `pnpm check:secrets` and `pnpm check:secrets:staged`
+- **Scripts:** `scripts/check-secrets.ts`, `scripts/secret-scanner.ts`, and `.husky/pre-commit`
+- **Rules Enforced:**
+  - Rejects private environment files, private keys, keystores, provider-shaped access tokens, JSON Web Tokens, credential-bearing URLs, and probable hard-coded credentials.
+  - Scans test files and examples; explicit `dummy`, `not-a-real`, `example`, and equivalent placeholder markers remain permitted.
+  - Reports only location and finding category, never the matched credential value.
+  - Runs against staged content through the installed Git hook and against the repository tree in CI.
+
+### 11. Contract Schema Verification
 
 - **Command:** `pnpm --filter @false-route/contracts test`
 - **Scope:** Validates all Zod contract schemas, bounds, strict properties, enums, and provenance distinctions.
 
-### 10. Typed Configuration Validation
+### 12. Typed Configuration Validation
 
 - **Command:** `pnpm --filter @false-route/config test`
 - **Scope:** Validates environment variable parsing, default coercion, immutability, and safe secret-free error output.
+
+### 13. Prisma Schema & Migrations Validation
+
+- **Command:** `pnpm --filter @false-route/database prisma:validate`
+- **Scope:** Validates Prisma 7 schema syntax, relational integrity, and migration configuration through `scripts/prisma-guard.ts`.
+- **Safety Policy:** Blocks reset and direct database commands, prohibits data-loss flags, and permits development migrations only with `--create-only`.
 
 ---
 
 ## Deferred Quality Gates
 
-### Phase 3B: Database Foundation
+The following quality gates remain deferred in the local backlog and will be activated when corresponding production infrastructure or tooling is introduced:
 
-- **Prisma Schema Validation:** Validates `packages/database/prisma/schema.prisma` syntax and migration alignment.
-
-### Phase 4: Vertical Slice
-
-- **Vitest Unit & Integration Suites:** Validates policy engine determinism, API request validation, and worker processing.
-- **Playwright End-to-End Scenarios:** Verifies the full intrusion event intake, worker evaluation, and Web dashboard display flow with product identity verification.
-- **Gemini Adapter Replay & Fallback Tests:** Verifies bounded model authority, schema parsing, and degraded fallback handling.
-
-### Phase 5: Production Hardening
-
-- **GitHub Actions CI Quality Gates:** Automated execution of the full quality gate matrix on pull requests and branch pushes.
-- **Container Build & User Verification:** Validates Docker builds run as non-root users.
-- **Outbound HTTP Security Checks:** Enforces URL schemes, resolved IP ranges, streaming byte limits, and redirect constraints.
+- **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging.
+- **Container Build & Non-Root User Verification:** Automated validation of container image security and non-root execution.
+- **Outbound HTTP Security Checks:** Enforcement of scheme policy, DNS/IP validation, and streaming byte limits for outbound HTTP adapters.

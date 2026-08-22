@@ -58,6 +58,8 @@ describe('Contracts — Validation Primitives', () => {
     expect(PolicyIdentifierSchema.parse('DECOY_CREDENTIAL_TRIGGER')).toBe(
       'DECOY_CREDENTIAL_TRIGGER',
     );
+    expect(PolicyIdentifierSchema.parse('HIGH_RISK_THRESHOLD')).toBe('HIGH_RISK_THRESHOLD');
+    expect(PolicyIdentifierSchema.parse('DEFAULT_OBSERVATION')).toBe('DEFAULT_OBSERVATION');
     expect(() => PolicyIdentifierSchema.parse('UNKNOWN_POLICY')).toThrow();
   });
 });

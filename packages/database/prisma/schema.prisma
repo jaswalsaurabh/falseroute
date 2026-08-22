@@ -1,0 +1,105 @@
+// Prisma schema for FalseRoute persistence foundation.
+// Managed by Prisma 7.9.1 with PostgreSQL 18.4.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  ENRICHED
+  DECIDED
+  FAILED
+}
+
+enum ContainmentMode {
+  SIMULATED
+}
+
+enum EventType {
+  UNAUTHORIZED_ACCESS_ATTEMPT
+  CREDENTIAL_STUFFING
+  SUSPICIOUS_LOGIN
+}
+
+enum DeceptionAction {
+  ASSIGN_FALSE_ROUTE
+  ALLOW
+  ALERT_OPERATOR
+  OBSERVE
+}
+
+enum ProvenanceClassification {
+  OBSERVED
+  INFERRED
+  DERIVED
+  UNAVAILABLE
+  OPERATOR
+}
+
+model IntrusionEvent {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  occurredAt          DateTime                 @map("occurred_at")
+  receivedAt          DateTime                 @map("received_at")
+  correlationId       String                   @map("correlation_id") @db.VarChar(64)
+  sourceIp            String                   @map("source_ip") @db.Inet
+  targetAsset         String                   @map("target_asset") @db.VarChar(64)
+  eventType           EventType                @map("event_type")
+  failedLoginCount    Int                      @map("failed_login_count")
+  riskIndicators      String[]                 @map("risk_indicators")
+  containmentMode     ContainmentMode          @map("containment_mode")
+  usedDecoyCredential Boolean                  @map("used_decoy_credential")
+  decoyIdentifier     String?                  @map("decoy_identifier") @db.VarChar(64)
+  status              ProcessingStatus         @map("status")
+  provenance          ProvenanceClassification @map("provenance")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+
+  decision DeceptionDecision?
+
+  @@index([occurredAt])
+  @@index([status])
+  @@index([correlationId])
+  @@map("intrusion_events")
+}
+
+model DeceptionDecision {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  eventId            String                   @unique @map("event_id") @db.Uuid
+  correlationId      String                   @map("correlation_id") @db.VarChar(64)
+  action             DeceptionAction          @map("action")
+  assignedFalseRoute String?                  @map("assigned_false_route") @db.VarChar(64)
+  matchedPolicy      String                   @map("matched_policy") @db.VarChar(64)
+  reason             String                   @map("reason") @db.VarChar(1000)
+  containmentMode    ContainmentMode          @map("containment_mode")
+  decisionProvenance ProvenanceClassification @map("decision_provenance")
+  decidedAt          DateTime                 @map("decided_at")
+  modelEnrichment    Json?                    @map("model_enrichment") @db.JsonB
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+
+  event       IntrusionEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  auditRecord DecisionAuditRecord?
+
+  @@index([correlationId])
+  @@index([decidedAt])
+  @@map("deception_decisions")
+}
+
+model DecisionAuditRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  decisionId  String   @unique @map("decision_id") @db.Uuid
+  ruleVersion String   @map("rule_version") @db.VarChar(32)
+  evaluatedAt DateTime @map("evaluated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@map("decision_audit_records")
+}

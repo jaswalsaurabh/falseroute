@@ -1,0 +1,29 @@
+import { z } from 'zod';
+import { BaseEnvironmentSchema, ConfigurationError } from '@false-route/config';
+
+export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine(
+      (val) => val.startsWith('postgresql://') || val.startsWith('postgres://'),
+      'DATABASE_URL must be a valid PostgreSQL connection string',
+    ),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+  WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
+  ENABLE_TELEMETRY: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+});
+
+export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
+
+export function parseWorkerConfig(env: Record<string, string | undefined>): Readonly<WorkerConfig> {
+  const result = WorkerConfigSchema.safeParse(env);
+  if (!result.success) {
+    throw ConfigurationError.fromZodError(result.error);
+  }
+  return Object.freeze({ ...result.data });
+}

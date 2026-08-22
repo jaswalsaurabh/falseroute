@@ -78,3 +78,24 @@ export {
   DeceptionDecisionSchema,
   type DeceptionDecision,
 } from './deception-decision.js';
+
+export {
+  CreateIntrusionEventRequestSchema,
+  type CreateIntrusionEventRequest,
+  CreateIntrusionEventResponseSchema,
+  type CreateIntrusionEventResponse,
+  ListIntrusionEventsQuerySchema,
+  type ListIntrusionEventsQuery,
+  ListIntrusionEventsResponseSchema,
+  type ListIntrusionEventsResponse,
+  GetIntrusionEventResponseSchema,
+  type GetIntrusionEventResponse,
+  GetDeceptionDecisionResponseSchema,
+  type GetDeceptionDecisionResponse,
+  ApiErrorResponseSchema,
+  type ApiErrorResponse,
+  HealthCheckResponseSchema,
+  type HealthCheckResponse,
+  ReadinessCheckResponseSchema,
+  type ReadinessCheckResponse,
+} from './api.js';

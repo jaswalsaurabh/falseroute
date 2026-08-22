@@ -1,0 +1,105 @@
+:root {
+  /* Tier 2 Semantic Surface & Background Tokens */
+  --surface-app: var(--color-gray-950);
+  --surface-header: var(--color-gray-900);
+  --surface-card: var(--color-gray-900);
+  --surface-card-hover: var(--color-gray-800);
+  --surface-card-accent: var(--color-gray-800);
+  --surface-input: var(--color-gray-900);
+  --surface-modal: var(--color-gray-900);
+  --surface-backdrop: var(--color-black-alpha-75);
+  --layer-modal: var(--z-index-modal);
+
+  /* Tier 2 Semantic Borders */
+
+  --border-subtle: var(--color-gray-800);
+  --border-default: var(--color-gray-700);
+  --border-strong: var(--color-gray-600);
+  --border-focus: var(--color-blue-500);
+  --border-danger: var(--color-red-500);
+  --border-success: var(--color-emerald-500);
+
+  /* Tier 2 Semantic Typography */
+  --text-main: var(--color-gray-50);
+  --text-body: var(--color-gray-200);
+  --text-secondary: var(--color-gray-400);
+  --text-muted: var(--color-gray-500);
+  --text-inverse: var(--color-gray-950);
+
+  /* Tier 2 Semantic Actions */
+  --action-primary-bg: var(--color-blue-600);
+  --action-primary-hover: var(--color-blue-500);
+  --action-primary-text: var(--color-gray-50);
+
+  --action-secondary-bg: var(--color-gray-800);
+  --action-secondary-hover: var(--color-gray-700);
+  --action-secondary-text: var(--color-gray-200);
+
+  --action-danger-bg: var(--color-red-600);
+  --action-danger-hover: var(--color-red-500);
+  --action-danger-text: var(--color-gray-50);
+
+  --action-disabled-bg: var(--color-gray-800);
+  --action-disabled-text: var(--color-gray-600);
+
+  /* Tier 2 Semantic Status & Provenance */
+  --status-success-bg: var(--color-emerald-950);
+  --status-success-border: var(--color-emerald-600);
+  --status-success-text: var(--color-emerald-400);
+
+  --status-warning-bg: var(--color-amber-950);
+  --status-warning-border: var(--color-amber-600);
+  --status-warning-text: var(--color-amber-400);
+
+  --status-danger-bg: var(--color-red-950);
+  --status-danger-border: var(--color-red-600);
+  --status-danger-text: var(--color-red-400);
+
+  --status-info-bg: var(--color-blue-950);
+  --status-info-border: var(--color-blue-600);
+  --status-info-text: var(--color-blue-400);
+
+  --status-simulated-bg: var(--color-purple-950);
+  --status-simulated-border: var(--color-purple-600);
+  --status-simulated-text: var(--color-purple-300);
+
+  --status-neutral-bg: var(--color-gray-800);
+  --status-neutral-border: var(--color-gray-600);
+  --status-neutral-text: var(--color-gray-300);
+
+  /* Tier 2 Semantic Fonts & Sizes */
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --text-size-xs: var(--font-size-xs);
+  --text-size-sm: var(--font-size-sm);
+  --text-size-base: var(--font-size-base);
+  --text-size-lg: var(--font-size-lg);
+  --text-size-xl: var(--font-size-xl);
+  --text-size-2xl: var(--font-size-2xl);
+
+  /* Tier 2 Semantic Spacing */
+  --space-unit-xs: var(--space-1);
+  --space-unit-sm: var(--space-2);
+  --space-unit-md: var(--space-4);
+  --space-unit-lg: var(--space-6);
+  --space-unit-xl: var(--space-8);
+  --space-unit-2xl: var(--space-12);
+
+  /* Tier 2 Semantic Radii */
+  --radius-badge: var(--radius-full);
+  --radius-button: var(--radius-md);
+  --radius-card: var(--radius-lg);
+  --radius-input: var(--radius-md);
+  --radius-modal: var(--radius-lg);
+
+  /* Tier 2 Semantic Elevations */
+  --elevation-card: var(--shadow-sm);
+  --elevation-modal: var(--shadow-lg);
+
+  /* Tier 2 Focus & Motion */
+  --focus-ring: var(--color-blue-500);
+  --motion-fast: 150ms ease-in-out;
+  --motion-normal: 250ms ease-in-out;
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@false-route/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/prisma-guard.ts generate && tsc -p tsconfig.build.json",
+    "lint": "oxlint --deny-warnings",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude 'src/**/*.integration.test.ts'",
+    "test:integration": "vitest run src/persistence.integration.test.ts",
+    "prisma:format": "node ../../scripts/prisma-guard.ts format",
+    "prisma:validate": "node ../../scripts/prisma-guard.ts validate",
+    "prisma:generate": "node ../../scripts/prisma-guard.ts generate",
+    "migrate:dev": "node ../../scripts/prisma-guard.ts migrate dev --create-only",
+    "migrate:deploy": "node ../../scripts/prisma-guard.ts migrate deploy",
+    "setup:test": "node scripts/setup-test-db.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "catalog:",
+    "@prisma/client": "catalog:",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@false-route/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "dotenv": "catalog:",
+    "prisma": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
