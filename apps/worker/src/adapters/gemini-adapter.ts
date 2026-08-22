@@ -1,5 +1,4 @@
 import { GoogleGenAI } from '@google/genai';
-import { ZodError } from 'zod';
 import {
   type IntrusionEvent,
   type ModelEnrichmentResult,
@@ -7,44 +6,27 @@ import {
   ModelEnrichmentResultSchema,
   DegradedModelResultSchema,
 } from '@false-route/contracts';
+import { classifyProviderError, type ClassifiedProviderError } from './error-classifier.js';
+import { ConcurrencyLimiter } from './concurrency-limiter.js';
+import { RetryPolicy, type RetryPolicyOptions } from './retry-policy.js';
 
-export interface GeminiAdapterOptions {
+export interface GeminiAdapterOptions extends RetryPolicyOptions {
   readonly apiKey: string;
   readonly modelName: string;
-  readonly timeoutMs?: number;
+  readonly requestTimeoutMs?: number;
+  readonly operationDeadlineMs?: number;
+  readonly maxConcurrency?: number;
+  readonly maxQueueSize?: number;
 }
 
 export interface GeminiEnrichmentAdapter {
-  enrichEvent(event: IntrusionEvent): Promise<ModelEnrichmentResult | DegradedModelResult>;
+  enrichEvent(
+    event: IntrusionEvent,
+    parentSignal?: AbortSignal,
+  ): Promise<ModelEnrichmentResult | DegradedModelResult>;
 }
 
-/**
- * Adapter integrating Google Gen AI SDK with strict schema decoding,
- * prompt bounding, and fallback to degraded states on timeout or failure.
- */
-export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
-  private readonly client: GoogleGenAI;
-  private readonly modelName: string;
-  private readonly timeoutMs: number;
-
-  constructor(options: GeminiAdapterOptions) {
-    this.client = new GoogleGenAI({ apiKey: options.apiKey });
-    this.modelName = options.modelName;
-    this.timeoutMs = options.timeoutMs ?? 5000;
-  }
-
-  async enrichEvent(event: IntrusionEvent): Promise<ModelEnrichmentResult | DegradedModelResult> {
-    const evaluatedAt = new Date().toISOString();
-
-    const minimizedInput = {
-      eventType: event.eventType,
-      targetAsset: event.targetAsset,
-      failedLoginCount: event.failedLoginCount,
-      riskIndicators: event.riskIndicators,
-      usedDecoyCredential: event.usedDecoyCredential,
-    };
-
-    const systemInstruction = `You are a cybersecurity deception assistant evaluating a simulated intrusion event.
+const DEFAULT_SYSTEM_INSTRUCTION = `You are a cybersecurity deception assistant evaluating a simulated intrusion event.
 Analyze the event and provide a structured JSON assessment adhering to:
 - recommendedAction: must be one of "ASSIGN_FALSE_ROUTE", "ALLOW", "ALERT_OPERATOR", "OBSERVE"
 - suggestedFalseRoute: "mock-admin-decoy" if recommending ASSIGN_FALSE_ROUTE, omit otherwise
@@ -54,95 +36,232 @@ Analyze the event and provide a structured JSON assessment adhering to:
 
 Return ONLY valid JSON.`;
 
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      abortController.abort(new Error(`Gemini request exceeded deadline of ${this.timeoutMs}ms`));
-    }, this.timeoutMs);
+/**
+ * Robust adapter integrating Google Gen AI SDK with strict schema decoding,
+ * complete operation deadlines, bounded concurrency, and finite transient retries.
+ */
+export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
+  private readonly client: GoogleGenAI;
+  private readonly modelName: string;
+  private readonly requestTimeoutMs: number;
+  private readonly operationDeadlineMs: number;
+  private readonly limiter: ConcurrencyLimiter;
+  private readonly retryPolicy: RetryPolicy;
+
+  constructor(options: GeminiAdapterOptions) {
+    this.client = new GoogleGenAI({ apiKey: options.apiKey });
+    this.modelName = options.modelName;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 3000;
+    this.operationDeadlineMs = options.operationDeadlineMs ?? 8000;
+    this.limiter = new ConcurrencyLimiter({
+      maxConcurrency: options.maxConcurrency ?? 2,
+      maxQueueSize: options.maxQueueSize ?? 0,
+    });
+    this.retryPolicy = new RetryPolicy(options);
+  }
+
+  async enrichEvent(
+    event: IntrusionEvent,
+    parentSignal?: AbortSignal,
+  ): Promise<ModelEnrichmentResult | DegradedModelResult> {
+    const evaluatedAt = new Date().toISOString();
+    const deadlineAt = Date.now() + this.operationDeadlineMs;
+
+    const operationController = new AbortController();
+    const operationTimeoutId = setTimeout(() => {
+      operationController.abort(
+        new Error(
+          `Gemini complete operation deadline exceeded after ${this.operationDeadlineMs}ms`,
+        ),
+      );
+    }, this.operationDeadlineMs);
+
+    const onParentAbort = () => {
+      operationController.abort(parentSignal?.reason ?? new Error('Parent operation aborted'));
+    };
+
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        onParentAbort();
+      } else {
+        parentSignal.addEventListener('abort', onParentAbort, { once: true });
+      }
+    }
 
     try {
-      // Execute request with bounded tokens and deadline
-      const responsePromise = this.client.models.generateContent({
-        model: this.modelName,
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: JSON.stringify(minimizedInput) }],
-          },
-        ],
-        config: {
-          abortSignal: abortController.signal,
-          systemInstruction,
-          responseMimeType: 'application/json',
-          maxOutputTokens: 1024,
-        },
-      });
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        abortController.signal.addEventListener('abort', () => {
-          reject(abortController.signal.reason ?? new Error('Gemini request timeout'));
-        });
-      });
-
-      const response = await Promise.race([responsePromise, timeoutPromise]);
-      const rawText = response.text?.trim() ?? '';
-
-      if (!rawText) {
-        return DegradedModelResultSchema.parse({
-          correlationId: event.correlationId,
-          status: 'INVALID_OUTPUT',
-          reason: 'Gemini returned empty response text',
-          provenance: 'UNAVAILABLE',
+      return await this.limiter.execute(async (limiterSignal) => {
+        return this.executeWithRetries(
+          event,
           evaluatedAt,
-        });
+          deadlineAt,
+          operationController.signal,
+          limiterSignal,
+        );
+      }, operationController.signal);
+    } catch (err) {
+      const classified = classifyProviderError(err);
+      return this.buildDegradedResult(event.correlationId, classified, evaluatedAt);
+    } finally {
+      clearTimeout(operationTimeoutId);
+      if (parentSignal) {
+        parentSignal.removeEventListener('abort', onParentAbort);
+      }
+    }
+  }
+
+  private async executeWithRetries(
+    event: IntrusionEvent,
+    evaluatedAt: string,
+    deadlineAt: number,
+    operationSignal: AbortSignal,
+    limiterSignal?: AbortSignal,
+  ): Promise<ModelEnrichmentResult | DegradedModelResult> {
+    const minimizedInput = {
+      eventType: event.eventType,
+      targetAsset: event.targetAsset,
+      failedLoginCount: event.failedLoginCount,
+      riskIndicators: event.riskIndicators,
+      usedDecoyCredential: event.usedDecoyCredential,
+    };
+
+    let lastClassified: ClassifiedProviderError | null = null;
+
+    for (let attempt = 0; attempt <= this.retryPolicy.maxRetries; attempt++) {
+      const remainingOperationMs = deadlineAt - Date.now();
+
+      if (remainingOperationMs <= 0 || operationSignal.aborted) {
+        const timeoutClassification: ClassifiedProviderError = {
+          kind: 'TIMEOUT',
+          isRetriable: false,
+          status: 'TIMEOUT',
+          sanitizedReason: `Gemini complete operation deadline exceeded after ${this.operationDeadlineMs}ms`,
+        };
+        return this.buildDegradedResult(event.correlationId, timeoutClassification, evaluatedAt);
       }
 
-      const parsedJson = JSON.parse(rawText) as Record<string, unknown>;
+      const attemptTimeoutMs = Math.min(this.requestTimeoutMs, remainingOperationMs);
+      const attemptController = new AbortController();
+      const attemptTimerId = setTimeout(() => {
+        attemptController.abort(
+          new Error(`Gemini single-request timeout exceeded (${attemptTimeoutMs}ms)`),
+        );
+      }, attemptTimeoutMs);
 
-      // Attach trusted adapter-owned metadata
-      const rawEnrichment = {
-        recommendedAction: parsedJson.recommendedAction,
-        suggestedFalseRoute: parsedJson.suggestedFalseRoute,
-        confidence: parsedJson.confidence,
-        summary: parsedJson.summary,
-        explanation: parsedJson.explanation,
-        provenance: 'INFERRED' as const,
-        correlationId: event.correlationId,
-        modelIdentifier: this.modelName,
-        evaluatedAt,
+      const abortAttempt = () => {
+        attemptController.abort(operationSignal.reason ?? new Error('Operation aborted'));
       };
 
-      return ModelEnrichmentResultSchema.parse(rawEnrichment);
-    } catch (err) {
-      const isTimeout =
-        (err instanceof Error &&
-          (err.message.includes('deadline') ||
-            err.message.includes('timeout') ||
-            err.name === 'AbortError')) ||
-        abortController.signal.aborted;
-      const isSyntax = err instanceof SyntaxError;
-      const isZodError = err instanceof ZodError;
-      const isInvalidOutput = isSyntax || isZodError;
+      operationSignal.addEventListener('abort', abortAttempt, { once: true });
+      if (limiterSignal && limiterSignal !== operationSignal) {
+        limiterSignal.addEventListener('abort', abortAttempt, { once: true });
+      }
 
-      const status = isTimeout ? 'TIMEOUT' : isInvalidOutput ? 'INVALID_OUTPUT' : 'UNAVAILABLE';
-      const reason = isTimeout
-        ? `Gemini request exceeded deadline of ${this.timeoutMs}ms`
-        : isSyntax
-          ? 'Gemini returned non-JSON or invalid structured syntax'
-          : isZodError
-            ? `Gemini returned schema-invalid structured output: ${err.message}`
-            : err instanceof Error
-              ? `Gemini upstream error: ${err.message}`
-              : 'Gemini upstream service unavailable';
-
-      return DegradedModelResultSchema.parse({
-        correlationId: event.correlationId,
-        status,
-        reason: reason.slice(0, 500),
-        provenance: 'UNAVAILABLE',
-        evaluatedAt,
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (attemptController.signal.aborted) {
+          reject(attemptController.signal.reason ?? new Error('Request aborted'));
+          return;
+        }
+        attemptController.signal.addEventListener(
+          'abort',
+          () => {
+            reject(attemptController.signal.reason ?? new Error('Request aborted'));
+          },
+          { once: true },
+        );
       });
-    } finally {
-      clearTimeout(timeoutId);
+
+      try {
+        const responsePromise = this.client.models.generateContent({
+          model: this.modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: JSON.stringify(minimizedInput) }],
+            },
+          ],
+          config: {
+            abortSignal: attemptController.signal,
+            systemInstruction: DEFAULT_SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json',
+            maxOutputTokens: 1024,
+          },
+        });
+
+        // eslint-disable-next-line no-await-in-loop
+        const response = await Promise.race([responsePromise, abortPromise]);
+        const rawText = response.text?.trim() ?? '';
+
+        if (!rawText) {
+          return this.buildDegradedResult(
+            event.correlationId,
+            {
+              kind: 'SCHEMA_INVALID',
+              isRetriable: false,
+              status: 'INVALID_OUTPUT',
+              sanitizedReason: 'Gemini returned empty response text',
+            },
+            evaluatedAt,
+          );
+        }
+
+        const parsedJson = JSON.parse(rawText) as Record<string, unknown>;
+        return ModelEnrichmentResultSchema.parse({
+          recommendedAction: parsedJson['recommendedAction'],
+          suggestedFalseRoute: parsedJson['suggestedFalseRoute'],
+          confidence: parsedJson['confidence'],
+          summary: parsedJson['summary'],
+          explanation: parsedJson['explanation'],
+          provenance: 'INFERRED' as const,
+          correlationId: event.correlationId,
+          modelIdentifier: this.modelName,
+          evaluatedAt,
+        });
+      } catch (err) {
+        lastClassified = classifyProviderError(err);
+
+        if (!lastClassified.isRetriable || attempt >= this.retryPolicy.maxRetries) {
+          return this.buildDegradedResult(event.correlationId, lastClassified, evaluatedAt);
+        }
+
+        const delay = this.retryPolicy.calculateDelay(attempt);
+        if (delay >= deadlineAt - Date.now()) {
+          return this.buildDegradedResult(event.correlationId, lastClassified, evaluatedAt);
+        }
+
+        // eslint-disable-next-line no-await-in-loop
+        await this.retryPolicy.sleep(delay, operationSignal);
+      } finally {
+        clearTimeout(attemptTimerId);
+        operationSignal.removeEventListener('abort', abortAttempt);
+        if (limiterSignal && limiterSignal !== operationSignal) {
+          limiterSignal.removeEventListener('abort', abortAttempt);
+        }
+      }
     }
+
+    return this.buildDegradedResult(
+      event.correlationId,
+      lastClassified ?? {
+        kind: 'TERMINAL',
+        isRetriable: false,
+        status: 'UNAVAILABLE',
+        sanitizedReason: 'Retry attempts exhausted without successful response',
+      },
+      evaluatedAt,
+    );
+  }
+
+  private buildDegradedResult(
+    correlationId: string,
+    classified: ClassifiedProviderError,
+    evaluatedAt: string,
+  ): DegradedModelResult {
+    return DegradedModelResultSchema.parse({
+      correlationId,
+      status: classified.status,
+      reason: classified.sanitizedReason,
+      provenance: 'UNAVAILABLE',
+      evaluatedAt,
+    });
   }
 }

@@ -11,6 +11,11 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     ),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(3000),
+  GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(8000),
+  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
+  GEMINI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(2),
+  GEMINI_MAX_QUEUE_SIZE: z.coerce.number().int().min(0).max(100).default(0),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
   ENABLE_TELEMETRY: z
     .string()

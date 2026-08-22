@@ -135,6 +135,44 @@ describe('EventProcessor', () => {
     expect(persistedDecisions.length).toBe(1);
   });
 
+  it('completes deterministic decision when provider is rate limited (429)', async () => {
+    const { repository, persistedDecisions, claimedEvents } = createMockRepository();
+    claimedEvents.push(mockDecoyEvent);
+
+    const rateLimitAdapter = new FakeGeminiAdapter('rate-limited');
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: rateLimitAdapter,
+      logger: noopLogger,
+    });
+
+    const result = await processor.processNextPending();
+
+    expect(result.processed).toBe(true);
+    expect(result.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(result.decision?.modelEnrichment?.provenance).toBe('UNAVAILABLE');
+    expect(persistedDecisions.length).toBe(1);
+  });
+
+  it('completes deterministic decision when provider concurrency is saturated', async () => {
+    const { repository, persistedDecisions, claimedEvents } = createMockRepository();
+    claimedEvents.push(mockDecoyEvent);
+
+    const saturatedAdapter = new FakeGeminiAdapter('concurrency-saturation');
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: saturatedAdapter,
+      logger: noopLogger,
+    });
+
+    const result = await processor.processNextPending();
+
+    expect(result.processed).toBe(true);
+    expect(result.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(result.decision?.modelEnrichment?.provenance).toBe('UNAVAILABLE');
+    expect(persistedDecisions.length).toBe(1);
+  });
+
   it('completes deterministic decision when Gemini returns invalid output', async () => {
     const { repository, persistedDecisions, claimedEvents } = createMockRepository();
     claimedEvents.push(mockDecoyEvent);

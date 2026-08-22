@@ -17,7 +17,23 @@ export {
   type GeminiAdapterOptions,
   type GeminiEnrichmentAdapter,
 } from './adapters/gemini-adapter.js';
-export { FakeGeminiAdapter, type FakeAdapterMode } from './adapters/fake-gemini-adapter.js';
+export {
+  FakeGeminiAdapter,
+  type FakeAdapterMode,
+  type FakeAdapterOptions,
+} from './adapters/fake-gemini-adapter.js';
+export {
+  ConcurrencyLimiter,
+  ConcurrencySaturationError,
+  type ConcurrencyLimiterOptions,
+} from './adapters/concurrency-limiter.js';
+export {
+  classifyProviderError,
+  extractHttpStatus,
+  sanitizeErrorMessage,
+  type ClassifiedProviderError,
+  type ProviderErrorKind,
+} from './adapters/error-classifier.js';
 export { PrismaWorkerRepository, type WorkerRepository } from './persistence/worker-repository.js';
 export {
   EventProcessor,
@@ -48,10 +64,24 @@ async function main() {
 
   let geminiAdapter: GeminiEnrichmentAdapter;
   if (config.GEMINI_API_KEY) {
-    logger.info({ model: config.GEMINI_MODEL }, 'Initializing Live Gemini adapter');
+    logger.info(
+      {
+        model: config.GEMINI_MODEL,
+        requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
+        operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
+        maxRetries: config.GEMINI_MAX_RETRIES,
+        maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
+      },
+      'Initializing Live Gemini adapter with bounded failure isolation',
+    );
     geminiAdapter = new LiveGeminiAdapter({
       apiKey: config.GEMINI_API_KEY,
       modelName: config.GEMINI_MODEL,
+      requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
+      operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
+      maxRetries: config.GEMINI_MAX_RETRIES,
+      maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
+      maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
     });
   } else {
     logger.warn('No GEMINI_API_KEY provided; AI enrichment is unavailable (degraded state)');
