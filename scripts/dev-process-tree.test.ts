@@ -14,3 +14,81 @@ test('process-tree termination targets the complete POSIX process group', () => 
 
   assert.deepEqual(signals, [{ pid: -12345, signal: 'SIGTERM' }]);
 });
+
+test('process-tree termination on Windows invokes taskkill with process tree and PID', () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const child = { pid: 54321, kill: () => true } as unknown as ChildProcess;
+
+  terminateProcessTree(child, 'SIGTERM', {
+    platform: 'win32',
+    spawnSync: (command: string, args: readonly string[]) => {
+      calls.push({ command, args: [...args] });
+      return {
+        status: 0,
+        signal: null,
+      };
+    },
+  });
+
+  assert.deepEqual(calls, [{ command: 'taskkill', args: ['/PID', '54321', '/T'] }]);
+});
+
+test('process-tree termination on Windows includes /F flag for SIGKILL', () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const child = { pid: 54321, kill: () => true } as unknown as ChildProcess;
+
+  terminateProcessTree(child, 'SIGKILL', {
+    platform: 'win32',
+    spawnSync: (command: string, args: readonly string[]) => {
+      calls.push({ command, args: [...args] });
+      return {
+        status: 0,
+        signal: null,
+      };
+    },
+  });
+
+  assert.deepEqual(calls, [{ command: 'taskkill', args: ['/PID', '54321', '/T', '/F'] }]);
+});
+
+test('process-tree termination falls back to child.kill on ESRCH or when pid is undefined', () => {
+  let fallbackKilled = false;
+  let signalReceived = '';
+
+  const childWithoutPid = {
+    pid: undefined,
+    kill: (sig: NodeJS.Signals | string) => {
+      fallbackKilled = true;
+      signalReceived = String(sig);
+      return true;
+    },
+  } as unknown as ChildProcess;
+
+  terminateProcessTree(childWithoutPid, 'SIGINT', {
+    platform: 'linux',
+  });
+
+  assert.equal(fallbackKilled, true);
+  assert.equal(signalReceived, 'SIGINT');
+
+  // Test ESRCH fallback
+  let esrchFallback = false;
+  const childWithEsrch = {
+    pid: 99999,
+    kill: () => {
+      esrchFallback = true;
+      return true;
+    },
+  } as unknown as ChildProcess;
+
+  terminateProcessTree(childWithEsrch, 'SIGTERM', {
+    platform: 'linux',
+    processKill: () => {
+      const err = new Error('ESRCH') as NodeJS.ErrnoException;
+      err.code = 'ESRCH';
+      throw err;
+    },
+  });
+
+  assert.equal(esrchFallback, true);
+});
