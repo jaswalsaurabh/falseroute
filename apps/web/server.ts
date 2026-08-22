@@ -28,18 +28,30 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' /api/;",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';",
 };
 
 export function createStaticServer(staticDir = DIST_DIR): http.Server {
   return http.createServer((req, res) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405, { 'Content-Type': 'text/plain' });
-      res.end('Method Not Allowed');
+    const urlPath = (req.url || '/').split('?')[0] || '/';
+
+    // Fast-fail API requests: static server must never return HTML or 405 for /api/*
+    if (urlPath === '/api' || urlPath.startsWith('/api/')) {
+      res.writeHead(404, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
+      res.end(
+        JSON.stringify({
+          error: 'NOT_FOUND',
+          message: 'API endpoint not served by static frontend server',
+        }),
+      );
       return;
     }
 
-    const urlPath = (req.url || '/').split('?')[0] || '/';
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+      res.end('Method Not Allowed');
+      return;
+    }
 
     if (urlPath === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });

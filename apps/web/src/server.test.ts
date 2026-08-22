@@ -36,6 +36,7 @@ describe('Web Production Static Server', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('x-frame-options')).toBe('DENY');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('content-security-policy')).toContain("connect-src 'self'");
     const body = await res.json();
     expect(body.status).toBe('ok');
   });
@@ -57,6 +58,32 @@ describe('Web Production Static Server', () => {
     expect(routeRes.headers.get('content-type')).toContain('text/html');
     const text = await routeRes.text();
     expect(text).toContain('FalseRoute UI');
+  });
+
+  it('does not capture /api/* with SPA fallback and returns 404 JSON for GET and POST', async () => {
+    // GET API path
+    const getRes = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
+    expect(getRes.status).toBe(404);
+    expect(getRes.headers.get('content-type')).toContain('application/json');
+    const getBody = (await getRes.json()) as { error: string; message: string };
+    expect(getBody.error).toBe('NOT_FOUND');
+
+    // POST API path
+    const postRes = await fetch(`http://127.0.0.1:${port}/api/v1/intrusion-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(postRes.status).toBe(404);
+    expect(postRes.headers.get('content-type')).toContain('application/json');
+    const postBody = (await postRes.json()) as { error: string; message: string };
+    expect(postBody.error).toBe('NOT_FOUND');
+  });
+
+  it('rejects unsupported HTTP methods on static routes with 405 and security headers', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/bundle.js`, { method: 'DELETE' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
   it('rejects path traversal attempts', async () => {
