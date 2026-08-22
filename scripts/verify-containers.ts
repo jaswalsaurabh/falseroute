@@ -185,17 +185,108 @@ export async function runContainerVerification(
     }
   }
 
-  // 3. API Container Smoke Test (Liveness & Read-only FS)
-  const apiContainerName = `falseroute-api-smoke-${Date.now()}`;
+  // Setup isolated Docker bridge network and ephemeral PostgreSQL container
+  const networkName = `falseroute-verify-net-${Date.now()}`;
+  const pgContainerName = `falseroute-pg-smoke-${Date.now()}`;
+  const pgHostPort = 3104;
+  const pgInternalUrl = `postgresql://falseroute:falseroute@${pgContainerName}:5432/falseroute_test?schema=public`;
+  const pgHostUrl = `postgresql://falseroute:falseroute@127.0.0.1:${pgHostPort}/falseroute_test?schema=public`;
+
+  const apiConnectedContainerName = `falseroute-api-smoke-${Date.now()}`;
+  const apiDisconnectedContainerName = `falseroute-api-disc-smoke-${Date.now()}`;
+  const webContainerName = `falseroute-web-smoke-${Date.now()}`;
+  const workerContainerName = `falseroute-worker-smoke-${Date.now()}`;
+
   const apiPort = 3105;
-  log(`Starting API container smoke instance (${apiContainerName}) on port ${apiPort}...`);
+  const webPort = 3106;
+  const workerPort = 3107;
 
   try {
-    const runResult = runner([
+    log(`Creating isolated Docker network (${networkName})...`);
+    const netResult = runner(['network', 'create', networkName]);
+    if (netResult.status !== 0) {
+      logError(`Failed to create Docker network: ${netResult.stderr?.toString('utf8') ?? 'error'}`);
+      return false;
+    }
+
+    log(`Starting ephemeral PostgreSQL test database (${pgContainerName})...`);
+    const pgRunResult = runner([
       'run',
       '-d',
       '--name',
-      apiContainerName,
+      pgContainerName,
+      '--network',
+      networkName,
+      '-p',
+      `${pgHostPort}:5432`,
+      '-e',
+      'POSTGRES_USER=falseroute',
+      '-e',
+      'POSTGRES_PASSWORD=falseroute',
+      '-e',
+      'POSTGRES_DB=falseroute_test',
+      'postgres:17-alpine',
+    ]);
+
+    if (pgRunResult.status !== 0) {
+      logError(
+        `Failed to start test PostgreSQL container: ${pgRunResult.stderr?.toString('utf8') ?? 'error'}`,
+      );
+      return false;
+    }
+
+    // Wait for PostgreSQL to accept connections
+    log('Waiting for PostgreSQL to be ready...');
+    let pgReady = false;
+    for (let i = 0; i < 30; i += 1) {
+      const readyCheck = runner([
+        'exec',
+        pgContainerName,
+        'pg_isready',
+        '-U',
+        'falseroute',
+        '-d',
+        'falseroute_test',
+      ]);
+      if (readyCheck.status === 0) {
+        pgReady = true;
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    if (!pgReady) {
+      logError('PostgreSQL container failed to become ready within timeout');
+      return false;
+    }
+    log('✅ Ephemeral PostgreSQL database is ready');
+
+    // Run Prisma migrations against the test database
+    log('Deploying Prisma schema migrations to test database...');
+    const migrateResult = spawnSync('pnpm', ['db:migrate'], {
+      env: { ...process.env, DATABASE_URL: pgHostUrl },
+      shell: false,
+      stdio: 'pipe',
+    });
+
+    if (migrateResult.status !== 0) {
+      logError(
+        `Prisma migration failed on test database: ${migrateResult.stderr?.toString('utf8') ?? 'error'}`,
+      );
+      return false;
+    }
+    log('✅ Prisma migrations applied successfully to test database');
+
+    // 3. API Container Smoke Test (Connected + Read-only FS)
+    log(`Starting connected API container (${apiConnectedContainerName}) on port ${apiPort}...`);
+    const apiRunResult = runner([
+      'run',
+      '-d',
+      '--name',
+      apiConnectedContainerName,
+      '--network',
+      networkName,
       '--read-only',
       '--tmpfs',
       '/tmp',
@@ -204,7 +295,7 @@ export async function runContainerVerification(
       '-e',
       'PORT=3000',
       '-e',
-      'DATABASE_URL=postgresql://dummy:dummy@127.0.0.1:5434/dummy',
+      `DATABASE_URL=${pgInternalUrl}`,
       '-e',
       'OPERATOR_ACCESS_TOKEN=not-a-real-smoke-test-token-1234',
       '-e',
@@ -212,56 +303,72 @@ export async function runContainerVerification(
       'falseroute-api:test',
     ]);
 
-    if (runResult.status !== 0) {
-      logError(`Failed to start API smoke container: ${runResult.stderr.toString('utf8')}`);
+    if (apiRunResult.status !== 0) {
+      logError(
+        `Failed to start API smoke container: ${apiRunResult.stderr?.toString('utf8') ?? 'error'}`,
+      );
       return false;
     }
 
-    // Wait for server to be responsive
     await new Promise((r) => setTimeout(r, 2000));
 
     log('Verifying API liveness probe...');
     const liveness = await verifyHttpEndpoint(`http://127.0.0.1:${apiPort}/api/v1/health`, 200);
     if (liveness.status !== 200 || !liveness.body.includes('"status":"ok"')) {
-      logError(
-        `API liveness probe failed. Expected 200 {"status":"ok"}, got ${liveness.status}: ${liveness.body}`,
-      );
+      logError(`API liveness probe failed: ${liveness.status}: ${liveness.body}`);
       return false;
     }
     log('✅ API liveness probe responded 200 OK');
 
-    log('Verifying API readiness fails safely when database is unreachable...');
-    try {
-      const readiness = await verifyHttpEndpoint(`http://127.0.0.1:${apiPort}/api/v1/ready`, 503, {
-        headers: { Authorization: 'Bearer not-a-real-smoke-test-token-1234' },
-      });
-      if (readiness.status !== 503) {
-        logError(
-          `API readiness should return 503 on disconnected database, got ${readiness.status}`,
-        );
+    log('Verifying API readiness probe against connected PostgreSQL...');
+    const apiReady = await verifyHttpEndpoint(`http://127.0.0.1:${apiPort}/api/v1/ready`, 200);
+    if (apiReady.status !== 200 || !apiReady.body.includes('"database":"connected"')) {
+      logError(
+        `API readiness probe failed on connected database: ${apiReady.status}: ${apiReady.body}`,
+      );
+      return false;
+    }
+    log('✅ API readiness probe returned 200 (database: connected)');
+
+    // Disconnected API verification
+    log('Starting disconnected API container to verify safe fail-closed readiness...');
+    const apiDiscResult = runner([
+      'run',
+      '-d',
+      '--name',
+      apiDisconnectedContainerName,
+      '--read-only',
+      '--tmpfs',
+      '/tmp',
+      '-p',
+      `${apiPort + 10}:3000`,
+      '-e',
+      'PORT=3000',
+      '-e',
+      'DATABASE_URL=postgresql://falseroute:falseroute@127.0.0.1:5439/nonexistent',
+      '-e',
+      'OPERATOR_ACCESS_TOKEN=not-a-real-smoke-test-token-1234',
+      '-e',
+      'NODE_ENV=test',
+      'falseroute-api:test',
+    ]);
+
+    if (apiDiscResult.status === 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const discReady = await verifyHttpEndpoint(
+        `http://127.0.0.1:${apiPort + 10}/api/v1/ready`,
+        503,
+      );
+      if (discReady.status !== 503) {
+        logError(`API should return 503 when disconnected, got ${discReady.status}`);
         return false;
       }
-      log('✅ API readiness probe returned 503 SERVICE_UNAVAILABLE (safe fail-closed)');
-    } catch {
-      log('✅ API readiness failed closed as expected');
+      log('✅ Disconnected API returned 503 SERVICE_UNAVAILABLE (safe fail-closed)');
     }
-  } catch (apiErr) {
-    logError(
-      `API container smoke test failed: ${apiErr instanceof Error ? apiErr.message : String(apiErr)}`,
-    );
-    return false;
-  } finally {
-    runner(['rm', '-f', apiContainerName]);
-    log('Cleaned up API smoke container');
-  }
 
-  // 4. Web Container Smoke Test
-  const webContainerName = `falseroute-web-smoke-${Date.now()}`;
-  const webPort = 3106;
-  log(`Starting Web static container smoke instance (${webContainerName}) on port ${webPort}...`);
-
-  try {
-    const runResult = runner([
+    // 4. Web Container Smoke Test
+    log(`Starting Web static container (${webContainerName}) on port ${webPort}...`);
+    const webRunResult = runner([
       'run',
       '-d',
       '--name',
@@ -276,8 +383,10 @@ export async function runContainerVerification(
       'falseroute-web:test',
     ]);
 
-    if (runResult.status !== 0) {
-      logError(`Failed to start Web smoke container: ${runResult.stderr.toString('utf8')}`);
+    if (webRunResult.status !== 0) {
+      logError(
+        `Failed to start Web smoke container: ${webRunResult.stderr?.toString('utf8') ?? 'error'}`,
+      );
       return false;
     }
 
@@ -290,31 +399,33 @@ export async function runContainerVerification(
       return false;
     }
     log('✅ Web container health probe responded 200 OK');
-  } catch (webErr) {
-    logError(
-      `Web container smoke test failed: ${webErr instanceof Error ? webErr.message : String(webErr)}`,
-    );
-    return false;
-  } finally {
-    runner(['rm', '-f', webContainerName]);
-    log('Cleaned up Web smoke container');
-  }
 
-  // 5. Worker Container SIGTERM Handling Smoke Test
-  const workerContainerName = `falseroute-worker-smoke-${Date.now()}`;
-  log(`Starting Worker container smoke instance (${workerContainerName})...`);
+    log('Verifying Web server rejects /api/ requests with 404...');
+    const webApiCheck = await verifyHttpEndpoint(`http://127.0.0.1:${webPort}/api/v1/health`, 404);
+    if (webApiCheck.status !== 404) {
+      logError(`Web container must reject /api/ with 404, got ${webApiCheck.status}`);
+      return false;
+    }
+    log('✅ Web container correctly returned 404 for API route');
 
-  try {
-    const runResult = runner([
+    // 5. Worker Container Smoke Test (Health HTTP listener + SIGTERM Graceful Stop)
+    log(`Starting Worker container (${workerContainerName}) on port ${workerPort}...`);
+    const workerRunResult = runner([
       'run',
       '-d',
       '--name',
       workerContainerName,
+      '--network',
+      networkName,
       '--read-only',
       '--tmpfs',
       '/tmp',
+      '-p',
+      `${workerPort}:8080`,
       '-e',
-      'DATABASE_URL=postgresql://dummy:dummy@127.0.0.1:5434/dummy',
+      'PORT=8080',
+      '-e',
+      `DATABASE_URL=${pgInternalUrl}`,
       '-e',
       'NODE_ENV=test',
       '-e',
@@ -322,34 +433,59 @@ export async function runContainerVerification(
       'falseroute-worker:test',
     ]);
 
-    if (runResult.status !== 0) {
-      logError(`Failed to start Worker smoke container: ${runResult.stderr.toString('utf8')}`);
+    if (workerRunResult.status !== 0) {
+      logError(
+        `Failed to start Worker smoke container: ${workerRunResult.stderr?.toString('utf8') ?? 'error'}`,
+      );
       return false;
     }
 
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 2000));
 
-    log('Sending SIGTERM to Worker container...');
+    log('Verifying Worker liveness probe on port 8080...');
+    const workerLiveness = await verifyHttpEndpoint(`http://127.0.0.1:${workerPort}/health`, 200);
+    if (workerLiveness.status !== 200 || !workerLiveness.body.includes('"status":"ok"')) {
+      logError(`Worker liveness probe failed: ${workerLiveness.status}: ${workerLiveness.body}`);
+      return false;
+    }
+    log('✅ Worker liveness probe responded 200 OK');
+
+    log('Verifying Worker readiness probe on port 8080 against connected PostgreSQL...');
+    const workerReadiness = await verifyHttpEndpoint(`http://127.0.0.1:${workerPort}/ready`, 200);
+    if (
+      workerReadiness.status !== 200 ||
+      !workerReadiness.body.includes('"database":"connected"')
+    ) {
+      logError(`Worker readiness probe failed: ${workerReadiness.status}: ${workerReadiness.body}`);
+      return false;
+    }
+    log('✅ Worker readiness probe returned 200 (database: connected)');
+
+    log('Sending SIGTERM to Worker container to verify graceful shutdown...');
     const stopResult = runner(['stop', '--time', '5', workerContainerName]);
     if (stopResult.status !== 0) {
       logError('Worker container failed to stop cleanly on SIGTERM');
       return false;
     }
     log('✅ Worker container stopped gracefully on SIGTERM');
-  } catch (workerErr) {
-    logError(
-      `Worker container smoke test failed: ${workerErr instanceof Error ? workerErr.message : String(workerErr)}`,
-    );
+
+    log('===========================================================');
+    log('✅ All Container Packaging & Security Verifications PASSED');
+    log('===========================================================');
+    return true;
+  } catch (err) {
+    logError(`Container verification failed: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   } finally {
+    // Robust cleanup of all containers and network
+    runner(['rm', '-f', apiConnectedContainerName]);
+    runner(['rm', '-f', apiDisconnectedContainerName]);
+    runner(['rm', '-f', webContainerName]);
     runner(['rm', '-f', workerContainerName]);
-    log('Cleaned up Worker smoke container');
+    runner(['rm', '-f', pgContainerName]);
+    runner(['network', 'rm', networkName]);
+    log('Cleaned up ephemeral verification containers and Docker network');
   }
-
-  log('===========================================================');
-  log('✅ All Container Packaging & Security Verifications PASSED');
-  log('===========================================================');
-  return true;
 }
 
 if (process.argv[1]?.endsWith('verify-containers.ts')) {
