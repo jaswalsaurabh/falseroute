@@ -92,6 +92,7 @@ model DeceptionDecision {
   auditRecord     DecisionAuditRecord?
   simulatedEffect SimulatedDeceptionEffect?
 
+  @@unique([id, action, correlationId, assignedFalseRoute, containmentMode], map: "uq_deception_decisions_integrity")
   @@index([correlationId])
   @@index([decidedAt])
   @@map("deception_decisions")
@@ -113,7 +114,7 @@ model SimulatedDeceptionEffect {
   id                 String                   @id @default(uuid()) @db.Uuid
   decisionId         String                   @unique @map("decision_id") @db.Uuid
   correlationId      String                   @map("correlation_id") @db.VarChar(64)
-  effectKind         String                   @map("effect_kind") @db.VarChar(64)
+  effectKind         DeceptionAction          @default(ASSIGN_FALSE_ROUTE) @map("effect_kind")
   status             String                   @map("status") @db.VarChar(32)
   containmentMode    ContainmentMode          @map("containment_mode")
   assignedFalseRoute String                   @map("assigned_false_route") @db.VarChar(64)

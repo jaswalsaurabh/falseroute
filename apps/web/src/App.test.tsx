@@ -153,7 +153,7 @@ describe('Web Dashboard Unit Tests', () => {
 
     expect(screen.getByText('STATUS: TIMEOUT')).toBeDefined();
     expect(screen.getByText('Gemini request timed out after 5000ms')).toBeDefined();
-    expect(screen.getByText('PROVENANCE: UNAVAILABLE')).toBeDefined();
+    expect(screen.getAllByText(/PROVENANCE:\s*UNAVAILABLE/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('refreshes open event detail modal when a pending event transitions to decided on refresh', async () => {
@@ -196,6 +196,19 @@ describe('Web Dashboard Unit Tests', () => {
       },
     };
 
+    const mockSimulatedEffect = {
+      id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+      decisionId: mockDecision.id,
+      correlationId: mockDecision.correlationId,
+      effectKind: 'ASSIGN_FALSE_ROUTE' as const,
+      status: 'RECORDED' as const,
+      containmentMode: 'SIMULATED' as const,
+      assignedFalseRoute: 'mock-admin-decoy' as const,
+      provenance: 'DERIVED' as const,
+      recordedAt: '2026-08-22T00:00:03.000Z',
+      adapterVersion: 'simulated-deception-agent-v1',
+    };
+
     let eventStatus: 'PENDING' | 'DECIDED' = 'PENDING';
 
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
@@ -219,6 +232,7 @@ describe('Web Dashboard Unit Tests', () => {
             Promise.resolve({
               event: eventStatus === 'PENDING' ? pendingEvent : decidedEvent,
               decision: eventStatus === 'PENDING' ? null : mockDecision,
+              simulatedEffect: eventStatus === 'PENDING' ? null : mockSimulatedEffect,
             }),
         });
       }
@@ -271,7 +285,7 @@ describe('Web Dashboard Unit Tests', () => {
     const refreshButton = screen.getByRole('button', { name: 'Refresh' });
     fireEvent.click(refreshButton);
 
-    // Verify modal automatically re-renders with the decision card
+    // Verify modal automatically re-renders with the decision card and truthful recorded evidence
     await waitFor(() => {
       expect(screen.getByText('ASSIGN_FALSE_ROUTE')).toBeDefined();
       expect(screen.getAllByText('mock-admin-decoy').length).toBeGreaterThanOrEqual(1);
@@ -282,5 +296,36 @@ describe('Web Dashboard Unit Tests', () => {
         ),
       ).toBeNull();
     });
+  });
+
+  it('renders explicit unavailable status when simulatedEffect is missing without fabricating recorded claims', () => {
+    const mockDecision: DeceptionDecision = {
+      id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+      eventId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      correlationId: 'corr-unavailable-test-01',
+      action: 'ASSIGN_FALSE_ROUTE',
+      assignedFalseRoute: 'mock-admin-decoy',
+      matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+      reason: 'Decoy credential trigger matched.',
+      containmentMode: 'SIMULATED',
+      decisionProvenance: 'DERIVED',
+      decidedAt: '2026-08-22T00:00:02.000Z',
+      auditRecord: {
+        ruleVersion: '2026.08.1',
+        evaluatedAt: '2026-08-22T00:00:02.000Z',
+      },
+    };
+
+    // Render DecisionCard directly with simulatedEffect = null
+    render(<DecisionCard decision={mockDecision} simulatedEffect={null} />);
+
+    // Must show explicit unavailable message and badge
+    expect(screen.getByText('Simulated effect record unavailable')).toBeDefined();
+    expect(screen.getByText('UNAVAILABLE')).toBeDefined();
+    expect(screen.getByText('PROVENANCE: UNAVAILABLE')).toBeDefined();
+
+    // Must strictly NOT show fabricated recorded claims
+    expect(screen.queryByText('Simulated assignment recorded')).toBeNull();
+    expect(screen.queryByText('RECORDED')).toBeNull();
   });
 });

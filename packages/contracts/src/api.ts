@@ -5,8 +5,11 @@ import {
   IntrusionEventSchema,
   ProcessingStatusSchema,
 } from './intrusion-event.js';
-import { DeceptionDecisionSchema } from './deception-decision.js';
-import { SimulatedDeceptionEffectSchema } from './simulated-deception.js';
+import { DeceptionDecisionSchema, type DeceptionDecision } from './deception-decision.js';
+import {
+  SimulatedDeceptionEffectSchema,
+  type SimulatedDeceptionEffect,
+} from './simulated-deception.js';
 
 export const CreateIntrusionEventRequestSchema = SimulatedIntrusionEventInputSchema;
 export type CreateIntrusionEventRequest = z.infer<typeof CreateIntrusionEventRequestSchema>;
@@ -44,13 +47,107 @@ export const ListIntrusionEventsResponseSchema = z
 
 export type ListIntrusionEventsResponse = z.infer<typeof ListIntrusionEventsResponseSchema>;
 
+/**
+ * Validates cross-field evidence consistency between a decision and its simulated effect.
+ */
+function validateDecisionAndEffectIntegrity(
+  data: {
+    decision?: DeceptionDecision | null | undefined;
+    simulatedEffect?: SimulatedDeceptionEffect | null | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const { decision, simulatedEffect } = data;
+
+  if (!decision) {
+    if (simulatedEffect !== undefined && simulatedEffect !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'simulatedEffect cannot be present when decision is null or undefined',
+        path: ['simulatedEffect'],
+      });
+    }
+    return;
+  }
+
+  if (decision.action === 'ASSIGN_FALSE_ROUTE') {
+    if (!simulatedEffect) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'simulatedEffect is required when decision action is ASSIGN_FALSE_ROUTE',
+        path: ['simulatedEffect'],
+      });
+      return;
+    }
+
+    if (simulatedEffect.decisionId !== decision.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `simulatedEffect decisionId (${simulatedEffect.decisionId}) must match decision id (${decision.id})`,
+        path: ['simulatedEffect', 'decisionId'],
+      });
+    }
+
+    if (simulatedEffect.correlationId !== decision.correlationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `simulatedEffect correlationId (${simulatedEffect.correlationId}) must match decision correlationId (${decision.correlationId})`,
+        path: ['simulatedEffect', 'correlationId'],
+      });
+    }
+
+    const assignedTarget = 'assignedFalseRoute' in decision ? decision.assignedFalseRoute : '';
+    if (simulatedEffect.assignedFalseRoute !== assignedTarget) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `simulatedEffect assignedFalseRoute (${simulatedEffect.assignedFalseRoute}) must match decision assignedFalseRoute (${assignedTarget})`,
+        path: ['simulatedEffect', 'assignedFalseRoute'],
+      });
+    }
+
+    if (simulatedEffect.containmentMode !== decision.containmentMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `simulatedEffect containmentMode (${simulatedEffect.containmentMode}) must match decision containmentMode (${decision.containmentMode})`,
+        path: ['simulatedEffect', 'containmentMode'],
+      });
+    }
+    return;
+  }
+
+  if (simulatedEffect !== undefined && simulatedEffect !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `simulatedEffect must not be present when decision action is ${decision.action}`,
+      path: ['simulatedEffect'],
+    });
+  }
+}
+
 export const GetIntrusionEventResponseSchema = z
   .object({
     event: IntrusionEventSchema,
     decision: DeceptionDecisionSchema.nullable().optional(),
     simulatedEffect: SimulatedDeceptionEffectSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    validateDecisionAndEffectIntegrity(data, ctx);
+    if (data.decision && data.decision.eventId !== data.event.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `decision eventId (${data.decision.eventId}) must match event id (${data.event.id})`,
+        path: ['decision', 'eventId'],
+      });
+    }
+    if (data.decision && data.decision.correlationId !== data.event.correlationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `decision correlationId (${data.decision.correlationId}) must match event correlationId (${data.event.correlationId})`,
+        path: ['decision', 'correlationId'],
+      });
+    }
+  });
 
 export type GetIntrusionEventResponse = z.infer<typeof GetIntrusionEventResponseSchema>;
 
@@ -59,7 +156,10 @@ export const GetDeceptionDecisionResponseSchema = z
     decision: DeceptionDecisionSchema,
     simulatedEffect: SimulatedDeceptionEffectSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    validateDecisionAndEffectIntegrity(data, ctx);
+  });
 
 export type GetDeceptionDecisionResponse = z.infer<typeof GetDeceptionDecisionResponseSchema>;
 

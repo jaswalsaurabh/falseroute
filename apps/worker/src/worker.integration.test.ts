@@ -17,10 +17,16 @@ import {
   type WorkerRepository,
 } from './persistence/worker-repository.js';
 import { FakeGeminiAdapter } from './adapters/fake-gemini-adapter.js';
-import { DeterministicSimulatedDeceptionAdapter } from './adapters/simulated-deception-agent.js';
+import {
+  DeterministicSimulatedDeceptionAdapter,
+  type SimulatedDeceptionAgent,
+} from './adapters/simulated-deception-agent.js';
 import { EventProcessor } from './processor/event-processor.js';
 import { evaluateDeceptionPolicy } from './domain/policy-engine.js';
-import { SimulatedDeceptionEffectSchema } from '@false-route/contracts';
+import {
+  type SimulatedDeceptionResult,
+  SimulatedDeceptionEffectSchema,
+} from '@false-route/contracts';
 
 const TEST_DATABASE_URL = validateTestDatabaseUrl(
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -372,5 +378,62 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     expect(row?.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
     expect(row?.decision?.auditRecord).not.toBeNull();
     expect(row?.decision?.simulatedEffect).not.toBeNull();
+  });
+
+  it('handles malformed simulated agent adapter output with durable retry and terminal failure without partial commits', async () => {
+    const { eventId } = await createTestEvent({ usedDecoyCredential: true });
+
+    const malformedAgent: SimulatedDeceptionAgent = {
+      recordCommand: async () =>
+        ({
+          status: 'MALFORMED_UNAUTHORIZED_STATUS',
+          provenance: 'INVALID_PROVENANCE',
+          recordedAt: 'invalid-date',
+          adapterVersion: '',
+        }) as unknown as SimulatedDeceptionResult,
+    };
+
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: new FakeGeminiAdapter('auto'),
+      simulatedAgent: malformedAgent,
+      logger: noopLogger,
+    });
+
+    // Attempt 1: Fails schema validation on adapter result, releases claim, and resets to PENDING
+    await expect(processor.processNextPending()).rejects.toThrow();
+
+    let row = await db.intrusionEvent.findUnique({
+      where: { id: eventId },
+      include: { decision: { include: { simulatedEffect: true } } },
+    });
+    expect(row?.status).toBe(ProcessingStatus.PENDING);
+    expect(row?.processingAttemptCount).toBe(1);
+    expect(row?.processingClaimToken).toBeNull();
+    expect(row?.processingLeaseExpiresAt).toBeNull();
+    expect(row?.decision).toBeNull();
+
+    // Attempt 2: Fails again, releases claim, remains PENDING
+    await expect(processor.processNextPending()).rejects.toThrow();
+    row = await db.intrusionEvent.findUnique({
+      where: { id: eventId },
+      include: { decision: { include: { simulatedEffect: true } } },
+    });
+    expect(row?.status).toBe(ProcessingStatus.PENDING);
+    expect(row?.processingAttemptCount).toBe(2);
+    expect(row?.processingClaimToken).toBeNull();
+    expect(row?.decision).toBeNull();
+
+    // Attempt 3: Exhausts max attempts (3), marks event FAILED, clears claim metadata, commits no partial decision/effect
+    await expect(processor.processNextPending()).rejects.toThrow();
+    row = await db.intrusionEvent.findUnique({
+      where: { id: eventId },
+      include: { decision: { include: { simulatedEffect: true } } },
+    });
+    expect(row?.status).toBe(ProcessingStatus.FAILED);
+    expect(row?.processingAttemptCount).toBe(3);
+    expect(row?.processingClaimToken).toBeNull();
+    expect(row?.processingLeaseExpiresAt).toBeNull();
+    expect(row?.decision).toBeNull();
   });
 });

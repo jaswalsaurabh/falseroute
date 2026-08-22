@@ -65,60 +65,60 @@ describe('PostgreSQL Database Persistence Integration', () => {
     expect(event.sourceIp).toBe('192.0.2.45');
     expect(event.usedDecoyCredential).toBe(true);
 
-    // 2. Insert DeceptionDecision
-    const decision = await db.deceptionDecision.create({
-      data: {
-        id: decisionId,
-        eventId: event.id,
-        correlationId,
-        action: DeceptionAction.ASSIGN_FALSE_ROUTE,
-        assignedFalseRoute: 'mock-admin-decoy',
-        matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
-        reason: 'Decoy administrative credentials observed in simulated intake.',
-        containmentMode: ContainmentMode.SIMULATED,
-        decisionProvenance: ProvenanceClassification.DERIVED,
-        decidedAt: new Date('2026-08-21T18:00:02.000Z'),
-        modelEnrichment: {
-          confidence: 0.95,
-          summary: 'High confidence decoy credential usage pattern.',
+    // 2. Insert DeceptionDecision, AuditRecord, and SimulatedDeceptionEffect in atomic transaction
+    const effectId = randomUUID();
+    const { decision, auditRecord, simulatedEffect } = await db.$transaction(async (tx) => {
+      const d = await tx.deceptionDecision.create({
+        data: {
+          id: decisionId,
+          eventId: event.id,
+          correlationId,
+          action: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          assignedFalseRoute: 'mock-admin-decoy',
+          matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+          reason: 'Decoy administrative credentials observed in simulated intake.',
+          containmentMode: ContainmentMode.SIMULATED,
+          decisionProvenance: ProvenanceClassification.DERIVED,
+          decidedAt: new Date('2026-08-21T18:00:02.000Z'),
+          modelEnrichment: {
+            confidence: 0.95,
+            summary: 'High confidence decoy credential usage pattern.',
+          },
         },
-      },
+      });
+
+      const a = await tx.decisionAuditRecord.create({
+        data: {
+          id: auditId,
+          decisionId: d.id,
+          ruleVersion: '2026-08.1',
+          evaluatedAt: new Date('2026-08-21T18:00:02.500Z'),
+        },
+      });
+
+      const s = await tx.simulatedDeceptionEffect.create({
+        data: {
+          id: effectId,
+          decisionId: d.id,
+          correlationId,
+          effectKind: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          status: 'RECORDED',
+          containmentMode: ContainmentMode.SIMULATED,
+          assignedFalseRoute: 'mock-admin-decoy',
+          provenance: ProvenanceClassification.DERIVED,
+          recordedAt: new Date('2026-08-21T18:00:03.000Z'),
+          adapterVersion: 'simulated-deception-agent-v1',
+        },
+      });
+
+      return { decision: d, auditRecord: a, simulatedEffect: s };
     });
 
     expect(decision.id).toBe(decisionId);
     expect(decision.action).toBe(DeceptionAction.ASSIGN_FALSE_ROUTE);
     expect(decision.assignedFalseRoute).toBe('mock-admin-decoy');
-
-    // 3. Insert DecisionAuditRecord
-    const auditRecord = await db.decisionAuditRecord.create({
-      data: {
-        id: auditId,
-        decisionId: decision.id,
-        ruleVersion: '2026-08.1',
-        evaluatedAt: new Date('2026-08-21T18:00:02.500Z'),
-      },
-    });
-
     expect(auditRecord.id).toBe(auditId);
     expect(auditRecord.decisionId).toBe(decisionId);
-
-    // 4. Insert SimulatedDeceptionEffect
-    const effectId = randomUUID();
-    const simulatedEffect = await db.simulatedDeceptionEffect.create({
-      data: {
-        id: effectId,
-        decisionId: decision.id,
-        correlationId,
-        effectKind: 'ASSIGN_FALSE_ROUTE',
-        status: 'RECORDED',
-        containmentMode: ContainmentMode.SIMULATED,
-        assignedFalseRoute: 'mock-admin-decoy',
-        provenance: ProvenanceClassification.DERIVED,
-        recordedAt: new Date('2026-08-21T18:00:03.000Z'),
-        adapterVersion: 'simulated-deception-agent-v1',
-      },
-    });
-
     expect(simulatedEffect.id).toBe(effectId);
     expect(simulatedEffect.status).toBe('RECORDED');
 
@@ -260,16 +260,17 @@ describe('PostgreSQL Database Persistence Integration', () => {
     ).rejects.toThrowError(/chk_intrusion_events_failed_login_count/);
   });
 
-  it('enforces database check constraints on simulated_deception_effects', async () => {
+  it('enforces database trigger requiring simulated effect for ASSIGN_FALSE_ROUTE decision', async () => {
     const eventId = randomUUID();
     const decisionId = randomUUID();
+    const correlationId = `corr-test-trig-${Date.now()}`;
 
     await db.intrusionEvent.create({
       data: {
         id: eventId,
         occurredAt: new Date(),
         receivedAt: new Date(),
-        correlationId: `corr-test-eff-chk-${Date.now()}`,
+        correlationId,
         sourceIp: '198.51.100.15',
         targetAsset: 'mock-admin-portal',
         eventType: EventType.UNAUTHORIZED_ACCESS_ATTEMPT,
@@ -283,30 +284,74 @@ describe('PostgreSQL Database Persistence Integration', () => {
       },
     });
 
+    // Attempt to commit ASSIGN_FALSE_ROUTE decision without creating simulated_deception_effects
+    await expect(
+      db.deceptionDecision.create({
+        data: {
+          id: decisionId,
+          eventId,
+          correlationId,
+          action: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          assignedFalseRoute: 'mock-admin-decoy',
+          matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+          reason: 'Testing trigger enforcement.',
+          containmentMode: ContainmentMode.SIMULATED,
+          decisionProvenance: ProvenanceClassification.DERIVED,
+          decidedAt: new Date(),
+        },
+      }),
+    ).rejects.toThrowError(/requires a corresponding simulated_deception_effects record/);
+
+    await db.intrusionEvent.delete({ where: { id: eventId } });
+  });
+
+  it('enforces composite foreign key and check constraints on simulated_deception_effects', async () => {
+    const eventId = randomUUID();
+    const decisionId = randomUUID();
+    const correlationId = `corr-test-fk-${Date.now()}`;
+
+    await db.intrusionEvent.create({
+      data: {
+        id: eventId,
+        occurredAt: new Date(),
+        receivedAt: new Date(),
+        correlationId,
+        sourceIp: '198.51.100.16',
+        targetAsset: 'mock-admin-portal',
+        eventType: EventType.SUSPICIOUS_LOGIN,
+        failedLoginCount: 1,
+        riskIndicators: [],
+        containmentMode: ContainmentMode.SIMULATED,
+        usedDecoyCredential: false,
+        status: ProcessingStatus.DECIDED,
+        provenance: ProvenanceClassification.OBSERVED,
+      },
+    });
+
+    // ALLOW decision (not ASSIGN_FALSE_ROUTE)
     await db.deceptionDecision.create({
       data: {
         id: decisionId,
         eventId,
-        correlationId: `corr-test-eff-chk-${Date.now()}`,
-        action: DeceptionAction.ASSIGN_FALSE_ROUTE,
-        assignedFalseRoute: 'mock-admin-decoy',
-        matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
-        reason: 'Testing check constraints.',
+        correlationId,
+        action: DeceptionAction.ALLOW,
+        matchedPolicy: 'DEFAULT_OBSERVATION',
+        reason: 'Testing composite foreign key rejection.',
         containmentMode: ContainmentMode.SIMULATED,
         decisionProvenance: ProvenanceClassification.DERIVED,
         decidedAt: new Date(),
       },
     });
 
-    // 1. Invalid status (not RECORDED)
+    // 1. Rejects simulated_deception_effects referencing ALLOW decision (fk_simulated_effects_decision_integrity)
     await expect(
       db.simulatedDeceptionEffect.create({
         data: {
           id: randomUUID(),
           decisionId,
-          correlationId: `corr-test-eff-chk-${Date.now()}`,
-          effectKind: 'ASSIGN_FALSE_ROUTE',
-          status: 'EXECUTED', // Violates chk_simulated_effects_status
+          correlationId,
+          effectKind: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          status: 'RECORDED',
           containmentMode: ContainmentMode.SIMULATED,
           assignedFalseRoute: 'mock-admin-decoy',
           provenance: ProvenanceClassification.DERIVED,
@@ -314,25 +359,7 @@ describe('PostgreSQL Database Persistence Integration', () => {
           adapterVersion: 'simulated-deception-agent-v1',
         },
       }),
-    ).rejects.toThrowError(/chk_simulated_effects_status/);
-
-    // 2. Invalid false route (not mock-admin-decoy)
-    await expect(
-      db.simulatedDeceptionEffect.create({
-        data: {
-          id: randomUUID(),
-          decisionId,
-          correlationId: `corr-test-eff-chk-${Date.now()}`,
-          effectKind: 'ASSIGN_FALSE_ROUTE',
-          status: 'RECORDED',
-          containmentMode: ContainmentMode.SIMULATED,
-          assignedFalseRoute: 'unauthorized-trap-route', // Violates chk_simulated_effects_false_route
-          provenance: ProvenanceClassification.DERIVED,
-          recordedAt: new Date(),
-          adapterVersion: 'simulated-deception-agent-v1',
-        },
-      }),
-    ).rejects.toThrowError(/chk_simulated_effects_false_route/);
+    ).rejects.toThrowError(/fk_simulated_effects_decision_integrity/);
 
     // Clean up
     await db.intrusionEvent.delete({ where: { id: eventId } });
