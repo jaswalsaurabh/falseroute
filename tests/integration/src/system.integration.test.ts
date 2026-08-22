@@ -14,6 +14,7 @@ import {
   EventProcessor,
   WorkerOrchestrator,
   FakeGeminiAdapter,
+  DeterministicSimulatedDeceptionAdapter,
 } from '@false-route/worker';
 import {
   GetIntrusionEventResponseSchema,
@@ -66,9 +67,11 @@ describe('System Integration — Full Pipeline (API → DB → Worker → DB →
     // Instantiate real worker processor with real worker repository and fake Gemini adapter
     fakeAdapter = new FakeGeminiAdapter('auto');
     const workerRepo = new PrismaWorkerRepository(db);
+    const simulatedAgent = new DeterministicSimulatedDeceptionAdapter();
     const processor = new EventProcessor({
       repository: workerRepo,
       geminiAdapter: fakeAdapter,
+      simulatedAgent,
       logger: noopLogger,
     });
 
@@ -95,7 +98,7 @@ describe('System Integration — Full Pipeline (API → DB → Worker → DB →
     }
   });
 
-  it('completes positive decoy lifecycle: API ingest -> worker decision -> API verified response', async () => {
+  it('completes positive decoy lifecycle: API ingest -> worker decision -> API verified response with simulated effect', async () => {
     fakeAdapter.setMode('auto');
     const eventId = randomUUID();
     createdFixtureIds.add(eventId);
@@ -155,7 +158,15 @@ describe('System Integration — Full Pipeline (API → DB → Worker → DB →
     expect(eventDetail?.decision?.decisionProvenance).toBe('DERIVED');
     expect(eventDetail?.decision?.auditRecord.ruleVersion).toBe('2026.08.1');
 
-    // 4. Query decision endpoint directly
+    // 4. Verify simulated effect evidence in API response
+    expect(eventDetail?.simulatedEffect).toBeDefined();
+    expect(eventDetail?.simulatedEffect?.status).toBe('RECORDED');
+    expect(eventDetail?.simulatedEffect?.containmentMode).toBe('SIMULATED');
+    expect(eventDetail?.simulatedEffect?.assignedFalseRoute).toBe('mock-admin-decoy');
+    expect(eventDetail?.simulatedEffect?.provenance).toBe('DERIVED');
+    expect(eventDetail?.simulatedEffect?.adapterVersion).toBe('simulated-deception-agent-v1');
+
+    // 5. Query decision endpoint directly
     const decisionRes = await request(app)
       .get(`/api/v1/intrusion-events/${eventId}/decision`)
       .set('Authorization', authHeader);
@@ -164,8 +175,10 @@ describe('System Integration — Full Pipeline (API → DB → Worker → DB →
     const parsedDecision = GetDeceptionDecisionResponseSchema.parse(decisionRes.body);
     expect(parsedDecision.decision.action).toBe('ASSIGN_FALSE_ROUTE');
     expect(parsedDecision.decision.assignedFalseRoute).toBe('mock-admin-decoy');
+    expect(parsedDecision.simulatedEffect).toBeDefined();
+    expect(parsedDecision.simulatedEffect?.status).toBe('RECORDED');
 
-    // 5. Query event list and ensure decided event is listed
+    // 6. Query event list and ensure decided event is listed
     const listRes = await request(app)
       .get('/api/v1/intrusion-events')
       .set('Authorization', authHeader);

@@ -24,8 +24,9 @@ The diagram is logical. The asynchronous delivery mechanism between the API and 
 
 ### Web
 
-- Presents intrusion events, indicators, matched policies, model explanations, decisions, false routes, and processing status.
+- Presents intrusion events, indicators, matched policies, model explanations, decisions, false routes, simulated effect evidence, and processing status.
 - Calls the API through shared contracts.
+- Uses truthful product language (`"Simulated assignment recorded"`, `"RECORDED"`, `"No real traffic or infrastructure change occurred"`) and avoids misleading execution terminology.
 - Never accesses PostgreSQL or Gemini directly.
 
 ### API
@@ -33,19 +34,19 @@ The diagram is logical. The asynchronous delivery mechanism between the API and 
 - Accepts untrusted simulator and operator requests.
 - Validates request and response data with shared Zod contracts.
 - Coordinates application services and persistence through explicit route, controller, service, and repository boundaries.
-- Exposes event, decision, health, and readiness interfaces as they are implemented.
+- Exposes event, decision, simulated effect evidence, health, and readiness interfaces.
 
 ### Worker
 
 - Enriches validated events with Gemini.
 - Treats model output as untrusted structured data.
 - Applies deterministic policy and action-allowlist validation.
-- Records the deception decision, audit information, and degraded model status when applicable.
+- Records the deception decision, audit information, degraded model status when applicable, and invokes the constrained simulated deception agent adapter for `ASSIGN_FALSE_ROUTE` decisions to record `RECORDED` simulated effect evidence.
 
 ### Shared Packages
 
-- `contracts`: event, model-output, decision, and API schemas
-- `database`: Prisma schema, migrations, and client ownership
+- `contracts`: event, model-output, decision, simulated deception effect, and API schemas
+- `database`: Prisma schema, migrations, CHECK constraints, and client ownership
 - `config`: typed environment configuration
 - `security`: shared security boundaries as concrete needs emerge
 - `observability`: Pino logging and OpenTelemetry interfaces
@@ -53,7 +54,7 @@ The diagram is logical. The asynchronous delivery mechanism between the API and 
 
 ## Approved First Policy
 
-Use of a known decoy credential deterministically produces an `ASSIGN_FALSE_ROUTE` decision for `mock-admin-decoy` in `SIMULATED` mode. Gemini supplies bounded enrichment and may recommend only an application-defined action. Application code owns the final decision and cannot execute model-generated commands or arbitrary destinations.
+Use of a known decoy credential deterministically produces an `ASSIGN_FALSE_ROUTE` decision for `mock-admin-decoy` in `SIMULATED` mode, recording an atomic `RECORDED` simulated deception effect in the database. Gemini supplies bounded enrichment and may recommend only an application-defined action. Application code owns the final decision and cannot execute model-generated commands or arbitrary destinations.
 
 ## Failure Behavior
 
