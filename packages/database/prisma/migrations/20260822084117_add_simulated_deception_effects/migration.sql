@@ -58,7 +58,7 @@ ALTER TABLE "simulated_deception_effects" ADD CONSTRAINT "chk_simulated_effects_
     "effect_kind" = 'ASSIGN_FALSE_ROUTE'
 );
 
--- Handle pre-existing ASSIGN_FALSE_ROUTE decisions without inventing historical RECORDED evidence
+-- Fail closed on legacy route decisions rather than inventing historical RECORDED evidence
 DO $$
 BEGIN
     IF EXISTS (
@@ -69,7 +69,8 @@ BEGIN
             WHERE s."decision_id" = d."id"
         )
     ) THEN
-        RAISE NOTICE 'Pre-existing ASSIGN_FALSE_ROUTE decisions detected without simulated effect records; preserving unrecorded provenance boundary.';
+        RAISE EXCEPTION 'Migration blocked: existing ASSIGN_FALSE_ROUTE decisions have no simulated effect evidence. Reconcile or explicitly archive those legacy decisions before retrying.'
+        USING ERRCODE = 'check_violation';
     END IF;
 END $$;
 

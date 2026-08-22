@@ -365,7 +365,7 @@ describe('PostgreSQL Database Persistence Integration', () => {
     await db.intrusionEvent.delete({ where: { id: eventId } });
   });
 
-  it('enforces child-side deferred trigger preventing deletion of simulated effect while ASSIGN_FALSE_ROUTE decision exists', async () => {
+  it('prevents deleting or reassigning an effect while its ASSIGN_FALSE_ROUTE decision exists', async () => {
     const eventId = randomUUID();
     const decisionId = randomUUID();
     const effectId = randomUUID();
@@ -422,6 +422,52 @@ describe('PostgreSQL Database Persistence Integration', () => {
         },
       });
     });
+
+    const targetEventId = randomUUID();
+    const targetDecisionId = randomUUID();
+    const targetCorrelationId = `corr-test-move-trig-${Date.now()}`;
+    createdFixtureIds.add(targetEventId);
+
+    await expect(
+      db.$transaction(async (tx) => {
+        await tx.intrusionEvent.create({
+          data: {
+            id: targetEventId,
+            occurredAt: new Date(),
+            receivedAt: new Date(),
+            correlationId: targetCorrelationId,
+            sourceIp: '198.51.100.18',
+            targetAsset: 'mock-admin-portal',
+            eventType: EventType.UNAUTHORIZED_ACCESS_ATTEMPT,
+            failedLoginCount: 1,
+            riskIndicators: [],
+            containmentMode: ContainmentMode.SIMULATED,
+            usedDecoyCredential: true,
+            decoyIdentifier: 'mock-admin-decoy-creds',
+            status: ProcessingStatus.DECIDED,
+            provenance: ProvenanceClassification.OBSERVED,
+          },
+        });
+        await tx.deceptionDecision.create({
+          data: {
+            id: targetDecisionId,
+            eventId: targetEventId,
+            correlationId: targetCorrelationId,
+            action: DeceptionAction.ASSIGN_FALSE_ROUTE,
+            assignedFalseRoute: 'mock-admin-decoy',
+            matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+            reason: 'Testing child-side reassignment trigger.',
+            containmentMode: ContainmentMode.SIMULATED,
+            decisionProvenance: ProvenanceClassification.DERIVED,
+            decidedAt: new Date(),
+          },
+        });
+        await tx.simulatedDeceptionEffect.update({
+          where: { id: effectId },
+          data: { decisionId: targetDecisionId, correlationId: targetCorrelationId },
+        });
+      }),
+    ).rejects.toThrowError(/Cannot remove or reassign simulated_deception_effects record/);
 
     // Attempting to delete simulated_deception_effects directly while the decision exists must fail
     await expect(
