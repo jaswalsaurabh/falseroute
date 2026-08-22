@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncOptions, type SpawnSyncReturns } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -51,35 +51,66 @@ export function validatePrismaCommand(args: readonly string[]): PrismaGuardResul
   return { allowed: false, reason: `${command ?? '[unknown]'} is not an approved Prisma command.` };
 }
 
-function main(): number {
-  const prismaArgs = process.argv.slice(2);
-  const validation = validatePrismaCommand(prismaArgs);
+export function resolvePnpmExecutable(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+}
+
+export type SpawnSyncFn = (
+  command: string,
+  args: readonly string[],
+  options: SpawnSyncOptions,
+) => SpawnSyncReturns<Buffer | string>;
+
+export interface PrismaExecutionOptions {
+  platform?: NodeJS.Platform | undefined;
+  prismaArgs: readonly string[];
+  repositoryRoot?: string | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
+  spawnSyncFn?: SpawnSyncFn | undefined;
+  logError?: ((message: string) => void) | undefined;
+}
+
+export function executePrismaCommand(options: PrismaExecutionOptions): number {
+  const validation = validatePrismaCommand(options.prismaArgs);
+  const logError = options.logError ?? ((msg: string) => console.error(msg));
 
   if (!validation.allowed) {
-    console.error(`Prisma command blocked: ${validation.reason}`);
-    console.error(
+    logError(`Prisma command blocked: ${validation.reason}`);
+    logError(
       'Create migrations with: pnpm --filter @false-route/database migrate:dev -- --name <name>',
     );
     return 2;
   }
 
-  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  const result = spawnSync(
-    'pnpm',
-    ['--filter', '@false-route/database', 'exec', 'prisma', ...prismaArgs],
+  const platform = options.platform ?? process.platform;
+  const executable = resolvePnpmExecutable(platform);
+  const repositoryRoot =
+    options.repositoryRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const spawnFn = (options.spawnSyncFn ?? spawnSync) as SpawnSyncFn;
+  const env = options.env ?? process.env;
+
+  const result = spawnFn(
+    executable,
+    ['--filter', '@false-route/database', 'exec', 'prisma', ...options.prismaArgs],
     {
       cwd: repositoryRoot,
-      env: process.env,
+      env,
       stdio: 'inherit',
+      shell: false,
     },
   );
 
   if (result.error) {
-    console.error(`Unable to run Prisma: ${result.error.message}`);
+    logError(`Unable to run Prisma: ${result.error.name ?? 'SpawnError'}`);
     return 1;
   }
 
   return result.status ?? 1;
+}
+
+function main(): number {
+  const prismaArgs = process.argv.slice(2);
+  return executePrismaCommand({ prismaArgs });
 }
 
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;

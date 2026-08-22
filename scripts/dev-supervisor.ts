@@ -335,25 +335,7 @@ export class DevSupervisor {
   }
 }
 
-function runMigration(rootDir: string, env: Record<string, string>): boolean {
-  const isTTY = Boolean(process.stdout.isTTY);
-  const colorStart = isTTY ? SUPERVISOR_COLOR : '';
-  const colorEnd = isTTY ? RESET_COLOR : '';
-  process.stdout.write(
-    `${colorStart}[supervisor]${colorEnd} Running safe development database migration...\n`,
-  );
-
-  const res = spawnSync('node', ['../../scripts/prisma-guard.ts', 'migrate', 'deploy'], {
-    cwd: resolve(rootDir, 'packages/database'),
-    env: { ...process.env, ...env },
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
-
-  return res.status === 0;
-}
-
-function printHelp(): void {
+export function printHelp(write: (text: string) => void = (t) => process.stdout.write(t)): void {
   const helpText = `
 FalseRoute Local Development Supervisor
 
@@ -372,28 +354,74 @@ Options:
   --migrate                        Run migrations only unless --services is also supplied
   --help, -h                       Display this help message
 `;
-  process.stdout.write(`${helpText}\n`);
+  write(`${helpText}\n`);
 }
 
-export async function main(): Promise<void> {
-  const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export function runMigration(rootDir: string, env: Record<string, string>): boolean {
+  const isTTY = Boolean(process.stdout.isTTY);
+  const colorStart = isTTY ? SUPERVISOR_COLOR : '';
+  const colorEnd = isTTY ? RESET_COLOR : '';
+  process.stdout.write(
+    `${colorStart}[supervisor]${colorEnd} Running safe development database migration...\n`,
+  );
+
+  const res = spawnSync('node', ['../../scripts/prisma-guard.ts', 'migrate', 'deploy'], {
+    cwd: resolve(rootDir, 'packages/database'),
+    env: { ...process.env, ...env },
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+
+  return res.status === 0;
+}
+
+export interface SupervisorCliOptions {
+  argv?: string[] | undefined;
+  rootDir?: string | undefined;
+  loadEnvFn?: typeof loadEnvironment | undefined;
+  runMigrationFn?: ((rootDir: string, env: Record<string, string>) => boolean) | undefined;
+  startSupervisorFn?: ((options: DevSupervisorOptions) => Promise<void>) | undefined;
+  log?: ((message: string) => void) | undefined;
+  logError?: ((message: string) => void) | undefined;
+  onExit?: ((code: number) => void) | undefined;
+}
+
+export async function runSupervisorCli(options: SupervisorCliOptions = {}): Promise<void> {
+  const rootDir = options.rootDir ?? resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const argv = options.argv ?? process.argv.slice(2);
+  const log = options.log ?? ((msg: string) => process.stdout.write(`${msg}\n`));
+  const logError = options.logError ?? ((msg: string) => process.stderr.write(`${msg}\n`));
+  const onExit = options.onExit ?? ((code: number) => process.exit(code));
+  const loadEnv = options.loadEnvFn ?? loadEnvironment;
+  const runMigrate = options.runMigrationFn ?? runMigration;
+  const startSupervisor =
+    options.startSupervisorFn ??
+    (async (opts: DevSupervisorOptions) => {
+      const supervisor = new DevSupervisor(opts);
+      const onSignal = (signal: NodeJS.Signals) => {
+        supervisor.stopAll(signal);
+      };
+      process.on('SIGINT', () => onSignal('SIGINT'));
+      process.on('SIGTERM', () => onSignal('SIGTERM'));
+      await supervisor.start();
+    });
 
   let cliArgs: ParsedCliArgs;
   try {
-    cliArgs = parseCliArgs(process.argv.slice(2));
+    cliArgs = parseCliArgs(argv);
   } catch (err) {
-    process.stderr.write(`[supervisor] CLI Error: ${(err as Error).message}\n`);
-    process.exit(1);
+    logError(`[supervisor] CLI Error: ${(err as Error).message}`);
+    onExit(1);
     return;
   }
 
   if (cliArgs.help) {
-    printHelp();
-    process.exit(0);
+    printHelp(log);
+    onExit(0);
     return;
   }
 
-  const { env, hasEnvFile } = loadEnvironment({
+  const { env, hasEnvFile } = loadEnv({
     rootDir,
     envFile: cliArgs.envFile,
   });
@@ -401,54 +429,51 @@ export async function main(): Promise<void> {
   if (cliArgs.migrate) {
     const migrationValidation = validateMigrationEnvironment(env, hasEnvFile);
     if (!migrationValidation.valid) {
-      process.stderr.write('[supervisor] Migration environment validation failed:\n');
+      logError('[supervisor] Migration environment validation failed:');
       for (const err of migrationValidation.errors) {
-        process.stderr.write(`  - ${err}\n`);
+        logError(`  - ${err}`);
       }
-      process.exit(1);
+      onExit(1);
       return;
     }
 
-    const migrationOk = runMigration(rootDir, env);
+    const migrationOk = runMigrate(rootDir, env);
     if (!migrationOk) {
-      process.stderr.write('[supervisor] Database migration failed. Aborting startup.\n');
-      process.exit(1);
+      logError('[supervisor] Database migration failed. Aborting startup.');
+      onExit(1);
       return;
     }
 
-    // Standalone migration command (--migrate without explicit --services) terminates cleanly
     if (!cliArgs.hasExplicitServices) {
-      process.exit(0);
+      onExit(0);
       return;
     }
   }
 
   const validation = validateServiceEnvironment(cliArgs.services, env, hasEnvFile);
   if (!validation.valid) {
-    process.stderr.write('[supervisor] Environment validation failed:\n');
+    logError('[supervisor] Environment validation failed:');
     for (const err of validation.errors) {
-      process.stderr.write(`  - ${err}\n`);
+      logError(`  - ${err}`);
     }
-    process.exit(1);
+    onExit(1);
     return;
   }
 
-  const supervisor = new DevSupervisor({
+  await startSupervisor({
     rootDir,
     services: cliArgs.services,
     env,
     skipBuild: cliArgs.skipBuild,
+    log,
+    logError,
+    onExit,
     gracefulTimeoutMs: 5000,
   });
+}
 
-  const onSignal = (signal: NodeJS.Signals) => {
-    supervisor.stopAll(signal);
-  };
-
-  process.on('SIGINT', () => onSignal('SIGINT'));
-  process.on('SIGTERM', () => onSignal('SIGTERM'));
-
-  await supervisor.start();
+export async function main(): Promise<void> {
+  await runSupervisorCli();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
