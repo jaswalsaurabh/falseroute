@@ -1,9 +1,9 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import { type ApiErrorResponse } from '@false-route/contracts';
 import {
+  getRequestClassBudget,
   type RequestClassBudget,
   type RequestClassName,
-  getRequestClassBudget,
 } from '../config/rate-limits.js';
 import { formatLimiterKey, resolveLimiterIdentity } from './principal.js';
 
@@ -30,7 +30,7 @@ const DEFAULT_MAX_KEYS = 10_000;
 /**
  * Process-local Token Bucket Rate Limiter.
  * Supports burst capacity with smooth monotonic token refill.
- * Uses bounded LRU memory storage with automatic eviction to remain safe under rotating attacker IPs.
+ * Uses bounded O(1) LRU memory storage with automatic eviction to remain safe under rotating attacker IPs.
  *
  * NOTE: This is explicitly process-local: it enforces budgets only for the
  * current process and does not coordinate across instances.
@@ -79,15 +79,12 @@ export class TokenBucketCounter {
     let record = this.records.get(key);
 
     if (!record) {
-      // Ensure capacity ceiling is maintained before inserting new keys
+      // Ensure capacity ceiling is maintained before inserting new keys via O(1) LRU eviction.
+      // Does not perform O(N) scan on request hot path.
       if (this.records.size >= this.maxKeys) {
-        this.pruneExpired();
-        if (this.records.size >= this.maxKeys) {
-          // LRU eviction: remove the oldest accessed entry
-          const oldestKey = this.records.keys().next().value;
-          if (oldestKey !== undefined) {
-            this.records.delete(oldestKey);
-          }
+        const oldestKey = this.records.keys().next().value;
+        if (oldestKey !== undefined) {
+          this.records.delete(oldestKey);
         }
       }
 
@@ -141,7 +138,7 @@ export class TokenBucketCounter {
 
 export interface RateLimiterOptions {
   readonly className: RequestClassName;
-  readonly keyMode?: 'composite' | 'ip' | 'principal' | undefined;
+  readonly keyMode?: 'principal' | 'ip' | 'composite' | undefined;
   /**
    * Injectable monotonic clock (milliseconds) for deterministic window tests.
    */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TokenBucketCounter, createRateLimiter } from './rate-limit.js';
 import {
   computeCredentialFingerprint,
+  createPrincipalIdentifier,
   formatLimiterKey,
   resolveLimiterIdentity,
 } from './principal.js';
@@ -105,7 +106,7 @@ describe('TokenBucketCounter', () => {
     expect(counter.consume('client-2').allowed).toBe(true);
   });
 
-  it('bounds memory storage and evicts least recently used entries under high key churn', () => {
+  it('bounds memory storage and evicts least recently used entries under high key churn in O(1)', () => {
     let now = 1_000_000;
     const maxKeys = 5;
     const counter = new TokenBucketCounter({
@@ -122,7 +123,7 @@ describe('TokenBucketCounter', () => {
     // Access ip-0 to refresh its LRU position
     counter.consume('ip-0');
 
-    // Add 6th key -> should evict ip-1 (the oldest unaccessed key)
+    // Add 6th key -> should evict ip-1 (the oldest unaccessed key) in O(1)
     counter.consume('ip-5');
     expect(counter.size).toBe(5);
     expect(counter.getRecord('ip-1')).toBeUndefined();
@@ -130,7 +131,7 @@ describe('TokenBucketCounter', () => {
     expect(counter.getRecord('ip-5')).toBeDefined();
   });
 
-  it('prunes expired idle entries properly', () => {
+  it('prunes expired idle entries properly during maintenance sweeps', () => {
     let now = 1_000_000;
     const counter = new TokenBucketCounter({
       budget: testBudget,
@@ -154,7 +155,7 @@ describe('Principal and Limiter Identity Helpers', () => {
   it('computes stable non-secret SHA-256 fingerprint from tokens', () => {
     const fp1 = computeCredentialFingerprint('dummy-token-12345', 'operator');
     const fp2 = computeCredentialFingerprint('dummy-token-12345', 'operator');
-    const fp3 = computeCredentialFingerprint('different-token-67890', 'operator');
+    const fp3 = computeCredentialFingerprint('different-dummy-token-67890', 'operator');
 
     expect(fp1).toBe(fp2);
     expect(fp1).not.toBe(fp3);
@@ -169,7 +170,7 @@ describe('Principal and Limiter Identity Helpers', () => {
     expect(formatLimiterKey(identity)).toBe('ip:198.51.100.1');
   });
 
-  it('resolves authenticated identity to composite principal and source IP', () => {
+  it('resolves authenticated identity to per-principal key by default and supports other modes', () => {
     const req = { principalId: 'operator:abc1234', ip: '198.51.100.2', socket: {} } as Request;
     const identity = resolveLimiterIdentity(req);
     expect(identity).toEqual({
@@ -177,11 +178,34 @@ describe('Principal and Limiter Identity Helpers', () => {
       id: 'operator:abc1234',
       sourceIp: '198.51.100.2',
     });
+    // Default mode enforces aggregate per-principal limit across all source IPs
+    expect(formatLimiterKey(identity)).toBe('principal:operator:abc1234');
+    expect(formatLimiterKey(identity, 'principal')).toBe('principal:operator:abc1234');
+    expect(formatLimiterKey(identity, 'ip')).toBe('ip:198.51.100.2');
     expect(formatLimiterKey(identity, 'composite')).toBe(
       'principal:operator:abc1234:ip:198.51.100.2',
     );
-    expect(formatLimiterKey(identity, 'principal')).toBe('principal:operator:abc1234');
-    expect(formatLimiterKey(identity, 'ip')).toBe('ip:198.51.100.2');
+  });
+
+  it('createPrincipalIdentifier identifies valid tokens and leaves unauthenticated requests untouched', () => {
+    const identifier = createPrincipalIdentifier({ expectedToken: 'not-a-real-test-token' });
+
+    const validReq = {
+      headers: { authorization: 'Bearer not-a-real-test-token' },
+    } as unknown as Request;
+    identifier(validReq, {} as Response, noop);
+    expect(validReq.principalId).toBeDefined();
+    expect(validReq.principalId?.startsWith('operator:')).toBe(true);
+
+    const invalidReq = {
+      headers: { authorization: 'Bearer not-a-real-invalid-token' },
+    } as unknown as Request;
+    identifier(invalidReq, {} as Response, noop);
+    expect(invalidReq.principalId).toBeUndefined();
+
+    const noAuthReq = { headers: {} } as unknown as Request;
+    identifier(noAuthReq, {} as Response, noop);
+    expect(noAuthReq.principalId).toBeUndefined();
   });
 });
 

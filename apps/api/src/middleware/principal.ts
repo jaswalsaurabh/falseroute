@@ -1,13 +1,14 @@
-import { type Request } from 'express';
+import { type Request, type Response, type NextFunction } from 'express';
 import { createHash } from 'node:crypto';
+import { extractBearerToken, verifyOperatorToken } from '@false-route/security';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /**
-       * Non-secret verified principal label or fingerprint, set by authentication middleware
-       * after successful verification. Never holds a bearer token or secret.
+       * Non-secret verified principal label or fingerprint, set after successful verification.
+       * Never holds a bearer token or secret.
        */
       principalId?: string;
     }
@@ -28,9 +29,25 @@ export function computeCredentialFingerprint(token: string, label = 'operator'):
 }
 
 /**
+ * Early principal identification middleware.
+ * If a valid operator bearer token is present in the Authorization header,
+ * attaches the non-secret principal fingerprint to `req.principalId` so subsequent
+ * global limiters (e.g. default quota) can enforce per-principal budgets.
+ * Does not block or reject requests; route-level auth middleware enforces mandatory auth.
+ */
+export function createPrincipalIdentifier(options: { readonly expectedToken: string }) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const bearerToken = extractBearerToken(req.headers.authorization);
+    if (bearerToken !== null && verifyOperatorToken(bearerToken, options.expectedToken)) {
+      req.principalId = computeCredentialFingerprint(bearerToken, 'operator');
+    }
+    next();
+  };
+}
+
+/**
  * Resolves the rate-limit identity for a request:
- * - When authenticated: verified non-secret principal fingerprint paired with source IP
- *   (providing secondary source-IP isolation under shared credentials).
+ * - When authenticated: verified non-secret principal fingerprint.
  * - When unauthenticated: trusted-proxy-aware source IP (Express `req.ip`).
  */
 export function resolveLimiterIdentity(req: Request): LimiterIdentity {
@@ -43,22 +60,23 @@ export function resolveLimiterIdentity(req: Request): LimiterIdentity {
 
 /**
  * Formats a rate-limit key.
- * By default ('composite'), authenticated keys incorporate both the verified principal
- * and the source IP (`principal:<id>:ip:<address>`) so a single source cannot consume
- * the entire shared principal allowance for other legitimate sources.
+ * By default ('principal'), authenticated callers are keyed by their verified principal (`principal:<id>`)
+ * enforcing aggregate principal budgets across all source IPs, with IP fallback for unauthenticated callers.
+ * Mode 'ip' forces source-IP keying (e.g. for health checks and pre-auth failure tracking).
+ * Mode 'composite' incorporates both principal and source IP (`principal:<id>:ip:<address>`).
  */
 export function formatLimiterKey(
   identity: LimiterIdentity,
-  mode: 'composite' | 'ip' | 'principal' = 'composite',
+  mode: 'principal' | 'ip' | 'composite' = 'principal',
 ): string {
   if (identity.kind === 'principal') {
-    if (mode === 'principal') {
-      return `principal:${identity.id}`;
-    }
     if (mode === 'ip') {
       return `ip:${identity.sourceIp}`;
     }
-    return `principal:${identity.id}:ip:${identity.sourceIp}`;
+    if (mode === 'composite') {
+      return `principal:${identity.id}:ip:${identity.sourceIp}`;
+    }
+    return `principal:${identity.id}`;
   }
   return `ip:${identity.address}`;
 }

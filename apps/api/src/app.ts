@@ -5,6 +5,7 @@ import { type DatabaseClient } from '@false-route/database';
 import { type Logger } from '@false-route/observability';
 import { type ApiConfig } from './config/api-config.js';
 import { correlationMiddleware } from './middleware/correlation.js';
+import { createPrincipalIdentifier } from './middleware/principal.js';
 import { operatorAuthMiddleware } from './middleware/auth.js';
 import { createRateLimiter } from './middleware/rate-limit.js';
 import { createOverloadGuard } from './middleware/load-shed.js';
@@ -56,7 +57,10 @@ export function createApp(options: AppOptions): Express {
   app.use(express.json({ limit: '64kb' }));
   app.use(createOverloadGuard());
 
-  // Global Default Quota Boundary (applies to all routes: valid, unknown, unsupported methods)
+  // Early Principal Identification (attaches non-secret principal fingerprint for valid tokens)
+  app.use(createPrincipalIdentifier({ expectedToken: config.OPERATOR_ACCESS_TOKEN }));
+
+  // Global Default Quota Boundary (applies per-principal limit with IP fallback across all routes)
   const defaultLimiter = createRateLimiter({
     className: 'default',
     ...(clock !== undefined ? { clock } : {}),
@@ -104,12 +108,12 @@ export function createApp(options: AppOptions): Express {
   });
   app.use('/api/v1/intrusion-events', authMiddleware, eventRouter);
 
-  // Fallback 404 Handler
+  // Unmatched Route Boundary
   app.use((req, _res, next) => {
-    next(new NotFoundError(`Endpoint not found: ${req.method} ${req.originalUrl}`));
+    next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
   });
 
-  // Outer Error Boundary
+  // Centralized Error Boundary
   app.use(errorHandlerMiddleware(logger));
 
   return app;

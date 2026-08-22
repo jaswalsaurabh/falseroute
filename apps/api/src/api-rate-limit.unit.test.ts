@@ -146,7 +146,7 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
     }
     expect(counts.createEvent).toBe(WRITE_BURST_CAPACITY);
 
-    // 11th write from same source address must be rejected
+    // 11th write from same principal must be rejected
     const rejected = await request(app)
       .post('/api/v1/intrusion-events')
       .set('Authorization', authHeader)
@@ -168,36 +168,29 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
     expect(counts.createEvent).toBe(WRITE_BURST_CAPACITY);
   });
 
-  it('isolates secondary source-IP boundaries under shared operator credentials', async () => {
+  it('enforces aggregate per-principal limits across rotating source IPs (preventing IP rotation bypass)', async () => {
     let now = 1_000_000;
     const { app, counts } = buildApp(1, () => now);
 
-    // Source IP A exhausts its write burst allowance (10)
+    // The single operator principal makes 10 requests rotating across 10 distinct IPs
     for (let i = 0; i < WRITE_BURST_CAPACITY; i += 1) {
       const res = await request(app)
         .post('/api/v1/intrusion-events')
         .set('Authorization', authHeader)
-        .set('X-Forwarded-For', '198.51.100.10')
+        .set('X-Forwarded-For', `198.51.100.${i + 1}`)
         .send(validCreatePayload());
       expect(res.status).toBe(202);
     }
     expect(counts.createEvent).toBe(WRITE_BURST_CAPACITY);
 
-    const rejectedA = await request(app)
+    // 11th request with the same principal from an 11th new IP is rejected under aggregate principal quota
+    const rejected = await request(app)
       .post('/api/v1/intrusion-events')
       .set('Authorization', authHeader)
-      .set('X-Forwarded-For', '198.51.100.10')
+      .set('X-Forwarded-For', '198.51.100.99')
       .send(validCreatePayload());
-    expect(rejectedA.status).toBe(429);
-
-    // Source IP B using the exact same operator credentials must NOT be starved
-    const allowedB = await request(app)
-      .post('/api/v1/intrusion-events')
-      .set('Authorization', authHeader)
-      .set('X-Forwarded-For', '198.51.100.20')
-      .send(validCreatePayload());
-    expect(allowedB.status).toBe(202);
-    expect(counts.createEvent).toBe(WRITE_BURST_CAPACITY + 1);
+    expect(rejected.status).toBe(429);
+    expect(counts.createEvent).toBe(WRITE_BURST_CAPACITY);
   });
 
   it('bounds unknown route flooding (404) at the default baseline limiter (30 burst)', async () => {
@@ -223,6 +216,27 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
     expect(rejected.headers['retry-after']).toBeDefined();
   });
 
+  it('default quota boundary uses authenticated principal when token is provided', async () => {
+    let now = 1_000_000;
+    const { app } = buildApp(1, () => now);
+
+    // 30 requests to unknown routes with valid operator token consume the principal's default quota
+    for (let i = 0; i < DEFAULT_BURST_CAPACITY; i += 1) {
+      const res = await request(app)
+        .get(`/api/v1/unknown-${i}`)
+        .set('Authorization', authHeader)
+        .set('X-Forwarded-For', `203.0.113.${i + 1}`);
+      expect(res.status).toBe(404);
+    }
+
+    // 31st request from a new IP with the same token is rejected because principal's default quota is exhausted
+    const rejected = await request(app)
+      .get('/api/v1/unknown-31')
+      .set('Authorization', authHeader)
+      .set('X-Forwarded-For', '203.0.113.200');
+    expect(rejected.status).toBe(429);
+  });
+
   it('ignores forwarding headers when TRUST_PROXY_HOPS is 0 and honors them when configured', async () => {
     let now = 1_000_000;
 
@@ -238,7 +252,7 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
       .set('X-Forwarded-For', '203.0.113.10');
     expect(exhaustedClosed.status).toBe(429);
 
-    // Trusted App (1 hop): isolates distinct spoofed/forwarded IPs
+    // Trusted App (1 hop): isolates distinct spoofed/forwarded IPs on IP-keyed limiters (health)
     const { app: trustedApp } = buildApp(1, () => now);
     for (let i = 0; i < HEALTH_BURST_CAPACITY; i += 1) {
       const res = await request(trustedApp)
