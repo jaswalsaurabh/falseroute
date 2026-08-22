@@ -81,10 +81,12 @@ export function createApp(options: AppOptions): Express {
   // Stricter request-class budgets (process-local, see config/rate-limits.ts)
   const readLimiter = createRateLimiter({
     className: 'read',
+    secondaryKeyMode: 'ip',
     ...(clock !== undefined ? { clock } : {}),
   });
   const writeLimiter = createRateLimiter({
     className: 'write',
+    secondaryKeyMode: 'ip',
     ...(clock !== undefined ? { clock } : {}),
   });
   const healthLimiter = createRateLimiter({

@@ -258,4 +258,103 @@ describe('createRateLimiter middleware', () => {
       correlationId: 'corr-test-429',
     });
   });
+
+  it('enforces a secondary source-IP budget across distinct principals', () => {
+    const limiter = createRateLimiter({
+      className: 'write',
+      secondaryKeyMode: 'ip',
+      customBudget: {
+        windowMs: 60_000,
+        maxRequests: 2,
+        burstCapacity: 2,
+        refillRatePerSecond: 2 / 60,
+      },
+      clock: () => 1_000_000,
+    });
+    let statusCode = 200;
+    let nextCalls = 0;
+    const res = {
+      setHeader: noop,
+      status: (code: number) => {
+        statusCode = code;
+        return res;
+      },
+      json: () => res,
+    } as unknown as Response;
+
+    for (const principalId of ['operator:alpha', 'operator:beta']) {
+      limiter(
+        {
+          principalId,
+          ip: '198.51.100.10',
+          socket: {},
+          correlationId: 'corr-secondary-ip',
+        } as unknown as Request,
+        res,
+        () => {
+          nextCalls += 1;
+        },
+      );
+    }
+    limiter(
+      {
+        principalId: 'operator:gamma',
+        ip: '198.51.100.10',
+        socket: {},
+        correlationId: 'corr-secondary-ip',
+      } as unknown as Request,
+      res,
+      () => {
+        nextCalls += 1;
+      },
+    );
+
+    expect(nextCalls).toBe(2);
+    expect(statusCode).toBe(429);
+    expect(limiter.secondaryCounter?.getRecord('ip:198.51.100.10')?.tokens).toBe(0);
+  });
+
+  it('enforces the principal budget across distinct source IPs', () => {
+    const limiter = createRateLimiter({
+      className: 'write',
+      secondaryKeyMode: 'ip',
+      customBudget: {
+        windowMs: 60_000,
+        maxRequests: 2,
+        burstCapacity: 2,
+        refillRatePerSecond: 2 / 60,
+      },
+      clock: () => 1_000_000,
+    });
+    let statusCode = 200;
+    let nextCalls = 0;
+    const res = {
+      setHeader: noop,
+      status: (code: number) => {
+        statusCode = code;
+        return res;
+      },
+      json: () => res,
+    } as unknown as Response;
+
+    for (const ip of ['198.51.100.11', '198.51.100.12', '198.51.100.13']) {
+      limiter(
+        {
+          principalId: 'operator:shared',
+          ip,
+          socket: {},
+          correlationId: 'corr-primary-principal',
+        } as unknown as Request,
+        res,
+        () => {
+          nextCalls += 1;
+        },
+      );
+    }
+
+    expect(nextCalls).toBe(2);
+    expect(statusCode).toBe(429);
+    expect(limiter.counter.getRecord('principal:operator:shared')?.tokens).toBe(0);
+    expect(limiter.secondaryCounter?.getRecord('ip:198.51.100.13')).toBeUndefined();
+  });
 });

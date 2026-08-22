@@ -139,6 +139,7 @@ export class TokenBucketCounter {
 export interface RateLimiterOptions {
   readonly className: RequestClassName;
   readonly keyMode?: 'principal' | 'ip' | 'composite' | undefined;
+  readonly secondaryKeyMode?: 'ip' | undefined;
   /**
    * Injectable monotonic clock (milliseconds) for deterministic window tests.
    */
@@ -158,6 +159,25 @@ export function createRateLimiter(options: RateLimiterOptions) {
     maxKeys: options.maxKeys,
     ...(options.clock !== undefined ? { clock: options.clock } : {}),
   });
+  const secondaryCounter =
+    options.secondaryKeyMode === undefined
+      ? undefined
+      : new TokenBucketCounter({
+          budget,
+          maxKeys: options.maxKeys,
+          ...(options.clock !== undefined ? { clock: options.clock } : {}),
+        });
+
+  const reject = (req: Request, res: Response, result: ConsumeResult): void => {
+    const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
+    const errorResponse: ApiErrorResponse = {
+      error: 'TOO_MANY_REQUESTS',
+      message: `Request budget exceeded for ${options.className} operations; retry after ${retryAfterSeconds}s`,
+      correlationId: req.correlationId,
+    };
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    res.status(429).json(errorResponse);
+  };
 
   const middleware = (req: Request, res: Response, next: NextFunction): void => {
     const identity = resolveLimiterIdentity(req);
@@ -165,20 +185,25 @@ export function createRateLimiter(options: RateLimiterOptions) {
     const result = counter.consume(key);
 
     if (!result.allowed) {
-      const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
-      const errorResponse: ApiErrorResponse = {
-        error: 'TOO_MANY_REQUESTS',
-        message: `Request budget exceeded for ${options.className} operations; retry after ${retryAfterSeconds}s`,
-        correlationId: req.correlationId,
-      };
-      res.setHeader('Retry-After', String(retryAfterSeconds));
-      res.status(429).json(errorResponse);
+      reject(req, res, result);
       return;
+    }
+
+    if (secondaryCounter !== undefined) {
+      const secondaryKey = formatLimiterKey(identity, options.secondaryKeyMode);
+      if (secondaryKey !== key) {
+        const secondaryResult = secondaryCounter.consume(secondaryKey);
+        if (!secondaryResult.allowed) {
+          reject(req, res, secondaryResult);
+          return;
+        }
+      }
     }
 
     next();
   };
 
   middleware.counter = counter;
+  middleware.secondaryCounter = secondaryCounter;
   return middleware;
 }

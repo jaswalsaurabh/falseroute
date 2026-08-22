@@ -369,7 +369,7 @@ Options:
   --services=<list>                Comma-separated list of services (web,api,worker)
   --env-file=<path>                Path to environment file (default: .env)
   --no-build, --skip-build         Skip workspace build before starting services
-  --migrate                        Run migrations before starting services
+  --migrate                        Run migrations only unless --services is also supplied
   --help, -h                       Display this help message
 `;
   process.stdout.write(`${helpText}\n`);
