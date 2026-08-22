@@ -278,12 +278,14 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
     const { app } = buildApp(1, () => now);
 
     for (let i = 0; i < ABUSE_BURST_CAPACITY; i += 1) {
-      const res = await request(app).get('/api/v1/ready').set('X-Forwarded-For', '203.0.113.50');
+      const res = await request(app)
+        .get('/api/v1/intrusion-events')
+        .set('X-Forwarded-For', '203.0.113.50');
       expect(res.status).toBe(401);
     }
 
     const throttled = await request(app)
-      .get('/api/v1/ready')
+      .get('/api/v1/intrusion-events')
       .set('X-Forwarded-For', '203.0.113.50');
     expect(throttled.status).toBe(429);
     const parsed = ApiErrorResponseSchema.parse(throttled.body);
@@ -292,7 +294,9 @@ describe('Hierarchical Abuse Controls & Request Budgets', () => {
     expect(throttled.text).not.toContain(mockConfig.OPERATOR_ACCESS_TOKEN);
 
     // Another IP can still attempt authentication
-    const otherIp = await request(app).get('/api/v1/ready').set('X-Forwarded-For', '203.0.113.51');
+    const otherIp = await request(app)
+      .get('/api/v1/intrusion-events')
+      .set('X-Forwarded-For', '203.0.113.51');
     expect(otherIp.status).toBe(401);
   });
 });

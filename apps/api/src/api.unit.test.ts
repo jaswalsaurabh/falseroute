@@ -126,15 +126,8 @@ describe('Express API Unit Tests', () => {
     expect(res.headers['x-correlation-id']).toBeDefined();
   });
 
-  it('rejects unauthenticated access to readiness endpoint', async () => {
+  it('allows unauthenticated access to readiness endpoint for platform probes', async () => {
     const res = await request(app).get('/api/v1/ready');
-    expect(res.status).toBe(401);
-    const parsed = ApiErrorResponseSchema.parse(res.body);
-    expect(parsed.error).toBe('UNAUTHORIZED');
-  });
-
-  it('allows authenticated access to readiness endpoint', async () => {
-    const res = await request(app).get('/api/v1/ready').set('Authorization', authHeader);
     expect(res.status).toBe(200);
     const parsed = ReadinessCheckResponseSchema.parse(res.body);
     expect(parsed.status).toBe('ready');

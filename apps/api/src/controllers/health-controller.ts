@@ -32,6 +32,18 @@ export class HealthController {
     }
 
     const isHealthy = await this.repository.checkHealth();
+
+    // Guard against shutdown initiated while the database check was in flight
+    if (this.isReadySupplier && !this.isReadySupplier()) {
+      const errorResponse: ApiErrorResponse = {
+        error: 'SERVICE_UNAVAILABLE',
+        message: 'Server is shutting down',
+        correlationId: req.correlationId,
+      };
+      res.status(503).json(errorResponse);
+      return;
+    }
+
     if (!isHealthy) {
       const errorResponse: ApiErrorResponse = {
         error: 'SERVICE_UNAVAILABLE',

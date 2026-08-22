@@ -75,14 +75,16 @@ Use of a known decoy credential deterministically produces an `ASSIGN_FALSE_ROUT
 
 ## Runtime Lifecycle & Draining
 
-- **API Lifecycle:** Implements connection tracking (`Set<Socket>`), graceful `SIGTERM`/`SIGINT` handling, immediate `503 SERVICE_UNAVAILABLE` signaling on `/api/v1/ready` upon shutdown commencement, bounded socket draining (default 10s `SHUTDOWN_TIMEOUT_MS`), forced socket destruction on timeout, database disconnection, and telemetry flushing.
-- **Worker Lifecycle:** Halts active polling loops on `SIGTERM`/`SIGINT`, waits for active claim processing to complete within `WORKER_SHUTDOWN_TIMEOUT_MS`, safely disconnects database client, and flushes telemetry.
+- **API Lifecycle:** Implements connection tracking (`Set<Socket>`), graceful `SIGTERM`/`SIGINT` handling, immediate `503 SERVICE_UNAVAILABLE` signaling on unauthenticated `/api/v1/ready` upon shutdown commencement, bounded three-phase graceful shutdown (`SHUTDOWN_DRAIN_TIMEOUT_MS: 5000`, `SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS: 2000`, `SHUTDOWN_TELEMETRY_TIMEOUT_MS: 1000` fitting inside 8000ms `SHUTDOWN_TIMEOUT_MS`), forced socket destruction on drain timeout, database disconnection, and telemetry flushing.
+- **Worker Lifecycle:** Operates an internal HTTP health server listening on `0.0.0.0:${PORT}` (port 8080) exposing unauthenticated `/health` (liveness) and `/ready` (PostgreSQL dependency-backed readiness). Halts active polling loops on `SIGTERM`/`SIGINT`, drains in-flight event processing within `WORKER_DRAIN_TIMEOUT_MS: 5000`, safely disconnects database client within `WORKER_DB_DISCONNECT_TIMEOUT_MS: 2000`, and flushes telemetry within `WORKER_TELEMETRY_TIMEOUT_MS: 1000` (bounded by 8000ms `WORKER_SHUTDOWN_TIMEOUT_MS`).
+- **Web Lifecycle & Routing:** Serves static frontend assets with strict security headers, rejects non-existent `/api/*` requests with bounded 404 JSON (preventing SPA fallback from returning HTML for API calls), and routes API traffic via same-origin external HTTPS load balancer path routing (`/api/*` -> API service).
 
 ## Provisional Cloud Run Deployment Contracts
 
 - **Declarative Templates:** Defined in `infrastructure/cloud-run/` (`api.service.yaml`, `worker.service.yaml`, `web.service.yaml`) using Knative Serving schema.
 - **Single-Instance Constraint:** API and Worker enforce `autoscaling.knative.dev/maxScale: "1"` while abuse controls, rate limiting, and claim concurrency remain process-local.
-- **Worker CPU Allocation:** Worker template explicitly configures `run.googleapis.com/cpu-throttling: "false"` and `minScale: "1"` to guarantee continuous background polling loops.
+- **Worker CPU Allocation & Health Probes:** Worker template explicitly configures `run.googleapis.com/cpu-throttling: "false"` and `minScale: "1"` to guarantee continuous background polling loops, configuring `startupProbe` (`/ready`) and `livenessProbe` (`/health`) on container port 8080.
+- **API Health Probes:** API template specifies `startupProbe` targeting `/api/v1/ready` and `livenessProbe` targeting `/api/v1/health` on port 3000.
 - **Zero-Secret Templates:** Secrets (`DATABASE_URL`, `OPERATOR_ACCESS_TOKEN`, `GEMINI_API_KEY`) are resolved via Secret Manager (`secretKeyRef`), never plain environment values.
 - **Zero-Auto-Migration:** Service containers do not execute database schema migrations on ordinary startup; schema migrations remain separated and guarded via `scripts/prisma-guard.ts`.
 
