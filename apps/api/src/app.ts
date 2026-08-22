@@ -111,7 +111,7 @@ export function createApp(options: AppOptions): Express {
     options.eventPublisher ??
     (config.EVENT_PUBLISHER_MODE === 'LOCAL_HTTP' && config.LOCAL_WORKER_PUSH_TOKEN
       ? new LocalHttpEventPublisher({
-          endpoint: config.LOCAL_WORKER_PUSH_URL ?? 'http://127.0.0.1:8080/pubsub/push',
+          endpoint: config.LOCAL_WORKER_PUSH_URL ?? 'http://127.0.0.1:8088/pubsub/push',
           sharedSecret: config.LOCAL_WORKER_PUSH_TOKEN,
           timeoutMs: config.EVENT_PUBLISH_TIMEOUT_MS ?? 5000,
         })

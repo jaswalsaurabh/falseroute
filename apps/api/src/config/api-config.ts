@@ -15,7 +15,7 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
     .min(8, 'OPERATOR_ACCESS_TOKEN must be at least 8 characters long'),
   OPERATOR_REPLAY_TOKEN: z.string().min(16).optional(),
   EVENT_PUBLISHER_MODE: z.enum(['MEMORY', 'LOCAL_HTTP', 'LIVE_PUBSUB']).default('MEMORY'),
-  LOCAL_WORKER_PUSH_URL: z.string().url().default('http://127.0.0.1:8080/pubsub/push'),
+  LOCAL_WORKER_PUSH_URL: z.string().url().default('http://127.0.0.1:8088/pubsub/push'),
   LOCAL_WORKER_PUSH_TOKEN: z.string().min(16).optional(),
   EVENT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
   CORS_ORIGINS: z
