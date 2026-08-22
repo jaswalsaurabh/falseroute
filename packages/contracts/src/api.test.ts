@@ -31,8 +31,8 @@ describe('API Contract Schemas', () => {
     expect(ListIntrusionEventsResponseSchema.parse(valid)).toEqual(valid);
   });
 
-  it('validates GetIntrusionEventResponse', () => {
-    const valid = {
+  it('validates GetIntrusionEventResponse with and without simulatedEffect', () => {
+    const validWithoutEffect = {
       event: {
         id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         occurredAt: '2026-08-22T00:00:00.000Z',
@@ -50,10 +50,27 @@ describe('API Contract Schemas', () => {
         provenance: 'OBSERVED' as const,
       },
     };
-    expect(GetIntrusionEventResponseSchema.parse(valid)).toEqual(valid);
+    expect(GetIntrusionEventResponseSchema.parse(validWithoutEffect)).toEqual(validWithoutEffect);
+
+    const validWithEffect = {
+      ...validWithoutEffect,
+      simulatedEffect: {
+        id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+        decisionId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+        correlationId: 'corr-123',
+        effectKind: 'ASSIGN_FALSE_ROUTE' as const,
+        status: 'RECORDED' as const,
+        containmentMode: 'SIMULATED' as const,
+        assignedFalseRoute: 'mock-admin-decoy' as const,
+        provenance: 'DERIVED' as const,
+        recordedAt: '2026-08-22T00:00:03.000Z',
+        adapterVersion: 'simulated-deception-agent-v1',
+      },
+    };
+    expect(GetIntrusionEventResponseSchema.parse(validWithEffect)).toEqual(validWithEffect);
   });
 
-  it('validates GetDeceptionDecisionResponse', () => {
+  it('validates GetDeceptionDecisionResponse with and without simulatedEffect', () => {
     const valid = {
       decision: {
         id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
@@ -70,6 +87,18 @@ describe('API Contract Schemas', () => {
           ruleVersion: '2026.08.1',
           evaluatedAt: '2026-08-22T00:00:02.000Z',
         },
+      },
+      simulatedEffect: {
+        id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+        decisionId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+        correlationId: 'corr-123',
+        effectKind: 'ASSIGN_FALSE_ROUTE' as const,
+        status: 'RECORDED' as const,
+        containmentMode: 'SIMULATED' as const,
+        assignedFalseRoute: 'mock-admin-decoy' as const,
+        provenance: 'DERIVED' as const,
+        recordedAt: '2026-08-22T00:00:03.000Z',
+        adapterVersion: 'simulated-deception-agent-v1',
       },
     };
     expect(GetDeceptionDecisionResponseSchema.parse(valid)).toEqual(valid);

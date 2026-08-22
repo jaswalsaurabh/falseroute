@@ -6,6 +6,7 @@ import {
   ProcessingStatusSchema,
 } from './intrusion-event.js';
 import { DeceptionDecisionSchema } from './deception-decision.js';
+import { SimulatedDeceptionEffectSchema } from './simulated-deception.js';
 
 export const CreateIntrusionEventRequestSchema = SimulatedIntrusionEventInputSchema;
 export type CreateIntrusionEventRequest = z.infer<typeof CreateIntrusionEventRequestSchema>;
@@ -47,6 +48,7 @@ export const GetIntrusionEventResponseSchema = z
   .object({
     event: IntrusionEventSchema,
     decision: DeceptionDecisionSchema.nullable().optional(),
+    simulatedEffect: SimulatedDeceptionEffectSchema.nullable().optional(),
   })
   .strict();
 
@@ -55,6 +57,7 @@ export type GetIntrusionEventResponse = z.infer<typeof GetIntrusionEventResponse
 export const GetDeceptionDecisionResponseSchema = z
   .object({
     decision: DeceptionDecisionSchema,
+    simulatedEffect: SimulatedDeceptionEffectSchema.nullable().optional(),
   })
   .strict();
 

@@ -80,6 +80,15 @@ export {
 } from './deception-decision.js';
 
 export {
+  SimulatedDeceptionCommandSchema,
+  type SimulatedDeceptionCommand,
+  SimulatedDeceptionResultSchema,
+  type SimulatedDeceptionResult,
+  SimulatedDeceptionEffectSchema,
+  type SimulatedDeceptionEffect,
+} from './simulated-deception.js';
+
+export {
   CreateIntrusionEventRequestSchema,
   type CreateIntrusionEventRequest,
   CreateIntrusionEventResponseSchema,
