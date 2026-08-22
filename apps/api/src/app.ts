@@ -6,7 +6,8 @@ import { type Logger } from '@false-route/observability';
 import { type ApiConfig } from './config/api-config.js';
 import { correlationMiddleware } from './middleware/correlation.js';
 import { operatorAuthMiddleware } from './middleware/auth.js';
-import { rateLimitMiddleware } from './middleware/rate-limit.js';
+import { createRateLimiter } from './middleware/rate-limit.js';
+import { createOverloadGuard } from './middleware/load-shed.js';
 import { errorHandlerMiddleware, NotFoundError } from './middleware/error-handler.js';
 import { PrismaApiRepository, type ApiRepository } from './persistence/api-repository.js';
 import { EventService } from './services/event-service.js';
@@ -31,6 +32,12 @@ export function createApp(options: AppOptions): Express {
 
   const app = express();
 
+  // Source-IP resolution trusts declared reverse-proxy hops only; 0 hops
+  // (default) fails closed and ignores client-supplied forwarding headers.
+  if ((config.TRUST_PROXY_HOPS ?? 0) > 0) {
+    app.set('trust proxy', config.TRUST_PROXY_HOPS);
+  }
+
   // Security Headers and CORS Origin Allowlist
   app.use(helmet());
   const allowedOrigins = config.CORS_ORIGINS.split(',').map((o) => o.trim());
@@ -43,10 +50,10 @@ export function createApp(options: AppOptions): Express {
     }),
   );
 
-  // Request Context & Security Limiting
+  // Request Context, Load Shedding & Body Limits
   app.use(correlationMiddleware());
   app.use(express.json({ limit: '64kb' }));
-  app.use(rateLimitMiddleware());
+  app.use(createOverloadGuard());
 
   // Component Composition
   const repository = options.repository ?? new PrismaApiRepository(db);
@@ -58,11 +65,24 @@ export function createApp(options: AppOptions): Express {
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
   });
 
+  // Named request-class budgets (process-local, see config/rate-limits.ts)
+  const readLimiter = createRateLimiter({ className: 'read' });
+  const writeLimiter = createRateLimiter({ className: 'write' });
+  const healthLimiter = createRateLimiter({ className: 'health' });
+
   // Mount API Endpoints
-  const healthRouter = createHealthRouter(healthController, authMiddleware);
+  const healthRouter = createHealthRouter({
+    controller: healthController,
+    authMiddleware,
+    healthLimiter,
+  });
   app.use('/api/v1', healthRouter);
 
-  const eventRouter = createEventRouter(eventController);
+  const eventRouter = createEventRouter({
+    controller: eventController,
+    readLimiter,
+    writeLimiter,
+  });
   app.use('/api/v1/intrusion-events', authMiddleware, eventRouter);
 
   // Fallback 404 Handler

@@ -25,6 +25,7 @@ const mockConfig = {
   OPERATOR_ACCESS_TOKEN: 'test-secret-operator-token-12345',
   CORS_ORIGINS: 'http://localhost:5173',
   ENABLE_TELEMETRY: false,
+  TRUST_PROXY_HOPS: 0,
 };
 
 const mockLogger = createLogger({
