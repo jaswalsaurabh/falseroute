@@ -415,6 +415,12 @@ export async function main(): Promise<void> {
       process.exit(1);
       return;
     }
+
+    // Standalone migration command (--migrate without explicit --services) terminates cleanly
+    if (!cliArgs.hasExplicitServices) {
+      process.exit(0);
+      return;
+    }
   }
 
   const validation = validateServiceEnvironment(cliArgs.services, env, hasEnvFile);

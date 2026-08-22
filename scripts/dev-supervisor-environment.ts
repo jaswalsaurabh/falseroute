@@ -5,6 +5,7 @@ import type { ServiceKey } from './dev-supervisor.ts';
 
 export interface ParsedCliArgs {
   services: ServiceKey[];
+  hasExplicitServices: boolean;
   migrate: boolean;
   skipBuild: boolean;
   envFile?: string | undefined;
@@ -14,6 +15,7 @@ export interface ParsedCliArgs {
 export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
   const result: ParsedCliArgs = {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
     migrate: false,
     skipBuild: false,
     help: false,
@@ -45,6 +47,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
         throw new Error('At least one valid service must be specified with --services');
       }
       result.services = parsedServices;
+      result.hasExplicitServices = true;
     } else if (arg.startsWith('--env-file=')) {
       const file = arg.slice('--env-file='.length).trim();
       if (!file) {

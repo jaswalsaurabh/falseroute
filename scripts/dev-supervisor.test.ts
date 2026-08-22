@@ -22,16 +22,12 @@ class FakeChildProcess extends EventEmitter {
   public kill(signal?: NodeJS.Signals | string): boolean {
     this.killed = true;
     this.signalSent = signal ?? 'SIGTERM';
-    process.nextTick(() => {
-      this.emit('exit', 0, signal ?? 'SIGTERM');
-    });
+    process.nextTick(() => this.emit('exit', 0, signal ?? 'SIGTERM'));
     return true;
   }
-
   public simulateExit(code: number | null, signal: string | null = null): void {
     this.emit('exit', code, signal);
   }
-
   public simulateError(err: Error): void {
     this.emit('error', err);
   }
@@ -68,10 +64,7 @@ test('loadEnvironment gives precedence to process.env over file defaults', () =>
   const result = loadEnvironment({
     rootDir: process.cwd(),
     envFile: '.env.example',
-    processEnv: {
-      PORT: '4000',
-      CUSTOM_INJECTED: 'active',
-    },
+    processEnv: { PORT: '4000', CUSTOM_INJECTED: 'active' },
   });
 
   assert.equal(result.hasEnvFile, true);
@@ -118,10 +111,7 @@ test('validateServiceEnvironment validates according to selected services and de
 test('validateServiceEnvironment rejects invalid DATABASE_URL and short token without leaking values', () => {
   const result = validateServiceEnvironment(
     ['api'],
-    {
-      DATABASE_URL: 'mysql://localhost:3306/db',
-      OPERATOR_ACCESS_TOKEN: 'short',
-    },
+    { DATABASE_URL: 'mysql://localhost:3306/db', OPERATOR_ACCESS_TOKEN: 'short' },
     true,
   );
 
@@ -135,9 +125,10 @@ test('validateServiceEnvironment rejects invalid DATABASE_URL and short token wi
   );
 });
 
-test('parseCliArgs parses commands and options correctly and enforces constraints', () => {
+test('parseCliArgs parses commands and options correctly and tracks explicit services', () => {
   assert.deepEqual(parseCliArgs([]), {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
     migrate: false,
     skipBuild: false,
     help: false,
@@ -145,6 +136,15 @@ test('parseCliArgs parses commands and options correctly and enforces constraint
 
   assert.deepEqual(parseCliArgs(['--migrate']), {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
+    migrate: true,
+    skipBuild: false,
+    help: false,
+  });
+
+  assert.deepEqual(parseCliArgs(['--migrate', '--services=api']), {
+    services: ['api'],
+    hasExplicitServices: true,
     migrate: true,
     skipBuild: false,
     help: false,
@@ -152,6 +152,7 @@ test('parseCliArgs parses commands and options correctly and enforces constraint
 
   assert.deepEqual(parseCliArgs(['--services=api,worker', '--env-file=.env.local']), {
     services: ['api', 'worker'],
+    hasExplicitServices: true,
     migrate: false,
     skipBuild: false,
     envFile: '.env.local',
@@ -160,6 +161,7 @@ test('parseCliArgs parses commands and options correctly and enforces constraint
 
   assert.deepEqual(parseCliArgs(['--services=web', '--no-build']), {
     services: ['web'],
+    hasExplicitServices: true,
     migrate: false,
     skipBuild: true,
     help: false,
