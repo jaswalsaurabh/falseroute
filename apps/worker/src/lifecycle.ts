@@ -25,6 +25,11 @@ import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
 import {
+  type AutonomousGeminiAdapter,
+  LiveAutonomousGeminiAdapter,
+} from './adapters/autonomous-gemini-adapter.js';
+import { FakeAutonomousGeminiAdapter } from './adapters/fake-autonomous-gemini-adapter.js';
+import {
   LocalSharedSecretOidcTokenVerifier,
   PubSubPushHandler,
   type OidcTokenVerifier,
@@ -36,6 +41,7 @@ export interface StartWorkerOptions {
   readonly db?: DatabaseClient | undefined;
   readonly repository?: WorkerRepository | undefined;
   readonly geminiAdapter?: GeminiEnrichmentAdapter | undefined;
+  readonly autonomousGeminiAdapter?: AutonomousGeminiAdapter | undefined;
   readonly simulatedAgent?: SimulatedDeceptionAgent | undefined;
   readonly logger?: Logger | undefined;
   readonly telemetry?: TelemetryHandle | undefined;
@@ -70,17 +76,12 @@ async function readBoundedJsonBody(
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     receivedBytes += buffer.length;
-    if (receivedBytes > maxBytes) {
-      throw new Error('REQUEST_BODY_TOO_LARGE');
-    }
+    if (receivedBytes > maxBytes) throw new Error('REQUEST_BODY_TOO_LARGE');
     chunks.push(buffer);
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
 
-/**
- * Helper to run a task with an explicit timeout.
- */
 async function withTimeout<T>(
   task: Promise<T>,
   timeoutMs: number,
@@ -88,11 +89,8 @@ async function withTimeout<T>(
 ): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
   });
-
   try {
     return await Promise.race([task, timeoutPromise]);
   } finally {
@@ -194,9 +192,27 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         new AutonomousWorkflowRepository(db as PrismaClient);
       const activityRepo =
         options.activityEventRepository ?? new ActivityEventRepository(db as PrismaClient);
+      const autoGeminiAdapter =
+        options.autonomousGeminiAdapter ??
+        (config.GEMINI_API_KEY
+          ? new LiveAutonomousGeminiAdapter({
+              apiKey: config.GEMINI_API_KEY,
+              modelName: config.GEMINI_MODEL,
+              requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
+              operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
+              maxRetries: config.GEMINI_MAX_RETRIES,
+              maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
+              maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+            })
+          : new FakeAutonomousGeminiAdapter('unavailable'));
       const autonomousOrchestrator =
         options.autonomousOrchestrator ??
-        new AutonomousWorkflowOrchestrator(workflowRepo, activityRepo);
+        new AutonomousWorkflowOrchestrator(
+          workflowRepo,
+          activityRepo,
+          undefined,
+          autoGeminiAdapter,
+        );
 
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
@@ -460,32 +476,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     const errorType = startupErr instanceof Error ? startupErr.constructor.name : 'UnknownError';
     logger.error({ errorType }, 'Fatal worker startup error; aborting startup');
 
-    if (orchestrator) {
-      try {
-        await orchestrator.stop();
-      } catch {
-        // Suppress secondary orchestrator stop errors
-      }
-    }
-    if (healthServer) {
-      try {
-        healthServer.close();
-      } catch {
-        // Suppress secondary health server close errors
-      }
-    }
-    if (db) {
-      try {
-        await db.$disconnect();
-      } catch {
-        // Suppress secondary disconnect errors
-      }
-    }
-    try {
-      await telemetry.shutdown();
-    } catch {
-      // Suppress secondary telemetry errors
-    }
+    if (orchestrator) await orchestrator.stop().catch(() => {});
+    if (healthServer) healthServer.close();
+    if (db) await db.$disconnect().catch(() => {});
+    await telemetry.shutdown().catch(() => {});
 
     throw startupErr;
   }

@@ -4,6 +4,7 @@ import {
   type AutonomousWorkflowRepository,
   type ActivityEventRepository,
 } from '@false-route/database';
+import { FakeCloudRunAdapter } from './fake-cloud-adapters.js';
 
 describe('ToolGateway', () => {
   let mockWorkflowRepo: AutonomousWorkflowRepository;
@@ -157,6 +158,117 @@ describe('ToolGateway', () => {
       expect.objectContaining({
         operationType: 'request_source_quarantine',
         provider: 'CLOUD_ARMOR',
+      }),
+    );
+  });
+
+  it('persists only bounded application failure category without raw diagnostics on adapter error', async () => {
+    const failingGateway = new ToolGateway(mockWorkflowRepo, mockActivityRepo, {
+      cloudRunAdapter: {
+        deployDecoy: vi
+          .fn()
+          .mockRejectedValue(
+            new Error(
+              'Sensitive DB url: postgresql://not-a-real-user:not-a-real-password@example.invalid:5432/not-a-real-db',
+            ),
+          ),
+      } as unknown as FakeCloudRunAdapter,
+    });
+
+    const result = await failingGateway.executeToolCall(
+      {
+        toolCallId: 'call-fail-1',
+        toolName: 'request_decoy_deployment',
+        parameters: {
+          eventId: '11111111-1111-4111-8111-111111111111',
+          templateName: 'mock-admin-decoy',
+          region: 'us-central1',
+          ttlSeconds: 300,
+          reason: 'Testing failure sanitization',
+        },
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-fail-test',
+        scenarioKind: 'ENV_FILE_PROBE',
+        sourceIp: '198.51.100.25',
+        isPositiveMatch: true,
+        isNegativeControl: false,
+      },
+    );
+
+    expect(result.stage).toBe('FAILED');
+    expect(result.policyReason).toBe('Simulated adapter execution failure');
+
+    expect(mockWorkflowRepo.updateProviderIntentStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'FAILED',
+        result: {
+          error: 'Simulated adapter execution failure',
+          failureCategory: 'ADAPTER_EXECUTION_FAILURE',
+        },
+      }),
+    );
+
+    expect(mockActivityRepo.recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'TOOL_FAILED',
+        payload: {
+          toolName: 'request_decoy_deployment',
+          error: 'Simulated adapter execution failure',
+        },
+      }),
+    );
+  });
+
+  it('emits TOOL_FAILED activity event when encountering existing failed ledger reservation', async () => {
+    vi.mocked(mockWorkflowRepo.reserveToolOperation).mockResolvedValueOnce({
+      isExisting: true,
+      operation: {
+        id: 'op-failed',
+        idempotencyKey: 'idem-failed',
+        eventId: '11111111-1111-4111-8111-111111111111',
+        toolName: 'request_decoy_deployment',
+        inputHash: 'hash-failed-1',
+        stage: 'FAILED',
+        authorized: true,
+        policyReason: 'Prior failure',
+      },
+    });
+
+    const result = await gateway.executeToolCall(
+      {
+        toolCallId: 'call-failed-replay',
+        toolName: 'request_decoy_deployment',
+        parameters: {
+          eventId: '11111111-1111-4111-8111-111111111111',
+          templateName: 'mock-admin-decoy',
+          region: 'us-central1',
+          ttlSeconds: 300,
+          reason: 'Replaying failed op',
+        },
+        requestedAt: new Date().toISOString(),
+      },
+      {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-replay-fail',
+        scenarioKind: 'ENV_FILE_PROBE',
+        sourceIp: '198.51.100.25',
+        isPositiveMatch: true,
+        isNegativeControl: false,
+      },
+    );
+
+    expect(result.stage).toBe('FAILED');
+    expect(mockActivityRepo.recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'TOOL_FAILED',
+        stage: 'FAILED',
+        payload: {
+          toolName: 'request_decoy_deployment',
+          error: 'Provider outcome requires explicit reconciliation before retry',
+        },
       }),
     );
   });

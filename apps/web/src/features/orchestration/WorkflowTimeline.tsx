@@ -7,14 +7,19 @@ export interface WorkflowTimelineProps {
   readonly onClear?: () => void;
 }
 
-function getBadgeClass(stage: string): string {
+function getBadgeClass(stage: string, eventType?: string): string {
+  if (eventType === 'GEMINI_ANALYSIS_DEGRADED') {
+    return 'badge-warning';
+  }
   switch (stage) {
     case 'RECEIVED':
+    case 'REQUESTED':
+    case 'ENRICHED':
       return 'badge-info';
     case 'AUTHORIZED':
+    case 'NARROWED':
       return 'badge-warning';
     case 'FAKE_EXECUTED':
-    case 'SIMULATED':
       return 'badge-simulated';
     case 'COMPLETED':
       return 'badge-success';
@@ -23,6 +28,30 @@ function getBadgeClass(stage: string): string {
       return 'badge-danger';
     default:
       return 'badge-neutral';
+  }
+}
+
+function getStageDisplay(evt: ActivityEvent): string {
+  if (evt.eventType === 'GEMINI_ANALYSIS_DEGRADED') {
+    return 'AI DEGRADED';
+  }
+  switch (evt.stage) {
+    case 'REQUESTED':
+      return 'REQUESTED (AI)';
+    case 'AUTHORIZED':
+      return 'POLICY AUTHORIZED';
+    case 'NARROWED':
+      return 'POLICY NARROWED';
+    case 'REJECTED':
+      return 'POLICY REJECTED';
+    case 'FAKE_EXECUTED':
+      return 'FAKE EXECUTED';
+    case 'COMPLETED':
+      return 'COMPLETED';
+    case 'FAILED':
+      return 'FAILED';
+    default:
+      return evt.stage;
   }
 }
 
@@ -111,7 +140,9 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
                   marginBottom: 'var(--space-unit-xs)',
                 }}
               >
-                <span className={`badge ${getBadgeClass(evt.stage)}`}>{evt.stage}</span>
+                <span className={`badge ${getBadgeClass(evt.stage, evt.eventType)}`}>
+                  {getStageDisplay(evt)}
+                </span>
                 <span style={{ color: 'var(--text-muted)' }}>
                   #{evt.cursor} • {new Date(evt.occurredAt).toLocaleTimeString()}
                 </span>

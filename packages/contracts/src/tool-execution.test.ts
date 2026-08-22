@@ -7,6 +7,10 @@ import {
   RequestFalseRouteAssignmentParamsSchema,
   RequestSourceQuarantineParamsSchema,
   RequestOperatorAlertParamsSchema,
+  AutonomousToolCallSchema,
+  AutonomousModelAnalysisResultSchema,
+  AutonomousDegradedModelResultSchema,
+  AutonomousModelAnalysisSchema,
   ToolResultSchema,
 } from './tool-execution.js';
 
@@ -21,9 +25,91 @@ describe('Tool Execution Contracts', () => {
 
     expect(ToolExecutionStageSchema.safeParse('REQUESTED').success).toBe(true);
     expect(ToolExecutionStageSchema.safeParse('AUTHORIZED').success).toBe(true);
+    expect(ToolExecutionStageSchema.safeParse('NARROWED').success).toBe(true);
     expect(ToolExecutionStageSchema.safeParse('FAKE_EXECUTED').success).toBe(true);
     expect(ToolExecutionStageSchema.safeParse('EXECUTED').success).toBe(true);
     expect(ToolExecutionStageSchema.safeParse('ROLLED_BACK').success).toBe(true);
+  });
+
+  it('validates AutonomousToolCallSchema parameters per tool name', () => {
+    const validCall = {
+      toolCallId: 'call-1',
+      toolName: 'request_decoy_deployment',
+      parameters: {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        templateName: 'mock-admin-decoy',
+        region: 'us-central1',
+        ttlSeconds: 300,
+        reason: 'Deploying admin decoy',
+      },
+      requestedAt: '2026-08-22T10:00:00.000Z',
+    };
+    expect(AutonomousToolCallSchema.safeParse(validCall).success).toBe(true);
+
+    const invalidParams = {
+      ...validCall,
+      parameters: {
+        eventId: '11111111-1111-4111-8111-111111111111',
+        templateName: 'unallowlisted-template-xyz', // Invalid template
+        region: 'us-central1',
+        ttlSeconds: 300,
+        reason: 'Invalid template test',
+      },
+    };
+    expect(AutonomousToolCallSchema.safeParse(invalidParams).success).toBe(false);
+
+    const unknownTool = {
+      ...validCall,
+      toolName: 'unknown_tool_xyz',
+    };
+    expect(AutonomousToolCallSchema.safeParse(unknownTool).success).toBe(false);
+  });
+
+  it('validates AutonomousModelAnalysisResultSchema and bounds toolRequests to 5', () => {
+    const validAnalysis = {
+      status: 'SUCCESS',
+      correlationId: 'corr-test-1',
+      modelIdentifier: 'gemini-2.5-flash',
+      evaluatedAt: '2026-08-22T10:00:00.000Z',
+      confidence: 0.92,
+      summary: 'Analysis completed successfully',
+      toolRequests: [
+        {
+          toolCallId: 'call-1',
+          toolName: 'request_decoy_deployment',
+          parameters: {
+            eventId: '11111111-1111-4111-8111-111111111111',
+            templateName: 'mock-admin-decoy',
+            region: 'us-central1',
+            ttlSeconds: 300,
+            reason: 'Deploy decoy',
+          },
+          requestedAt: '2026-08-22T10:00:00.000Z',
+        },
+      ],
+      provenance: 'INFERRED',
+    };
+    expect(AutonomousModelAnalysisResultSchema.safeParse(validAnalysis).success).toBe(true);
+
+    // 6 tool requests exceeds maximum of 5
+    const tooManyTools = {
+      ...validAnalysis,
+      toolRequests: Array(6).fill(validAnalysis.toolRequests[0]),
+    };
+    expect(AutonomousModelAnalysisResultSchema.safeParse(tooManyTools).success).toBe(false);
+  });
+
+  it('validates AutonomousDegradedModelResultSchema', () => {
+    const degraded = {
+      status: 'UNAVAILABLE',
+      correlationId: 'corr-test-2',
+      modelIdentifier: 'gemini-2.5-flash',
+      evaluatedAt: '2026-08-22T10:00:00.000Z',
+      reason: 'Gemini service unreachable',
+      provenance: 'UNAVAILABLE',
+    };
+    expect(AutonomousDegradedModelResultSchema.safeParse(degraded).success).toBe(true);
+    expect(AutonomousModelAnalysisSchema.safeParse(degraded).success).toBe(true);
   });
 
   it('validates RecommendResponsePlanParamsSchema and RequestOperatorAlertParamsSchema', () => {

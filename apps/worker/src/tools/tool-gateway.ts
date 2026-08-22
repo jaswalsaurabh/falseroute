@@ -67,82 +67,19 @@ export class ToolGateway {
     this.checkAndResetHourlyCeiling();
     if (this.hourlyExecutionCount >= this.maxHourlyCeiling) {
       const reason = `Hourly safety spend ceiling reached (${this.maxHourlyCeiling} operations/hour)`;
-      await this.workflowRepo.reserveToolOperation({
-        idempotencyKey,
-        eventId: context.eventId,
-        toolName: toolCall.toolName,
-        input,
-        authorized: false,
-        policyReason: reason,
-        initialStage: 'REJECTED',
-      });
-
-      return {
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        stage: 'REJECTED',
-        idempotencyKey,
-        authorized: false,
-        policyReason: reason,
-        executedAt: new Date().toISOString(),
-      };
+      return this.rejectTool(toolCall, context, idempotencyKey, input, reason);
     }
 
     // 1. Validate tool parameters against contract schema
     const validation = this.validateParameters(toolCall, context);
     if (!validation.success) {
-      await this.workflowRepo.reserveToolOperation({
-        idempotencyKey,
-        eventId: context.eventId,
-        toolName: toolCall.toolName,
-        input,
-        authorized: false,
-        policyReason: `Parameter validation failed: ${validation.error}`,
-        initialStage: 'REJECTED',
-      });
-
-      return {
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        stage: 'REJECTED',
-        idempotencyKey,
-        authorized: false,
-        policyReason: validation.error,
-        executedAt: new Date().toISOString(),
-      };
+      return this.rejectTool(toolCall, context, idempotencyKey, input, validation.error);
     }
 
-    // 2. Evaluate deterministic application policy (including negative control rejection)
+    // 2. Evaluate deterministic application policy
     const policyDecision = this.evaluatePolicy(toolCall.toolName, context);
     if (!policyDecision.authorized) {
-      await this.workflowRepo.reserveToolOperation({
-        idempotencyKey,
-        eventId: context.eventId,
-        toolName: toolCall.toolName,
-        input,
-        authorized: false,
-        policyReason: policyDecision.reason,
-        initialStage: 'REJECTED',
-      });
-
-      await this.activityRepo.recordActivityEvent({
-        eventId: context.eventId,
-        correlationId: context.correlationId,
-        stage: 'REJECTED',
-        eventType: 'TOOL_REJECTED',
-        summary: `Deterministic policy rejected ${toolCall.toolName}: ${policyDecision.reason}`,
-        provenance: 'DERIVED',
-      });
-
-      return {
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        stage: 'REJECTED',
-        idempotencyKey,
-        authorized: false,
-        policyReason: policyDecision.reason,
-        executedAt: new Date().toISOString(),
-      };
+      return this.rejectTool(toolCall, context, idempotencyKey, input, policyDecision.reason);
     }
 
     // 3. Reserve tool operation in ledger (idempotency check)
@@ -182,13 +119,23 @@ export class ToolGateway {
     }
 
     if (reservation.isExisting && reservation.operation.stage === 'FAILED') {
+      const reason = 'Provider outcome requires explicit reconciliation before retry';
+      await this.activityRepo.recordActivityEvent({
+        eventId: context.eventId,
+        correlationId: context.correlationId,
+        stage: 'FAILED',
+        eventType: 'TOOL_FAILED',
+        summary: `Simulated action execution failed for ${toolCall.toolName}: prior failed operation requires reconciliation`,
+        provenance: 'DERIVED',
+        payload: { toolName: toolCall.toolName, error: reason },
+      });
       return {
         toolCallId: toolCall.toolCallId,
         toolName: toolCall.toolName,
         stage: 'FAILED',
         idempotencyKey,
         authorized: reservation.operation.authorized,
-        policyReason: 'Provider outcome requires explicit reconciliation before retry',
+        policyReason: reason,
         executedAt: new Date().toISOString(),
       };
     }
@@ -235,22 +182,7 @@ export class ToolGateway {
     }
 
     if (intentClaim.disposition === 'RECONCILIATION_REQUIRED' || !intentClaim.claimToken) {
-      await this.workflowRepo.updateToolOperationStage({
-        idempotencyKey,
-        stage: 'FAILED',
-        expectedPriorStage: 'AUTHORIZED',
-        observedState: 'UNKNOWN',
-        details: { recovery: 'RECONCILIATION_REQUIRED' },
-      });
-      return {
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        stage: 'FAILED',
-        idempotencyKey,
-        authorized: true,
-        policyReason: 'Provider outcome is uncertain; reconciliation is required before retry',
-        executedAt: new Date().toISOString(),
-      };
+      return this.failTool(toolCall, context, idempotencyKey, 'RECONCILIATION_REQUIRED');
     }
     const claimToken = intentClaim.claimToken;
 
@@ -314,12 +246,20 @@ export class ToolGateway {
         }
 
         case 'request_operator_alert':
+          details = {
+            severity: toolCall.parameters['severity'],
+            headline: toolCall.parameters['headline'],
+          };
+          break;
+
         case 'recommend_response_plan':
-          details = toolCall.parameters;
+          details = {
+            recommendedActions: toolCall.parameters['recommendedActions'],
+            confidence: toolCall.parameters['confidence'],
+          };
           break;
       }
 
-      // Mark provider intent EXECUTED
       await this.workflowRepo.updateProviderIntentStatus({
         idempotencyKey,
         claimToken,
@@ -327,15 +267,15 @@ export class ToolGateway {
         result: { ...details, ...(providerResourceId && { providerResourceId }) },
       });
       this.hourlyExecutionCount += 1;
-    } catch (err) {
-      // Mark provider intent FAILED on exception
+    } catch (_err) {
+      const sanitizedReason = 'Simulated adapter execution failure';
       await this.workflowRepo.updateProviderIntentStatus({
         idempotencyKey,
         claimToken,
         status: 'FAILED',
-        result: { error: err instanceof Error ? err.message : String(err) },
+        result: { error: sanitizedReason, failureCategory: 'ADAPTER_EXECUTION_FAILURE' },
       });
-      throw err;
+      return this.failTool(toolCall, context, idempotencyKey, sanitizedReason);
     }
 
     // 6. Update ledger to FAKE_EXECUTED with CAS prior-stage check
@@ -371,6 +311,77 @@ export class ToolGateway {
     };
   }
 
+  private async rejectTool(
+    toolCall: ToolCall,
+    context: ToolExecutionContext,
+    idempotencyKey: string,
+    input: Record<string, unknown>,
+    reason: string,
+  ): Promise<ToolResult> {
+    await this.workflowRepo.reserveToolOperation({
+      idempotencyKey,
+      eventId: context.eventId,
+      toolName: toolCall.toolName,
+      input,
+      authorized: false,
+      policyReason: reason,
+      initialStage: 'REJECTED',
+    });
+
+    await this.activityRepo.recordActivityEvent({
+      eventId: context.eventId,
+      correlationId: context.correlationId,
+      stage: 'REJECTED',
+      eventType: 'TOOL_REJECTED',
+      summary: `Deterministic policy rejected ${toolCall.toolName}: ${reason}`,
+      provenance: 'DERIVED',
+      payload: { toolName: toolCall.toolName, policyReason: reason },
+    });
+
+    return {
+      toolCallId: toolCall.toolCallId,
+      toolName: toolCall.toolName,
+      stage: 'REJECTED',
+      idempotencyKey,
+      authorized: false,
+      policyReason: reason,
+      executedAt: new Date().toISOString(),
+    };
+  }
+
+  private async failTool(
+    toolCall: ToolCall,
+    context: ToolExecutionContext,
+    idempotencyKey: string,
+    reason: string,
+  ): Promise<ToolResult> {
+    await this.workflowRepo.updateToolOperationStage({
+      idempotencyKey,
+      stage: 'FAILED',
+      observedState: 'UNKNOWN',
+      expectedPriorStage: 'AUTHORIZED',
+      details: { error: reason },
+    });
+    await this.activityRepo.recordActivityEvent({
+      eventId: context.eventId,
+      correlationId: context.correlationId,
+      stage: 'FAILED',
+      eventType: 'TOOL_FAILED',
+      summary: `Simulated action execution failed for ${toolCall.toolName}`,
+      provenance: 'DERIVED',
+      payload: { toolName: toolCall.toolName, error: reason },
+    });
+    return {
+      toolCallId: toolCall.toolCallId,
+      toolName: toolCall.toolName,
+      stage: 'FAILED',
+      idempotencyKey,
+      authorized: true,
+      policyReason: reason,
+      executedAt: new Date().toISOString(),
+    };
+  }
+
   private resolveProviderName(toolName: string): string {
     switch (toolName) {
       case 'request_decoy_deployment':
@@ -397,23 +408,15 @@ export class ToolGateway {
     context: ToolExecutionContext,
   ): { success: true } | { success: false; error: string } {
     try {
-      switch (toolCall.toolName) {
-        case 'recommend_response_plan':
-          RecommendResponsePlanParamsSchema.parse(toolCall.parameters);
-          break;
-        case 'request_decoy_deployment':
-          RequestDecoyDeploymentParamsSchema.parse(toolCall.parameters);
-          break;
-        case 'request_false_route_assignment':
-          RequestFalseRouteAssignmentParamsSchema.parse(toolCall.parameters);
-          break;
-        case 'request_source_quarantine':
-          RequestSourceQuarantineParamsSchema.parse(toolCall.parameters);
-          break;
-        case 'request_operator_alert':
-          RequestOperatorAlertParamsSchema.parse(toolCall.parameters);
-          break;
-      }
+      const schemaMap: Record<string, { parse: (val: unknown) => unknown }> = {
+        recommend_response_plan: RecommendResponsePlanParamsSchema,
+        request_decoy_deployment: RequestDecoyDeploymentParamsSchema,
+        request_false_route_assignment: RequestFalseRouteAssignmentParamsSchema,
+        request_source_quarantine: RequestSourceQuarantineParamsSchema,
+        request_operator_alert: RequestOperatorAlertParamsSchema,
+      };
+      schemaMap[toolCall.toolName]?.parse(toolCall.parameters);
+
       if (toolCall.parameters['eventId'] !== context.eventId) {
         return { success: false, error: 'Tool parameter eventId must match the envelope eventId' };
       }
@@ -433,8 +436,8 @@ export class ToolGateway {
     toolName: string,
     context: ToolExecutionContext,
   ): { authorized: boolean; reason: string } {
-    // Negative-control rejection: negative control markers or non-positive match evidence must not execute deception
-    if (context.isNegativeControl || !context.isPositiveMatch) {
+    const { scenarioKind, isNegativeControl, isPositiveMatch } = context;
+    if (isNegativeControl || !isPositiveMatch) {
       return {
         authorized: false,
         reason:
@@ -442,8 +445,7 @@ export class ToolGateway {
       };
     }
 
-    // Mandatory deterministic rule: Decoy credential use must always assign false route to mock-admin-decoy
-    if (context.scenarioKind === 'DECOY_CREDENTIAL_USE') {
+    if (scenarioKind === 'DECOY_CREDENTIAL_USE') {
       if (toolName === 'request_source_quarantine') {
         return {
           authorized: false,
@@ -457,9 +459,9 @@ export class ToolGateway {
     }
 
     if (
-      context.scenarioKind === 'ENV_FILE_PROBE' ||
-      context.scenarioKind === 'WORDPRESS_CONFIG_PROBE' ||
-      context.scenarioKind === 'PATH_TRAVERSAL_PROBE'
+      scenarioKind === 'ENV_FILE_PROBE' ||
+      scenarioKind === 'WORDPRESS_CONFIG_PROBE' ||
+      scenarioKind === 'PATH_TRAVERSAL_PROBE'
     ) {
       if (toolName === 'request_source_quarantine') {
         return {
@@ -471,9 +473,9 @@ export class ToolGateway {
     }
 
     if (
-      context.scenarioKind === 'SUSPICIOUS_IP_BURST' ||
-      context.scenarioKind === 'SIP_INVITE_FLOOD' ||
-      context.scenarioKind === 'TOKEN_TAMPER'
+      scenarioKind === 'SUSPICIOUS_IP_BURST' ||
+      scenarioKind === 'SIP_INVITE_FLOOD' ||
+      scenarioKind === 'TOKEN_TAMPER'
     ) {
       if (
         toolName === 'request_decoy_deployment' ||

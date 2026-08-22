@@ -378,4 +378,47 @@ describe('Activity Routes & SSE Streaming', () => {
     expect(client.end).toHaveBeenCalled();
     failingService.closeAll();
   });
+
+  it('redacts sensitive credentials and tokens in broadcast SSE activity events', async () => {
+    const writes: string[] = [];
+    const client = {
+      destroyed: false,
+      writableEnded: false,
+      writableLength: 0,
+      writeHead: vi.fn(),
+      write: vi.fn((payload: string) => (writes.push(payload), true)),
+      end: vi.fn(),
+      on: vi.fn(),
+    } as unknown as Response;
+
+    await streamService.registerClient(client, 0);
+
+    streamService.broadcast({
+      cursor: 1,
+      eventId: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-redact-test',
+      stage: 'REQUESTED',
+      eventType: 'MODEL_TOOL_REQUESTED',
+      summary: 'Model requested tool: request_operator_alert',
+      provenance: 'INFERRED',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      payload: {
+        toolName: 'request_operator_alert',
+        apiKey: 'not-a-real-api-key-12345',
+        bearerToken: 'not-a-real-secret-token',
+        nested: {
+          password: 'not-a-real-secret-password',
+          safeField: 'safe-value',
+        },
+      },
+    });
+
+    const dataLine = writes.find((w) => w.includes('event: activity'));
+    expect(dataLine).toBeDefined();
+    expect(dataLine).not.toContain('not-a-real-api-key-12345');
+    expect(dataLine).not.toContain('not-a-real-secret-token');
+    expect(dataLine).not.toContain('not-a-real-secret-password');
+    expect(dataLine).toContain('[REDACTED]');
+    expect(dataLine).toContain('safe-value');
+  });
 });

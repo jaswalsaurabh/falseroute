@@ -16,6 +16,7 @@ export const ToolExecutionStageSchema = z.enum([
   'REQUESTED',
   'REJECTED',
   'AUTHORIZED',
+  'NARROWED',
   'FAKE_EXECUTED',
   'EXECUTED',
   'FAILED',
@@ -95,6 +96,119 @@ export const ToolCallSchema = z
   .strict();
 
 export type ToolCall = z.infer<typeof ToolCallSchema>;
+
+export const AutonomousToolCallSchema = z
+  .object({
+    toolCallId: z.string().min(1).max(64),
+    toolName: ToolNameSchema,
+    parameters: z.record(z.string(), z.unknown()),
+    requestedAt: IsoDateTimeSchema,
+  })
+  .strict()
+  .superRefine((call, context) => {
+    switch (call.toolName) {
+      case 'recommend_response_plan': {
+        const result = RecommendResponsePlanParamsSchema.safeParse(call.parameters);
+        if (!result.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['parameters'],
+            message: `Invalid parameters for recommend_response_plan: ${result.error.message}`,
+          });
+        }
+        break;
+      }
+      case 'request_decoy_deployment': {
+        const result = RequestDecoyDeploymentParamsSchema.safeParse(call.parameters);
+        if (!result.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['parameters'],
+            message: `Invalid parameters for request_decoy_deployment: ${result.error.message}`,
+          });
+        }
+        break;
+      }
+      case 'request_false_route_assignment': {
+        const result = RequestFalseRouteAssignmentParamsSchema.safeParse(call.parameters);
+        if (!result.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['parameters'],
+            message: `Invalid parameters for request_false_route_assignment: ${result.error.message}`,
+          });
+        }
+        break;
+      }
+      case 'request_source_quarantine': {
+        const result = RequestSourceQuarantineParamsSchema.safeParse(call.parameters);
+        if (!result.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['parameters'],
+            message: `Invalid parameters for request_source_quarantine: ${result.error.message}`,
+          });
+        }
+        break;
+      }
+      case 'request_operator_alert': {
+        const result = RequestOperatorAlertParamsSchema.safeParse(call.parameters);
+        if (!result.success) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['parameters'],
+            message: `Invalid parameters for request_operator_alert: ${result.error.message}`,
+          });
+        }
+        break;
+      }
+      default: {
+        const exhaustiveCheck: never = call.toolName;
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['toolName'],
+          message: `Unknown tool name: ${exhaustiveCheck}`,
+        });
+      }
+    }
+  });
+
+export type AutonomousToolCall = z.infer<typeof AutonomousToolCallSchema>;
+
+export const AutonomousModelAnalysisResultSchema = z
+  .object({
+    status: z.literal('SUCCESS'),
+    correlationId: z.string().min(1).max(64),
+    modelIdentifier: z.string().min(1).max(128),
+    evaluatedAt: IsoDateTimeSchema,
+    confidence: z.number().min(0).max(1),
+    summary: z.string().min(1).max(500),
+    toolRequests: z.array(AutonomousToolCallSchema).max(5),
+    provenance: z.literal('INFERRED'),
+  })
+  .strict();
+
+export type AutonomousModelAnalysisResult = z.infer<typeof AutonomousModelAnalysisResultSchema>;
+
+export const AutonomousDegradedModelResultSchema = z
+  .object({
+    status: z.enum(['DEGRADED', 'TIMEOUT', 'UNAVAILABLE', 'INVALID_OUTPUT']),
+    correlationId: z.string().min(1).max(64),
+    modelIdentifier: z.string().min(1).max(128).optional(),
+    evaluatedAt: IsoDateTimeSchema,
+    reason: z.string().min(1).max(500),
+    provenance: z.literal('UNAVAILABLE'),
+  })
+  .strict();
+
+export type AutonomousDegradedModelResult = z.infer<typeof AutonomousDegradedModelResultSchema>;
+
+export const AutonomousModelAnalysisSchema = z.union([
+  AutonomousModelAnalysisResultSchema,
+  AutonomousDegradedModelResultSchema,
+]);
+
+export type AutonomousModelAnalysis = z.infer<typeof AutonomousModelAnalysisSchema>;
 
 export const ToolResultSchema = z
   .object({
