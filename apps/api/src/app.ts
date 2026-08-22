@@ -23,6 +23,7 @@ export interface AppOptions {
   readonly logger: Logger;
   readonly repository?: ApiRepository | undefined;
   readonly clock?: (() => number) | undefined;
+  readonly isReady?: (() => boolean) | undefined;
 }
 
 /**
@@ -84,7 +85,7 @@ export function createApp(options: AppOptions): Express {
   const repository = options.repository ?? new PrismaApiRepository(db);
   const eventService = new EventService(repository);
   const eventController = new EventController(eventService);
-  const healthController = new HealthController(repository);
+  const healthController = new HealthController(repository, options.isReady);
 
   const authMiddleware = operatorAuthMiddleware({
     expectedToken: config.OPERATOR_ACCESS_TOKEN,

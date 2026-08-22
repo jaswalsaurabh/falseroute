@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BaseEnvironmentSchema, ConfigurationError } from '@false-route/config';
 
 export const ApiConfigSchema = BaseEnvironmentSchema.extend({
-  PORT: z.coerce.number().int().min(1024).max(65535).default(3000),
+  PORT: z.coerce.number().int().min(0).max(65535).default(3000),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -22,6 +22,7 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
     .string()
     .optional()
     .transform((val) => val === 'true'),
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(10000),
   /**
    * Number of trusted reverse-proxy hops for source-IP resolution. Defaults to
    * 0 (fail closed): client-supplied forwarding headers are ignored unless the
@@ -36,8 +37,9 @@ type ParsedApiConfig = z.infer<typeof ApiConfigSchema>;
  * ApiConfig consumers outside the app may construct config objects without the
  * optional deployment-only keys; the schema still defaults them at parse time.
  */
-export type ApiConfig = Omit<ParsedApiConfig, 'TRUST_PROXY_HOPS'> & {
+export type ApiConfig = Omit<ParsedApiConfig, 'TRUST_PROXY_HOPS' | 'SHUTDOWN_TIMEOUT_MS'> & {
   TRUST_PROXY_HOPS?: number;
+  SHUTDOWN_TIMEOUT_MS?: number;
 };
 
 export function parseApiConfig(env: Record<string, string | undefined>): Readonly<ApiConfig> {

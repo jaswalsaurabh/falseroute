@@ -22,6 +22,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   WORKER_CLAIM_PERSISTENCE_MARGIN_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(15000),
   WORKER_MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(10000),
   ENABLE_TELEMETRY: z
     .string()
     .optional()
@@ -40,7 +41,11 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   },
 );
 
-export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
+type ParsedWorkerConfig = z.infer<typeof WorkerConfigSchema>;
+
+export type WorkerConfig = Omit<ParsedWorkerConfig, 'WORKER_SHUTDOWN_TIMEOUT_MS'> & {
+  WORKER_SHUTDOWN_TIMEOUT_MS?: number;
+};
 
 export function parseWorkerConfig(env: Record<string, string | undefined>): Readonly<WorkerConfig> {
   const result = WorkerConfigSchema.safeParse(env);

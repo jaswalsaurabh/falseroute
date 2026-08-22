@@ -7,7 +7,10 @@ import {
 import { type ApiRepository } from '../persistence/api-repository.js';
 
 export class HealthController {
-  constructor(private readonly repository: ApiRepository) {}
+  constructor(
+    private readonly repository: ApiRepository,
+    private readonly isReadySupplier?: (() => boolean) | undefined,
+  ) {}
 
   liveness = (_req: Request, res: Response): void => {
     const response = HealthCheckResponseSchema.parse({
@@ -18,6 +21,16 @@ export class HealthController {
   };
 
   readiness = async (req: Request, res: Response): Promise<void> => {
+    if (this.isReadySupplier && !this.isReadySupplier()) {
+      const errorResponse: ApiErrorResponse = {
+        error: 'SERVICE_UNAVAILABLE',
+        message: 'Server is shutting down',
+        correlationId: req.correlationId,
+      };
+      res.status(503).json(errorResponse);
+      return;
+    }
+
     const isHealthy = await this.repository.checkHealth();
     if (!isHealthy) {
       const errorResponse: ApiErrorResponse = {
