@@ -49,11 +49,11 @@ export class EventService {
   }
 
   async getDecision(eventId: string): Promise<GetDeceptionDecisionResponse> {
-    const decision = await this.repository.getDecisionByEventId(eventId);
-    if (!decision) {
+    const result = await this.repository.getDecisionByEventId(eventId);
+    if (!result) {
       throw new NotFoundError(`Deception decision not found for event: ${eventId}`);
     }
 
-    return GetDeceptionDecisionResponseSchema.parse({ decision });
+    return GetDeceptionDecisionResponseSchema.parse(result);
   }
 }

@@ -1,10 +1,12 @@
 import {
   type IntrusionEvent,
   type DeceptionDecision,
+  type SimulatedDeceptionEffect,
   type SimulatedIntrusionEventInput,
   type ListIntrusionEventsQuery,
   IntrusionEventSchema,
   DeceptionDecisionSchema,
+  SimulatedDeceptionEffectSchema,
 } from '@false-route/contracts';
 import {
   type DatabaseClient,
@@ -18,10 +20,15 @@ import {
 export interface ApiRepository {
   createEvent(input: SimulatedIntrusionEventInput): Promise<IntrusionEvent>;
   listEvents(query: ListIntrusionEventsQuery): Promise<{ events: IntrusionEvent[]; total: number }>;
-  getEventById(
-    id: string,
-  ): Promise<{ event: IntrusionEvent; decision: DeceptionDecision | null } | null>;
-  getDecisionByEventId(eventId: string): Promise<DeceptionDecision | null>;
+  getEventById(id: string): Promise<{
+    event: IntrusionEvent;
+    decision: DeceptionDecision | null;
+    simulatedEffect: SimulatedDeceptionEffect | null;
+  } | null>;
+  getDecisionByEventId(eventId: string): Promise<{
+    decision: DeceptionDecision;
+    simulatedEffect: SimulatedDeceptionEffect | null;
+  } | null>;
   checkHealth(): Promise<boolean>;
 }
 
@@ -108,15 +115,18 @@ export class PrismaApiRepository implements ApiRepository {
     return { events, total };
   }
 
-  async getEventById(
-    id: string,
-  ): Promise<{ event: IntrusionEvent; decision: DeceptionDecision | null } | null> {
+  async getEventById(id: string): Promise<{
+    event: IntrusionEvent;
+    decision: DeceptionDecision | null;
+    simulatedEffect: SimulatedDeceptionEffect | null;
+  } | null> {
     const row = await this.db.intrusionEvent.findUnique({
       where: { id },
       include: {
         decision: {
           include: {
             auditRecord: true,
+            simulatedEffect: true,
           },
         },
       },
@@ -142,6 +152,8 @@ export class PrismaApiRepository implements ApiRepository {
     });
 
     let decision: DeceptionDecision | null = null;
+    let simulatedEffect: SimulatedDeceptionEffect | null = null;
+
     if (row.decision && row.decision.auditRecord) {
       decision = DeceptionDecisionSchema.parse({
         id: row.decision.id,
@@ -160,22 +172,42 @@ export class PrismaApiRepository implements ApiRepository {
           evaluatedAt: row.decision.auditRecord.evaluatedAt.toISOString(),
         },
       });
+
+      if (row.decision.simulatedEffect && row.decision.action === 'ASSIGN_FALSE_ROUTE') {
+        simulatedEffect = SimulatedDeceptionEffectSchema.parse({
+          id: row.decision.simulatedEffect.id,
+          decisionId: row.decision.simulatedEffect.decisionId,
+          correlationId: row.decision.simulatedEffect.correlationId,
+          effectKind: row.decision.simulatedEffect.effectKind,
+          status: row.decision.simulatedEffect.status,
+          containmentMode: row.decision.simulatedEffect.containmentMode,
+          assignedFalseRoute: row.decision.simulatedEffect.assignedFalseRoute,
+          provenance: row.decision.simulatedEffect.provenance,
+          recordedAt: row.decision.simulatedEffect.recordedAt.toISOString(),
+          adapterVersion: row.decision.simulatedEffect.adapterVersion,
+          createdAt: row.decision.simulatedEffect.createdAt.toISOString(),
+        });
+      }
     }
 
-    return { event, decision };
+    return { event, decision, simulatedEffect };
   }
 
-  async getDecisionByEventId(eventId: string): Promise<DeceptionDecision | null> {
+  async getDecisionByEventId(eventId: string): Promise<{
+    decision: DeceptionDecision;
+    simulatedEffect: SimulatedDeceptionEffect | null;
+  } | null> {
     const row = await this.db.deceptionDecision.findUnique({
       where: { eventId },
       include: {
         auditRecord: true,
+        simulatedEffect: true,
       },
     });
 
     if (!row || !row.auditRecord) return null;
 
-    return DeceptionDecisionSchema.parse({
+    const decision = DeceptionDecisionSchema.parse({
       id: row.id,
       eventId: row.eventId,
       correlationId: row.correlationId,
@@ -192,6 +224,25 @@ export class PrismaApiRepository implements ApiRepository {
         evaluatedAt: row.auditRecord.evaluatedAt.toISOString(),
       },
     });
+
+    let simulatedEffect: SimulatedDeceptionEffect | null = null;
+    if (row.simulatedEffect && row.action === 'ASSIGN_FALSE_ROUTE') {
+      simulatedEffect = SimulatedDeceptionEffectSchema.parse({
+        id: row.simulatedEffect.id,
+        decisionId: row.simulatedEffect.decisionId,
+        correlationId: row.simulatedEffect.correlationId,
+        effectKind: row.simulatedEffect.effectKind,
+        status: row.simulatedEffect.status,
+        containmentMode: row.simulatedEffect.containmentMode,
+        assignedFalseRoute: row.simulatedEffect.assignedFalseRoute,
+        provenance: row.simulatedEffect.provenance,
+        recordedAt: row.simulatedEffect.recordedAt.toISOString(),
+        adapterVersion: row.simulatedEffect.adapterVersion,
+        createdAt: row.simulatedEffect.createdAt.toISOString(),
+      });
+    }
+
+    return { decision, simulatedEffect };
   }
 
   async checkHealth(): Promise<boolean> {

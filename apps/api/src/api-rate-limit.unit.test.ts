@@ -56,7 +56,9 @@ function createMockRepository(): ApiRepository {
       return { events: [mockDecoyEvent], total: 1 };
     },
     async getEventById(id: string) {
-      return id === mockDecoyEvent.id ? { event: mockDecoyEvent, decision: null } : null;
+      return id === mockDecoyEvent.id
+        ? { event: mockDecoyEvent, decision: null, simulatedEffect: null }
+        : null;
     },
     async getDecisionByEventId(eventId: string) {
       return eventId === mockDecoyEvent.id ? null : null;
