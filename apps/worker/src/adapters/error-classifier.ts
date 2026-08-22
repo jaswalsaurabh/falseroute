@@ -53,14 +53,29 @@ export function extractHttpStatus(err: unknown): number | undefined {
 }
 
 /**
- * Strips potential credentials, raw prompts, and URLs with credentials from error messages.
- * Truncates to max 500 chars to prevent unbounded error payloads.
+ * Strips credentials, tokens, keys, URLs, headers, and structured JSON secrets from messages.
+ * Normalizes multiline whitespace and truncates to max 500 chars to prevent unbounded payloads.
  */
 export function sanitizeErrorMessage(message: string): string {
   const sanitized = message
-    .replace(/(?:key|token|secret|password|bearer)[=:\s]+[A-Za-z0-9_\-.~]+/gi, '[REDACTED]')
-    .replace(/https?:\/\/[^\s]+/g, '[REDACTED_URL]')
+    // Redact quoted JSON key-value pairs e.g. "apiKey": "...", 'accessToken': '...'
+    .replace(
+      /(["']?)(?:api_?[kK]ey|access_?[tT]oken|client_?[sS]ecret|password|bearer|secret|token|authorization|key)\1\s*[:=]\s*(["'])[^"']*\2/gi,
+      '[REDACTED]',
+    )
+    // Redact Authorization headers and Bearer tokens
+    .replace(/Authorization:\s*Bearer\s+[A-Za-z0-9_\-.~+/=]+/gi, 'Authorization: [REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9_\-.~+/=]+/gi, 'Bearer [REDACTED]')
+    // Redact key=value or key: value unquoted credential patterns
+    .replace(
+      /(?:api_?[kK]ey|access_?[tT]oken|client_?[sS]ecret|password|secret|token|bearer|key)[=:\s]+[A-Za-z0-9_\-.~+/=]+/gi,
+      '[REDACTED]',
+    )
+    // Redact credential-bearing URLs and any HTTP/HTTPS URLs
+    .replace(/https?:\/\/[^\s"'<>]+/gi, '[REDACTED_URL]')
+    // Normalize newlines, tabs, and multiple spaces
     .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
     .trim();
 
   return sanitized.length > 500 ? `${sanitized.slice(0, 497)}...` : sanitized;
@@ -69,6 +84,8 @@ export function sanitizeErrorMessage(message: string): string {
 /**
  * Classifies an unknown error encountered during provider enrichment into explicit resilience categories.
  * Strict rules:
+ * - Raw provider error messages, response bodies, and prompts must NEVER be persisted or exposed in sanitizedReason.
+ * - sanitizedReason must always be a small, classification-specific allowlisted message preserving useful non-sensitive details.
  * - Never retry schema validation errors or JSON parse errors.
  * - Never retry 400, 401, 403, 404, or configuration errors.
  * - Retry only transient server errors (500, 502, 503, 504), rate limits (429), network resets, and per-request timeouts.
@@ -82,9 +99,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'SCHEMA_INVALID',
       isRetriable: false,
       status: 'INVALID_OUTPUT',
-      sanitizedReason: sanitizeErrorMessage(
-        `Provider output violated schema contract: ${(err as Error).message}`,
-      ),
+      sanitizedReason: 'Provider output violated schema contract',
     };
   }
 
@@ -119,23 +134,32 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'CONCURRENCY_SATURATED',
       isRetriable: false,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(`Provider capacity saturated: ${rawMessage}`),
+      sanitizedReason: 'Provider capacity saturated',
       httpStatus,
     };
   }
 
-  // Operation deadline / overall timeout / abort
+  // Operation deadline / overall timeout / abort / cancellation
   if (
     lowerMessage.includes('operation deadline') ||
     lowerMessage.includes('overall deadline') ||
-    lowerMessage.includes('cancelled') ||
     (err instanceof Error && err.name === 'AbortError' && lowerMessage.includes('deadline'))
   ) {
     return {
       kind: 'TIMEOUT',
       isRetriable: false,
       status: 'TIMEOUT',
-      sanitizedReason: sanitizeErrorMessage(`Operation deadline exceeded: ${rawMessage}`),
+      sanitizedReason: 'Operation deadline exceeded',
+      httpStatus,
+    };
+  }
+
+  if (lowerMessage.includes('cancelled') || lowerMessage.includes('canceled')) {
+    return {
+      kind: 'CANCELLED',
+      isRetriable: false,
+      status: 'TIMEOUT',
+      sanitizedReason: 'Provider request cancelled',
       httpStatus,
     };
   }
@@ -153,7 +177,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'TIMEOUT',
-      sanitizedReason: sanitizeErrorMessage(`Request timeout: ${rawMessage}`),
+      sanitizedReason: 'Provider request timeout',
       httpStatus: httpStatus ?? 504,
     };
   }
@@ -169,9 +193,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(
-        `Provider rate limit or quota reached (HTTP 429): ${rawMessage}`,
-      ),
+      sanitizedReason: 'Provider rate limit or quota reached (HTTP 429)',
       httpStatus: 429,
     };
   }
@@ -190,9 +212,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(
-        `Transient upstream server error (HTTP ${httpStatus ?? 503}): ${rawMessage}`,
-      ),
+      sanitizedReason: `Transient upstream server error (HTTP ${httpStatus ?? 503})`,
       httpStatus: httpStatus ?? 503,
     };
   }
@@ -215,7 +235,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'TRANSIENT',
       isRetriable: true,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(`Transient network failure: ${rawMessage}`),
+      sanitizedReason: 'Transient network failure',
       httpStatus,
     };
   }
@@ -232,9 +252,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'AUTH_OR_CONFIG',
       isRetriable: false,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(
-        `Provider authentication or authorization failure (HTTP ${httpStatus ?? 401}): ${rawMessage}`,
-      ),
+      sanitizedReason: `Provider authentication or authorization failure (HTTP ${httpStatus ?? 401})`,
       httpStatus: httpStatus ?? 401,
     };
   }
@@ -245,9 +263,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'AUTH_OR_CONFIG',
       isRetriable: false,
       status: 'UNAVAILABLE',
-      sanitizedReason: sanitizeErrorMessage(
-        `Provider resource or model not found (HTTP 404): ${rawMessage}`,
-      ),
+      sanitizedReason: 'Provider resource or model not found (HTTP 404)',
       httpStatus: 404,
     };
   }
@@ -262,9 +278,7 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
       kind: 'CLIENT_ERROR',
       isRetriable: false,
       status: 'INVALID_OUTPUT',
-      sanitizedReason: sanitizeErrorMessage(
-        `Provider client error or invalid argument (HTTP 400): ${rawMessage}`,
-      ),
+      sanitizedReason: 'Provider client error or invalid argument (HTTP 400)',
       httpStatus: 400,
     };
   }
@@ -274,7 +288,9 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     kind: 'TERMINAL',
     isRetriable: false,
     status: 'UNAVAILABLE',
-    sanitizedReason: sanitizeErrorMessage(`Provider upstream failure: ${rawMessage}`),
+    sanitizedReason: httpStatus
+      ? `Provider upstream failure (HTTP ${httpStatus})`
+      : 'Provider upstream failure',
     httpStatus,
   };
 }

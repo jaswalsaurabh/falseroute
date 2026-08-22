@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import {
   classifyProviderError,
   extractHttpStatus,
@@ -31,25 +31,74 @@ describe('error-classifier', () => {
   describe('sanitizeErrorMessage', () => {
     it('redacts tokens, keys, passwords, and URLs', () => {
       const sensitive =
-        'Failed connecting to https://api.google.com/v1 with key=AIzaSySecretToken and password: secret_password';
+        'Failed connecting to https://api.example.com/v1 with key=dummy-secret-token and password: dummy-secret-password';
       const clean = sanitizeErrorMessage(sensitive);
-      expect(clean).not.toContain('AIzaSySecretToken');
-      expect(clean).not.toContain('secret_password');
+      expect(clean).not.toContain('dummy-secret-token');
+      expect(clean).not.toContain('dummy-secret-password');
       expect(clean).not.toContain('https://');
       expect(clean).toContain('[REDACTED]');
       expect(clean).toContain('[REDACTED_URL]');
     });
 
-    it('truncates excessively long messages to 500 characters', () => {
-      const longMessage = 'A'.repeat(800);
-      const clean = sanitizeErrorMessage(longMessage);
+    it('redacts JSON quoted credential values and properties', () => {
+      const jsonError = JSON.stringify({
+        error: {
+          message: 'Invalid credential provided',
+          apiKey: 'dummy-not-a-real-api-key-12345',
+          accessToken: 'dummy-not-a-real-access-token-67890',
+          clientSecret: 'dummy-not-a-real-client-secret-abcde',
+        },
+      });
+      const clean = sanitizeErrorMessage(jsonError);
+      expect(clean).not.toContain('dummy-not-a-real-api-key-12345');
+      expect(clean).not.toContain('dummy-not-a-real-access-token-67890');
+      expect(clean).not.toContain('dummy-not-a-real-client-secret-abcde');
+      expect(clean).toContain('[REDACTED]');
+    });
+
+    it('redacts Authorization Bearer headers', () => {
+      const headerError =
+        'Upstream returned 401 with Authorization: Bearer dummy-not-a-real-jwt-token-value';
+      const clean = sanitizeErrorMessage(headerError);
+      expect(clean).not.toContain('dummy-not-a-real-jwt-token-value');
+      expect(clean).toContain('Authorization: [REDACTED]');
+    });
+
+    it('redacts credential-bearing URLs and query parameters', () => {
+      const urlError =
+        'Request failed: https://dummy-user:dummy-pass@api.example.com/models?apiKey=dummy-key-value';
+      const clean = sanitizeErrorMessage(urlError);
+      expect(clean).not.toContain('dummy-user');
+      expect(clean).not.toContain('dummy-pass');
+      expect(clean).not.toContain('dummy-key-value');
+      expect(clean).toContain('[REDACTED_URL]');
+    });
+
+    it('normalizes multiline messages and truncates excessively long messages to 500 characters', () => {
+      const multiline = `First line of error\n\tSecond line with key=dummy-key\r\nThird line: ${'A'.repeat(600)}`;
+      const clean = sanitizeErrorMessage(multiline);
+      expect(clean).not.toContain('\n');
+      expect(clean).not.toContain('\r');
+      expect(clean).not.toContain('\t');
+      expect(clean).not.toContain('dummy-key');
       expect(clean.length).toBeLessThanOrEqual(500);
       expect(clean.endsWith('...')).toBe(true);
     });
   });
 
   describe('classifyProviderError', () => {
-    it('classifies ZodError as SCHEMA_INVALID (non-retriable, INVALID_OUTPUT)', () => {
+    it('ensures raw provider error messages never become sanitizedReason', () => {
+      const rawSecret =
+        'Internal stack trace leaking prompt="System prompt secret" and apiKey=dummy-key-val';
+      const err = new Error(rawSecret);
+      const classified = classifyProviderError(err);
+      expect(classified.sanitizedReason).not.toContain(rawSecret);
+      expect(classified.sanitizedReason).not.toContain('System prompt secret');
+      expect(classified.sanitizedReason).not.toContain('dummy-key-val');
+      expect(classified.sanitizedReason).toBe('Provider upstream failure');
+    });
+
+    it('classifies ZodError as SCHEMA_INVALID with allowlisted reason', () => {
       const TestSchema = z.object({ value: z.number() });
       try {
         TestSchema.parse({ value: 'not-a-number' });
@@ -58,10 +107,11 @@ describe('error-classifier', () => {
         expect(classified.kind).toBe('SCHEMA_INVALID');
         expect(classified.isRetriable).toBe(false);
         expect(classified.status).toBe('INVALID_OUTPUT');
+        expect(classified.sanitizedReason).toBe('Provider output violated schema contract');
       }
     });
 
-    it('classifies SyntaxError as SCHEMA_INVALID (non-retriable, INVALID_OUTPUT)', () => {
+    it('classifies SyntaxError as SCHEMA_INVALID with allowlisted reason', () => {
       try {
         JSON.parse('invalid json {');
       } catch (err) {
@@ -69,36 +119,50 @@ describe('error-classifier', () => {
         expect(classified.kind).toBe('SCHEMA_INVALID');
         expect(classified.isRetriable).toBe(false);
         expect(classified.status).toBe('INVALID_OUTPUT');
+        expect(classified.sanitizedReason).toBe(
+          'Provider returned non-JSON or invalid structured syntax',
+        );
       }
     });
 
-    it('classifies 429 rate limits as TRANSIENT (retriable, UNAVAILABLE)', () => {
-      const err = new Error('Resource exhausted: 429 Too Many Requests');
+    it('classifies 429 rate limits as TRANSIENT with allowlisted reason', () => {
+      const err = new Error(
+        'Resource exhausted: 429 Too Many Requests with secret payload details',
+      );
       const classified = classifyProviderError(err);
       expect(classified.kind).toBe('TRANSIENT');
       expect(classified.isRetriable).toBe(true);
       expect(classified.status).toBe('UNAVAILABLE');
       expect(classified.httpStatus).toBe(429);
+      expect(classified.sanitizedReason).toBe('Provider rate limit or quota reached (HTTP 429)');
     });
 
-    it('classifies 5xx server errors as TRANSIENT (retriable, UNAVAILABLE)', () => {
-      const err = Object.assign(new Error('Service Unavailable'), { status: 503 });
+    it('classifies 5xx server errors as TRANSIENT with allowlisted reason', () => {
+      const err = Object.assign(
+        new Error('Service Unavailable with internal DB connection string dummy://db'),
+        { status: 503 },
+      );
       const classified = classifyProviderError(err);
       expect(classified.kind).toBe('TRANSIENT');
       expect(classified.isRetriable).toBe(true);
       expect(classified.status).toBe('UNAVAILABLE');
       expect(classified.httpStatus).toBe(503);
+      expect(classified.sanitizedReason).toBe('Transient upstream server error (HTTP 503)');
     });
 
-    it('classifies network connection drops as TRANSIENT (retriable, UNAVAILABLE)', () => {
-      const err = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    it('classifies network connection drops as TRANSIENT with allowlisted reason', () => {
+      const err = Object.assign(
+        new Error('read ECONNRESET on socket https://upstream.example.com'),
+        { code: 'ECONNRESET' },
+      );
       const classified = classifyProviderError(err);
       expect(classified.kind).toBe('TRANSIENT');
       expect(classified.isRetriable).toBe(true);
       expect(classified.status).toBe('UNAVAILABLE');
+      expect(classified.sanitizedReason).toBe('Transient network failure');
     });
 
-    it('classifies single request timeout as TRANSIENT (retriable, TIMEOUT)', () => {
+    it('classifies single request timeout as TRANSIENT with allowlisted reason', () => {
       const err = Object.assign(new Error('The operation was aborted due to timeout'), {
         name: 'AbortError',
       });
@@ -106,43 +170,87 @@ describe('error-classifier', () => {
       expect(classified.kind).toBe('TRANSIENT');
       expect(classified.isRetriable).toBe(true);
       expect(classified.status).toBe('TIMEOUT');
+      expect(classified.sanitizedReason).toBe('Provider request timeout');
     });
 
-    it('classifies complete operation deadline exceeded as TIMEOUT (non-retriable, TIMEOUT)', () => {
+    it('classifies complete operation deadline exceeded as TIMEOUT with allowlisted reason', () => {
       const err = new Error('Gemini complete operation deadline exceeded after 8000ms');
       const classified = classifyProviderError(err);
       expect(classified.kind).toBe('TIMEOUT');
       expect(classified.isRetriable).toBe(false);
       expect(classified.status).toBe('TIMEOUT');
+      expect(classified.sanitizedReason).toBe('Operation deadline exceeded');
     });
 
-    it('classifies 401 / 403 / 404 as AUTH_OR_CONFIG (non-retriable, UNAVAILABLE)', () => {
-      const err401 = Object.assign(new Error('API key not valid'), { status: 401 });
+    it('classifies cancelled request as CANCELLED with allowlisted reason', () => {
+      const err = new Error('Caller cancelled request');
+      const classified = classifyProviderError(err);
+      expect(classified.kind).toBe('CANCELLED');
+      expect(classified.isRetriable).toBe(false);
+      expect(classified.status).toBe('TIMEOUT');
+      expect(classified.sanitizedReason).toBe('Provider request cancelled');
+    });
+
+    it('classifies 401 / 403 / 404 as AUTH_OR_CONFIG with allowlisted reason', () => {
+      const err401 = Object.assign(new Error('API key not valid: dummy-key-12345'), {
+        status: 401,
+      });
       const classified401 = classifyProviderError(err401);
       expect(classified401.kind).toBe('AUTH_OR_CONFIG');
       expect(classified401.isRetriable).toBe(false);
       expect(classified401.status).toBe('UNAVAILABLE');
+      expect(classified401.sanitizedReason).toBe(
+        'Provider authentication or authorization failure (HTTP 401)',
+      );
 
-      const err404 = Object.assign(new Error('Model not found'), { status: 404 });
+      const err404 = Object.assign(new Error('Model not found: models/dummy-model-v1'), {
+        status: 404,
+      });
       const classified404 = classifyProviderError(err404);
       expect(classified404.kind).toBe('AUTH_OR_CONFIG');
       expect(classified404.isRetriable).toBe(false);
+      expect(classified404.sanitizedReason).toBe('Provider resource or model not found (HTTP 404)');
     });
 
-    it('classifies 400 Bad Request as CLIENT_ERROR (non-retriable, INVALID_OUTPUT)', () => {
-      const err400 = Object.assign(new Error('Invalid argument provided'), { status: 400 });
+    it('classifies 400 Bad Request as CLIENT_ERROR with allowlisted reason', () => {
+      const err400 = Object.assign(new Error('Invalid argument provided in body: prompt details'), {
+        status: 400,
+      });
       const classified400 = classifyProviderError(err400);
       expect(classified400.kind).toBe('CLIENT_ERROR');
       expect(classified400.isRetriable).toBe(false);
       expect(classified400.status).toBe('INVALID_OUTPUT');
+      expect(classified400.sanitizedReason).toBe(
+        'Provider client error or invalid argument (HTTP 400)',
+      );
     });
 
-    it('classifies concurrency saturation as CONCURRENCY_SATURATED (non-retriable, UNAVAILABLE)', () => {
+    it('classifies concurrency saturation as CONCURRENCY_SATURATED with allowlisted reason', () => {
       const err = new Error('Provider concurrency limit saturated (active: 2, max: 2)');
       const classified = classifyProviderError(err);
       expect(classified.kind).toBe('CONCURRENCY_SATURATED');
       expect(classified.isRetriable).toBe(false);
       expect(classified.status).toBe('UNAVAILABLE');
+      expect(classified.sanitizedReason).toBe('Provider capacity saturated');
+    });
+
+    it('bounds all allowlisted reason strings to 500 characters', () => {
+      const errors = [
+        new ZodError([]),
+        new SyntaxError('bad json'),
+        new Error('429 rate limit'),
+        Object.assign(new Error('503 server error'), { status: 503 }),
+        Object.assign(new Error('401 unauthenticated'), { status: 401 }),
+        Object.assign(new Error('400 invalid argument'), { status: 400 }),
+        new Error('operation deadline exceeded'),
+        new Error('unknown random error'),
+      ];
+
+      for (const err of errors) {
+        const classified = classifyProviderError(err);
+        expect(classified.sanitizedReason.length).toBeLessThanOrEqual(500);
+        expect(classified.sanitizedReason.length).toBeGreaterThan(0);
+      }
     });
   });
 });

@@ -45,6 +45,18 @@ describe('FakeGeminiAdapter', () => {
     }
   });
 
+  it('handles unavailable mode when GEMINI_API_KEY is not configured', async () => {
+    const adapter = new FakeGeminiAdapter('unavailable');
+    const result = await adapter.enrichEvent(mockEvent);
+
+    expect(result.correlationId).toBe(mockEvent.correlationId);
+    expect(result.provenance).toBe('UNAVAILABLE');
+    if ('status' in result) {
+      expect(result.status).toBe('UNAVAILABLE');
+      expect(result.reason).toContain('GEMINI_API_KEY not configured');
+    }
+  });
+
   it('handles simulated rate limit with degraded status', async () => {
     const adapter = new FakeGeminiAdapter('rate-limited');
     const result = await adapter.enrichEvent(mockEvent);
@@ -91,5 +103,22 @@ describe('FakeGeminiAdapter', () => {
 
     const res2 = await adapter.enrichEvent(mockEvent);
     expect(res2.provenance).toBe('INFERRED');
+  });
+
+  it('provides conflicting recommendation without breaking contract boundaries', async () => {
+    const adapter = new FakeGeminiAdapter('conflicting-recommendation');
+    const nonDecoyEvent: IntrusionEvent = {
+      ...mockEvent,
+      usedDecoyCredential: false,
+      decoyIdentifier: undefined,
+    };
+    const result = await adapter.enrichEvent(nonDecoyEvent);
+
+    expect(result.correlationId).toBe(nonDecoyEvent.correlationId);
+    expect(result.provenance).toBe('INFERRED');
+    if ('recommendedAction' in result) {
+      expect(result.recommendedAction).toBe('ASSIGN_FALSE_ROUTE');
+      expect(result.suggestedFalseRoute).toBe('mock-admin-decoy');
+    }
   });
 });
