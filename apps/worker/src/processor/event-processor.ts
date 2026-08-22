@@ -4,17 +4,23 @@ import {
   type DeceptionDecision,
   type ModelEnrichmentResult,
   type DegradedModelResult,
+  type SimulatedDeceptionEffect,
   DegradedModelResultSchema,
+  SimulatedDeceptionCommandSchema,
+  SimulatedDeceptionResultSchema,
+  SimulatedDeceptionEffectSchema,
 } from '@false-route/contracts';
 import { type Logger, withCorrelationContext } from '@false-route/observability';
 import { type WorkerRepository } from '../persistence/worker-repository.js';
 import { type GeminiEnrichmentAdapter } from '../adapters/gemini-adapter.js';
+import { type SimulatedDeceptionAgent } from '../adapters/simulated-deception-agent.js';
 import { classifyProviderError } from '../adapters/error-classifier.js';
 import { evaluateDeceptionPolicy } from '../domain/policy-engine.js';
 
 export interface EventProcessorOptions {
   readonly repository: WorkerRepository;
   readonly geminiAdapter: GeminiEnrichmentAdapter;
+  readonly simulatedAgent: SimulatedDeceptionAgent;
   readonly logger: Logger;
 }
 
@@ -26,16 +32,18 @@ export interface ProcessResult {
 
 /**
  * Orchestrates event lifecycle: claiming, bounded model enrichment,
- * deterministic policy evaluation, and atomic decision persistence.
+ * deterministic policy evaluation, simulated deception recording, and atomic decision persistence.
  */
 export class EventProcessor {
   private readonly repository: WorkerRepository;
   private readonly geminiAdapter: GeminiEnrichmentAdapter;
+  private readonly simulatedAgent: SimulatedDeceptionAgent;
   private readonly logger: Logger;
 
   constructor(options: EventProcessorOptions) {
     this.repository = options.repository;
     this.geminiAdapter = options.geminiAdapter;
+    this.simulatedAgent = options.simulatedAgent;
     this.logger = options.logger;
   }
 
@@ -111,8 +119,37 @@ export class EventProcessor {
       });
     }
 
-    // 3. Atomic persistence of decision and audit record
-    await this.repository.persistDecision(decision, claimToken);
+    // 3. Constrained simulated deception command recording
+    let simulatedEffect: SimulatedDeceptionEffect | undefined;
+    if (decision.action === 'ASSIGN_FALSE_ROUTE') {
+      const command = SimulatedDeceptionCommandSchema.parse({
+        decisionId: decision.id,
+        correlationId: decision.correlationId,
+        action: 'ASSIGN_FALSE_ROUTE',
+        containmentMode: 'SIMULATED',
+        assignedFalseRoute: decision.assignedFalseRoute,
+        commandProvenance: 'DERIVED',
+      });
+
+      const agentResult = await this.simulatedAgent.recordCommand(command);
+      const validatedResult = SimulatedDeceptionResultSchema.parse(agentResult);
+
+      simulatedEffect = SimulatedDeceptionEffectSchema.parse({
+        id: randomUUID(),
+        decisionId: decision.id,
+        correlationId: decision.correlationId,
+        effectKind: 'ASSIGN_FALSE_ROUTE',
+        status: validatedResult.status,
+        containmentMode: 'SIMULATED',
+        assignedFalseRoute: decision.assignedFalseRoute,
+        provenance: validatedResult.provenance,
+        recordedAt: validatedResult.recordedAt,
+        adapterVersion: validatedResult.adapterVersion,
+      });
+    }
+
+    // 4. Atomic persistence of decision, audit record, and optional simulated effect
+    await this.repository.persistDecision(decision, claimToken, simulatedEffect);
 
     eventLogger.info(
       {
@@ -120,8 +157,14 @@ export class EventProcessor {
         action: decision.action,
         matchedPolicy: decision.matchedPolicy,
         containmentMode: decision.containmentMode,
+        ...(simulatedEffect
+          ? {
+              simulatedEffectStatus: simulatedEffect.status,
+              adapterVersion: simulatedEffect.adapterVersion,
+            }
+          : {}),
       },
-      'Deterministic deception decision persisted successfully',
+      'Deterministic deception decision and simulated effect evidence persisted successfully',
     );
 
     return decision;

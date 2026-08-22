@@ -17,8 +17,10 @@ import {
   type WorkerRepository,
 } from './persistence/worker-repository.js';
 import { FakeGeminiAdapter } from './adapters/fake-gemini-adapter.js';
+import { DeterministicSimulatedDeceptionAdapter } from './adapters/simulated-deception-agent.js';
 import { EventProcessor } from './processor/event-processor.js';
 import { evaluateDeceptionPolicy } from './domain/policy-engine.js';
+import { SimulatedDeceptionEffectSchema } from '@false-route/contracts';
 
 const TEST_DATABASE_URL = validateTestDatabaseUrl(
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -37,6 +39,7 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
   let db: DatabaseClient;
   let repository: PrismaWorkerRepository;
   const createdFixtureIds = new Set<string>();
+  const defaultAgent = new DeterministicSimulatedDeceptionAdapter();
 
   beforeAll(async () => {
     db = createDatabaseClient({ connectionString: TEST_DATABASE_URL });
@@ -48,7 +51,6 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
   });
 
   beforeEach(async () => {
-    // Delete any pending or processing intrusion events created during tests
     if (createdFixtureIds.size > 0) {
       await db.intrusionEvent.deleteMany({
         where: { id: { in: Array.from(createdFixtureIds) } },
@@ -113,6 +115,7 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     const processor = new EventProcessor({
       repository,
       geminiAdapter: new FakeGeminiAdapter('auto'),
+      simulatedAgent: defaultAgent,
       logger: noopLogger,
     });
 
@@ -123,7 +126,14 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
 
     const updatedEvent = await db.intrusionEvent.findUnique({
       where: { id: eventId },
-      include: { decision: { include: { auditRecord: true } } },
+      include: {
+        decision: {
+          include: {
+            auditRecord: true,
+            simulatedEffect: true,
+          },
+        },
+      },
     });
 
     expect(updatedEvent?.status).toBe(ProcessingStatus.DECIDED);
@@ -132,6 +142,11 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     expect(updatedEvent?.processingAttemptCount).toBe(1);
     expect(updatedEvent?.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
     expect(updatedEvent?.decision?.auditRecord).toBeDefined();
+    expect(updatedEvent?.decision?.simulatedEffect).toBeDefined();
+    expect(updatedEvent?.decision?.simulatedEffect?.status).toBe('RECORDED');
+    expect(updatedEvent?.decision?.simulatedEffect?.containmentMode).toBe('SIMULATED');
+    expect(updatedEvent?.decision?.simulatedEffect?.assignedFalseRoute).toBe('mock-admin-decoy');
+    expect(updatedEvent?.decision?.simulatedEffect?.provenance).toBe('DERIVED');
   });
 
   it('prevents race conditions across concurrent workers claiming the same event', async () => {
@@ -140,12 +155,14 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     const processor1 = new EventProcessor({
       repository,
       geminiAdapter: new FakeGeminiAdapter('auto'),
+      simulatedAgent: defaultAgent,
       logger: noopLogger,
     });
 
     const processor2 = new EventProcessor({
       repository,
       geminiAdapter: new FakeGeminiAdapter('auto'),
+      simulatedAgent: defaultAgent,
       logger: noopLogger,
     });
 
@@ -217,20 +234,48 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
       event: freshClaim!.event,
       decisionId: randomUUID(),
     });
+    const staleEffect = SimulatedDeceptionEffectSchema.parse({
+      id: randomUUID(),
+      decisionId: staleDecision.id,
+      correlationId: staleDecision.correlationId,
+      effectKind: 'ASSIGN_FALSE_ROUTE',
+      status: 'RECORDED',
+      containmentMode: 'SIMULATED',
+      assignedFalseRoute: 'mock-admin-decoy',
+      provenance: 'DERIVED',
+      recordedAt: new Date().toISOString(),
+      adapterVersion: 'simulated-deception-agent-v1',
+    });
 
-    await expect(repository.persistDecision(staleDecision, staleToken)).rejects.toThrow(
-      /Claim fencing violation/,
-    );
+    await expect(
+      repository.persistDecision(staleDecision, staleToken, staleEffect),
+    ).rejects.toThrow(/Claim fencing violation/);
 
     // Fresh worker can persist successfully
     const freshDecision = evaluateDeceptionPolicy({
       event: freshClaim!.event,
       decisionId: randomUUID(),
     });
-    await repository.persistDecision(freshDecision, freshToken);
+    const freshEffect = SimulatedDeceptionEffectSchema.parse({
+      id: randomUUID(),
+      decisionId: freshDecision.id,
+      correlationId: freshDecision.correlationId,
+      effectKind: 'ASSIGN_FALSE_ROUTE',
+      status: 'RECORDED',
+      containmentMode: 'SIMULATED',
+      assignedFalseRoute: 'mock-admin-decoy',
+      provenance: 'DERIVED',
+      recordedAt: new Date().toISOString(),
+      adapterVersion: 'simulated-deception-agent-v1',
+    });
+    await repository.persistDecision(freshDecision, freshToken, freshEffect);
 
-    const finalized = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    const finalized = await db.intrusionEvent.findUnique({
+      where: { id: eventId },
+      include: { decision: { include: { simulatedEffect: true } } },
+    });
     expect(finalized?.status).toBe(ProcessingStatus.DECIDED);
+    expect(finalized?.decision?.simulatedEffect).toBeDefined();
   });
 
   it('dead-letters an expired PROCESSING event to FAILED after reaching maximum attempts', async () => {
@@ -239,10 +284,9 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
       status: ProcessingStatus.PROCESSING,
       processingClaimToken: randomUUID(),
       processingLeaseExpiresAt: expiredDate,
-      processingAttemptCount: 3, // Already reached max attempts
+      processingAttemptCount: 3,
     });
 
-    // Claim next candidate: should dead-letter the expired event to FAILED
     const claim = await repository.claimNextPendingEvent({ maxAttempts: 3 });
     expect(claim?.event.id).not.toBe(eventId);
 
@@ -261,7 +305,6 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
       processingAttemptCount: 1,
     });
 
-    // 1. Release attempt 1 -> returns to PENDING
     const outcome1 = await repository.releaseOrFailClaim(eventId, claimToken, { maxAttempts: 2 });
     expect(outcome1).toBe('REQUEUED');
 
@@ -269,12 +312,10 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     expect(row?.status).toBe(ProcessingStatus.PENDING);
     expect(row?.processingClaimToken).toBeNull();
 
-    // 2. Claim again for attempt 2
     const claim2 = await repository.claimNextPendingEvent({ maxAttempts: 2 });
     expect(claim2?.event.id).toBe(eventId);
     expect(claim2?.claimToken).toBeDefined();
 
-    // 3. Fail attempt 2 (maxAttempts = 2) -> marks FAILED
     const outcome2 = await repository.releaseOrFailClaim(eventId, claim2!.claimToken, {
       maxAttempts: 2,
     });
@@ -291,8 +332,8 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
 
     const uncertainCommitRepository: WorkerRepository = {
       claimNextPendingEvent: (options) => repository.claimNextPendingEvent(options),
-      persistDecision: async (decision, claimToken) => {
-        await repository.persistDecision(decision, claimToken);
+      persistDecision: async (decision, claimToken, simulatedEffect) => {
+        await repository.persistDecision(decision, claimToken, simulatedEffect);
         throw new Error('Simulated post-commit acknowledgement failure');
       },
       releaseOrFailClaim: async (claimedEventId, claimToken, options) => {
@@ -304,6 +345,7 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     const processor = new EventProcessor({
       repository: uncertainCommitRepository,
       geminiAdapter: new FakeGeminiAdapter('auto'),
+      simulatedAgent: defaultAgent,
       logger: noopLogger,
     });
 
@@ -314,7 +356,14 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
 
     const row = await db.intrusionEvent.findUnique({
       where: { id: eventId },
-      include: { decision: { include: { auditRecord: true } } },
+      include: {
+        decision: {
+          include: {
+            auditRecord: true,
+            simulatedEffect: true,
+          },
+        },
+      },
     });
     expect(row?.status).toBe(ProcessingStatus.DECIDED);
     expect(row?.processingClaimToken).toBeNull();
@@ -322,5 +371,6 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     expect(row?.decision?.eventId).toBe(eventId);
     expect(row?.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
     expect(row?.decision?.auditRecord).not.toBeNull();
+    expect(row?.decision?.simulatedEffect).not.toBeNull();
   });
 });

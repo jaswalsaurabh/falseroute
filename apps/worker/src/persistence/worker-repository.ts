@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   type IntrusionEvent,
   type DeceptionDecision,
+  type SimulatedDeceptionEffect,
   IntrusionEventSchema,
 } from '@false-route/contracts';
 import {
@@ -48,7 +49,11 @@ export interface WorkerRepository {
     leaseDurationMs?: number | undefined;
     maxAttempts?: number | undefined;
   }): Promise<ClaimedEvent | null>;
-  persistDecision(decision: DeceptionDecision, claimToken: string): Promise<void>;
+  persistDecision(
+    decision: DeceptionDecision,
+    claimToken: string,
+    simulatedEffect?: SimulatedDeceptionEffect | undefined,
+  ): Promise<void>;
   releaseOrFailClaim(
     eventId: string,
     claimToken: string,
@@ -170,10 +175,34 @@ export class PrismaWorkerRepository implements WorkerRepository {
   }
 
   /**
-   * Persists the deterministic decision, audit record, and updates event status to DECIDED in one transaction.
+   * Persists the deterministic decision, audit record, optional simulated effect, and updates event status to DECIDED in one transaction.
    * Enforces fencing: verifies matching claimToken, status = 'PROCESSING', and non-expired lease.
    */
-  async persistDecision(decision: DeceptionDecision, claimToken: string): Promise<void> {
+  async persistDecision(
+    decision: DeceptionDecision,
+    claimToken: string,
+    simulatedEffect?: SimulatedDeceptionEffect | undefined,
+  ): Promise<void> {
+    if (decision.action === 'ASSIGN_FALSE_ROUTE') {
+      if (!simulatedEffect) {
+        throw new Error(
+          `Invariant violation: ASSIGN_FALSE_ROUTE decision requires a matching simulatedEffect record`,
+        );
+      }
+      if (
+        simulatedEffect.decisionId !== decision.id ||
+        simulatedEffect.correlationId !== decision.correlationId
+      ) {
+        throw new Error(
+          `Invariant violation: simulatedEffect IDs do not match decision for event ${decision.eventId}`,
+        );
+      }
+    } else if (simulatedEffect) {
+      throw new Error(
+        `Invariant violation: non-route action "${decision.action}" must not have a simulatedEffect record`,
+      );
+    }
+
     const assignedFalseRoute =
       'assignedFalseRoute' in decision ? (decision.assignedFalseRoute ?? null) : null;
 
@@ -219,6 +248,23 @@ export class PrismaWorkerRepository implements WorkerRepository {
               evaluatedAt: new Date(decision.auditRecord.evaluatedAt),
             },
           },
+          ...(simulatedEffect
+            ? {
+                simulatedEffect: {
+                  create: {
+                    id: simulatedEffect.id,
+                    correlationId: simulatedEffect.correlationId,
+                    effectKind: simulatedEffect.effectKind,
+                    status: simulatedEffect.status,
+                    containmentMode: simulatedEffect.containmentMode as ContainmentMode,
+                    assignedFalseRoute: simulatedEffect.assignedFalseRoute,
+                    provenance: simulatedEffect.provenance as ProvenanceClassification,
+                    recordedAt: new Date(simulatedEffect.recordedAt),
+                    adapterVersion: simulatedEffect.adapterVersion,
+                  },
+                },
+              }
+            : {}),
         },
       });
     });

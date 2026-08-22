@@ -88,8 +88,9 @@ model DeceptionDecision {
   createdAt          DateTime                 @default(now()) @map("created_at")
   updatedAt          DateTime                 @updatedAt @map("updated_at")
 
-  event       IntrusionEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  auditRecord DecisionAuditRecord?
+  event           IntrusionEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  auditRecord     DecisionAuditRecord?
+  simulatedEffect SimulatedDeceptionEffect?
 
   @@index([correlationId])
   @@index([decidedAt])
@@ -106,4 +107,24 @@ model DecisionAuditRecord {
   decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
 
   @@map("decision_audit_records")
+}
+
+model SimulatedDeceptionEffect {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  decisionId         String                   @unique @map("decision_id") @db.Uuid
+  correlationId      String                   @map("correlation_id") @db.VarChar(64)
+  effectKind         String                   @map("effect_kind") @db.VarChar(64)
+  status             String                   @map("status") @db.VarChar(32)
+  containmentMode    ContainmentMode          @map("containment_mode")
+  assignedFalseRoute String                   @map("assigned_false_route") @db.VarChar(64)
+  provenance         ProvenanceClassification @map("provenance")
+  recordedAt         DateTime                 @map("recorded_at")
+  adapterVersion     String                   @map("adapter_version") @db.VarChar(32)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+
+  decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([correlationId])
+  @@index([recordedAt])
+  @@map("simulated_deception_effects")
 }

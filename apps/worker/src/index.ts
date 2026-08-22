@@ -4,6 +4,7 @@ import { parseWorkerConfig } from './config/worker-config.js';
 import { PrismaWorkerRepository } from './persistence/worker-repository.js';
 import { LiveGeminiAdapter, type GeminiEnrichmentAdapter } from './adapters/gemini-adapter.js';
 import { FakeGeminiAdapter } from './adapters/fake-gemini-adapter.js';
+import { DeterministicSimulatedDeceptionAdapter } from './adapters/simulated-deception-agent.js';
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 
@@ -34,6 +35,11 @@ export {
   type ClassifiedProviderError,
   type ProviderErrorKind,
 } from './adapters/error-classifier.js';
+export {
+  type SimulatedDeceptionAgent,
+  DeterministicSimulatedDeceptionAdapter,
+  SIMULATED_AGENT_ADAPTER_VERSION,
+} from './adapters/simulated-deception-agent.js';
 export { PrismaWorkerRepository, type WorkerRepository } from './persistence/worker-repository.js';
 export {
   EventProcessor,
@@ -91,9 +97,12 @@ async function main() {
     geminiAdapter = new FakeGeminiAdapter('unavailable');
   }
 
+  const simulatedAgent = new DeterministicSimulatedDeceptionAdapter();
+
   const processor = new EventProcessor({
     repository,
     geminiAdapter,
+    simulatedAgent,
     logger,
   });
 
