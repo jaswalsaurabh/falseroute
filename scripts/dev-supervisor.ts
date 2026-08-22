@@ -109,8 +109,7 @@ export class DevSupervisor {
 
   constructor(options: DevSupervisorOptions) {
     this.rootDir = options.rootDir;
-    this.services =
-      options.services && options.services.length > 0 ? options.services : ['web', 'api', 'worker'];
+    this.services = options.services !== undefined ? options.services : ['web', 'api', 'worker'];
     this.env = options.env ?? {};
     this.skipBuild = options.skipBuild ?? false;
     this.spawnFn = options.spawnFn ?? spawn;
@@ -158,6 +157,12 @@ export class DevSupervisor {
       }
     }
 
+    if (this.services.length === 0) {
+      this.log(this.formatLog('supervisor', SUPERVISOR_COLOR, 'No services selected to start.'));
+      this.onExit(0);
+      return;
+    }
+
     this.log(
       this.formatLog(
         'supervisor',
@@ -182,110 +187,143 @@ export class DevSupervisor {
         });
 
         this.activeProcesses.set(serviceKey, child);
-
-        if (child.stdout) {
-          const rl = createInterface({ input: child.stdout });
-          rl.on('line', (line) => {
-            this.log(this.formatLog(def.name, def.color, line));
-          });
-        }
-
-        if (child.stderr) {
-          const rlErr = createInterface({ input: child.stderr });
-          rlErr.on('line', (line) => {
-            this.logError(this.formatLog(def.name, def.color, line));
-          });
-        }
-
-        child.on('error', (err) => {
-          if (this.completedServices.has(serviceKey)) return;
-          this.completedServices.add(serviceKey);
-          this.activeProcesses.delete(serviceKey);
-          this.logError(
-            this.formatLog(
-              'supervisor',
-              SUPERVISOR_COLOR,
-              `Failed to spawn service "${def.name}": ${err.message}`,
-            ),
-          );
-          this.handleChildFailure(serviceKey, 1);
-        });
-
-        child.on('exit', (code, signal) => {
-          if (this.completedServices.has(serviceKey)) return;
-          this.completedServices.add(serviceKey);
-          this.activeProcesses.delete(serviceKey);
-          if (!this.isShuttingDown) {
-            const exitStatus = code !== null ? `code ${code}` : `signal ${signal}`;
-            const log = code === 0 ? this.log : this.logError;
-            log(
-              this.formatLog(
-                'supervisor',
-                SUPERVISOR_COLOR,
-                `Service "${def.name}" exited unexpectedly with ${exitStatus}. Terminating siblings...`,
-              ),
-            );
-            this.handleChildFailure(serviceKey, code ?? 1);
-          }
-          this.checkAllExited();
-        });
+        this.attachOutput(serviceKey, def, child);
+        this.attachLifecycle(serviceKey, child);
       } catch (err) {
         this.logError(
           this.formatLog(
             'supervisor',
             SUPERVISOR_COLOR,
-            `Failed to start service "${def.name}": ${err instanceof Error ? err.message : String(err)}`,
+            `Failed to start service "${serviceKey}": ${(err as Error).message}`,
           ),
         );
-        this.handleChildFailure(serviceKey, 1);
-        return;
+        this.exitCode = 1;
+        this.stopAll('SIGTERM');
+        break;
       }
     }
   }
 
-  private handleChildFailure(_service: ServiceKey, code: number): void {
-    const failureCode = code === 0 ? 1 : code;
-    if (this.exitCode === 0) {
-      this.exitCode = failureCode;
+  private attachOutput(key: ServiceKey, def: ServiceDefinition, child: ChildProcess): void {
+    if (child.stdout) {
+      const rl = createInterface({ input: child.stdout });
+      rl.on('line', (line) => {
+        this.log(this.formatLog(def.name, def.color, line));
+      });
     }
-    this.stopAll();
+
+    if (child.stderr) {
+      const rl = createInterface({ input: child.stderr });
+      rl.on('line', (line) => {
+        this.logError(this.formatLog(def.name, def.color, line));
+      });
+    }
   }
 
-  public stopAll(signal = 'SIGTERM'): void {
-    if (this.isShuttingDown && this.activeProcesses.size === 0) {
-      return;
-    }
+  private attachLifecycle(key: ServiceKey, child: ChildProcess): void {
+    child.on('error', (err) => {
+      this.logError(
+        this.formatLog(
+          'supervisor',
+          SUPERVISOR_COLOR,
+          `Failed to spawn service "${key}": ${err.message}`,
+        ),
+      );
+      this.exitCode = 1;
+      this.stopAll('SIGTERM');
+    });
+
+    child.on('exit', (code, signal) => {
+      this.activeProcesses.delete(key);
+      this.completedServices.add(key);
+
+      if (!this.isShuttingDown) {
+        if (code !== null && code !== 0) {
+          this.logError(
+            this.formatLog(
+              'supervisor',
+              SUPERVISOR_COLOR,
+              `Service "${key}" exited unexpectedly with code ${code}. Terminating siblings...`,
+            ),
+          );
+          this.exitCode = code;
+          this.stopAll('SIGTERM');
+        } else if (signal !== null) {
+          this.log(
+            this.formatLog(
+              'supervisor',
+              SUPERVISOR_COLOR,
+              `Service "${key}" terminated by signal ${signal}. Terminating siblings...`,
+            ),
+          );
+          this.exitCode = 1;
+          this.stopAll('SIGTERM');
+        } else {
+          this.log(
+            this.formatLog(
+              'supervisor',
+              SUPERVISOR_COLOR,
+              `Service "${key}" exited unexpectedly with code 0. Terminating siblings...`,
+            ),
+          );
+          this.exitCode = 1;
+          this.stopAll('SIGTERM');
+        }
+      }
+
+      this.checkAllCompleted();
+    });
+  }
+
+  public stopAll(signal: NodeJS.Signals = 'SIGTERM'): void {
+    if (this.isShuttingDown && this.activeProcesses.size === 0) return;
     this.isShuttingDown = true;
 
-    for (const child of this.activeProcesses.values()) {
+    for (const [key, child] of this.activeProcesses) {
       try {
         this.processTreeKillFn(child, signal);
-      } catch {
-        // Ignore if child already dead
+      } catch (err) {
+        this.logError(
+          this.formatLog(
+            'supervisor',
+            SUPERVISOR_COLOR,
+            `Error stopping service "${key}": ${(err as Error).message}`,
+          ),
+        );
       }
     }
 
     if (!this.shutdownTimer && this.activeProcesses.size > 0) {
       this.shutdownTimer = setTimeout(() => {
-        for (const child of this.activeProcesses.values()) {
-          try {
-            this.processTreeKillFn(child, 'SIGKILL');
-          } catch {
-            // Ignore
+        if (this.activeProcesses.size > 0) {
+          this.logError(
+            this.formatLog(
+              'supervisor',
+              SUPERVISOR_COLOR,
+              'Graceful shutdown timeout exceeded. Forcing termination (SIGKILL)...',
+            ),
+          );
+          for (const child of this.activeProcesses.values()) {
+            try {
+              this.processTreeKillFn(child, 'SIGKILL');
+            } catch {
+              // Ignore forced kill failures
+            }
           }
+          this.activeProcesses.clear();
+          this.checkAllCompleted();
         }
-        this.activeProcesses.clear();
-        this.checkAllExited();
       }, this.gracefulTimeoutMs);
-      if (this.shutdownTimer.unref) {
+
+      if (typeof this.shutdownTimer.unref === 'function') {
         this.shutdownTimer.unref();
       }
     }
 
-    this.checkAllExited();
+    this.checkAllCompleted();
   }
 
-  private checkAllExited(): void {
+  private checkAllCompleted(): void {
     if (this.isShuttingDown && this.activeProcesses.size === 0 && !this.exitNotified) {
       this.exitNotified = true;
       if (this.shutdownTimer) {
@@ -297,39 +335,44 @@ export class DevSupervisor {
   }
 }
 
-export function runMigration(rootDir: string, env: Record<string, string>): number {
-  const result = spawnSync(process.execPath, ['scripts/prisma-guard.ts', 'migrate', 'deploy'], {
-    cwd: rootDir,
-    env: {
-      ...process.env,
-      ...env,
-    },
+function runMigration(rootDir: string, env: Record<string, string>): boolean {
+  const isTTY = Boolean(process.stdout.isTTY);
+  const colorStart = isTTY ? SUPERVISOR_COLOR : '';
+  const colorEnd = isTTY ? RESET_COLOR : '';
+  process.stdout.write(
+    `${colorStart}[supervisor]${colorEnd} Running safe development database migration...\n`,
+  );
+
+  const res = spawnSync('node', ['../../scripts/prisma-guard.ts', 'migrate', 'deploy'], {
+    cwd: resolve(rootDir, 'packages/database'),
+    env: { ...process.env, ...env },
     stdio: 'inherit',
+    shell: process.platform === 'win32',
   });
 
-  return result.status ?? 1;
+  return res.status === 0;
 }
 
-function printUsage(): void {
-  console.log(`FalseRoute Local-Development Supervisor
+function printHelp(): void {
+  const helpText = `
+FalseRoute Local Development Supervisor
 
 Usage:
-  pnpm dev                         Start Web, API, and Worker concurrently
-  pnpm dev:web                     Start only Web
-  pnpm dev:api                     Start only API in watch mode
-  pnpm dev:worker                  Start only Worker in watch mode
+  pnpm dev                         Start all services (web, api, worker)
+  pnpm dev:web                     Start React operator dashboard only
+  pnpm dev:api                     Start Express control-plane API only
+  pnpm dev:worker                  Start Asynchronous Worker only
   pnpm dev:services                Start API and Worker concurrently
-  pnpm dev:migrate                 Run guarded database migration
-  pnpm dev:infra                   Start local PostgreSQL container
-  pnpm dev:infra:down              Stop local PostgreSQL container
+  pnpm dev:migrate                 Run development database migrations safely
 
 Options:
   --services=<list>                Comma-separated list of services (web,api,worker)
-  --migrate                        Run guarded database migration using root .env
-  --no-build                       Skip workspace dependency build step
-  --env-file=<path>                Custom .env file path
-  --help, -h                       Show this help message
-`);
+  --env-file=<path>                Path to environment file (default: .env)
+  --no-build, --skip-build         Skip workspace build before starting services
+  --migrate                        Run migrations before starting services
+  --help, -h                       Display this help message
+`;
+  process.stdout.write(`${helpText}\n`);
 }
 
 export async function main(): Promise<void> {
@@ -339,41 +382,49 @@ export async function main(): Promise<void> {
   try {
     cliArgs = parseCliArgs(process.argv.slice(2));
   } catch (err) {
-    console.error(`[supervisor] Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.stderr.write(`[supervisor] CLI Error: ${(err as Error).message}\n`);
     process.exit(1);
+    return;
   }
 
   if (cliArgs.help) {
-    printUsage();
+    printHelp();
     process.exit(0);
+    return;
   }
 
   const { env, hasEnvFile } = loadEnvironment({
     rootDir,
     envFile: cliArgs.envFile,
-    processEnv: process.env,
   });
 
   if (cliArgs.migrate) {
-    const validation = validateMigrationEnvironment(env, hasEnvFile);
-    if (!validation.valid) {
-      console.error('[supervisor] Migration environment validation failed:');
-      for (const err of validation.errors) {
-        console.error(`  - ${err}`);
+    const migrationValidation = validateMigrationEnvironment(env, hasEnvFile);
+    if (!migrationValidation.valid) {
+      process.stderr.write('[supervisor] Migration environment validation failed:\n');
+      for (const err of migrationValidation.errors) {
+        process.stderr.write(`  - ${err}\n`);
       }
       process.exit(1);
+      return;
     }
-    const exitCode = runMigration(rootDir, env);
-    process.exit(exitCode);
+
+    const migrationOk = runMigration(rootDir, env);
+    if (!migrationOk) {
+      process.stderr.write('[supervisor] Database migration failed. Aborting startup.\n');
+      process.exit(1);
+      return;
+    }
   }
 
   const validation = validateServiceEnvironment(cliArgs.services, env, hasEnvFile);
   if (!validation.valid) {
-    console.error('[supervisor] Environment validation failed:');
+    process.stderr.write('[supervisor] Environment validation failed:\n');
     for (const err of validation.errors) {
-      console.error(`  - ${err}`);
+      process.stderr.write(`  - ${err}\n`);
     }
     process.exit(1);
+    return;
   }
 
   const supervisor = new DevSupervisor({
@@ -381,25 +432,22 @@ export async function main(): Promise<void> {
     services: cliArgs.services,
     env,
     skipBuild: cliArgs.skipBuild,
+    gracefulTimeoutMs: 5000,
   });
 
-  process.on('SIGINT', () => {
-    console.log('\n[supervisor] Interrupted (SIGINT). Shutting down...');
-    supervisor.stopAll('SIGINT');
-  });
+  const onSignal = (signal: NodeJS.Signals) => {
+    supervisor.stopAll(signal);
+  };
 
-  process.on('SIGTERM', () => {
-    console.log('\n[supervisor] Terminated (SIGTERM). Shutting down...');
-    supervisor.stopAll('SIGTERM');
-  });
+  process.on('SIGINT', () => onSignal('SIGINT'));
+  process.on('SIGTERM', () => onSignal('SIGTERM'));
 
   await supervisor.start();
 }
 
-const invokedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
-if (invokedPath === fileURLToPath(import.meta.url)) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((err) => {
-    console.error('[supervisor] Fatal error:', err);
+    process.stderr.write(`[supervisor] Fatal error: ${(err as Error).message}\n`);
     process.exit(1);
   });
 }

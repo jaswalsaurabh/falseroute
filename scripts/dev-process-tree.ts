@@ -46,7 +46,7 @@ export function terminateProcessTree(
     if (result.error) {
       const errorCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
       if (errorCode !== 'ESRCH' && errorCode !== 'ENOENT') throw result.error;
-    } else {
+    } else if (result.status === 0) {
       return;
     }
   }

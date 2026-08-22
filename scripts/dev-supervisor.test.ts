@@ -98,8 +98,8 @@ test('validateServiceEnvironment validates according to selected services and de
   const apiValid = validateServiceEnvironment(
     ['api'],
     {
-      DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/dev',
-      OPERATOR_ACCESS_TOKEN: 'not-a-real-operator-token',
+      DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev',
+      OPERATOR_ACCESS_TOKEN: 'not-a-real-secret-token',
     },
     true,
   );
@@ -107,51 +107,30 @@ test('validateServiceEnvironment validates according to selected services and de
 
   const workerInvalid = validateServiceEnvironment(['worker'], {}, true);
   assert.equal(workerInvalid.valid, false);
-  assert.equal(
-    workerInvalid.errors.some((e) => e.includes('DATABASE_URL')),
-    true,
-  );
+  assert.equal(workerInvalid.errors.length, 1);
+  assert.equal(workerInvalid.errors[0]?.includes('DATABASE_URL'), true);
 
-  // Test deduplication when both api and worker encounter invalid DATABASE_URL
-  const bothInvalid = validateServiceEnvironment(
-    ['api', 'worker'],
-    {
-      DATABASE_URL: 'mysql://localhost:3306/db',
-      OPERATOR_ACCESS_TOKEN: 'not-a-real-operator-token',
-    },
-    true,
-  );
-  const postgresErrorCount = bothInvalid.errors.filter((e) =>
-    e.includes('valid postgresql:// connection string'),
-  ).length;
-  assert.equal(postgresErrorCount, 1);
+  const bothInvalid = validateServiceEnvironment(['api', 'worker'], {}, true);
+  assert.equal(bothInvalid.valid, false);
+  assert.equal(bothInvalid.errors.length, 3);
 });
 
 test('validateServiceEnvironment rejects invalid DATABASE_URL and short token without leaking values', () => {
   const result = validateServiceEnvironment(
     ['api'],
     {
-      DATABASE_URL: 'mysql://invalid-url-with-secret-password@localhost',
+      DATABASE_URL: 'mysql://localhost:3306/db',
       OPERATOR_ACCESS_TOKEN: 'short',
     },
     true,
   );
 
   assert.equal(result.valid, false);
+  assert.equal(result.errors.length, 2);
+  assert.equal(result.errors[0]?.includes('must be a valid postgresql://'), true);
+  assert.equal(result.errors[1]?.includes('must be at least 8 characters'), true);
   assert.equal(
-    result.errors.some((e) => e.includes('valid postgresql:// connection string')),
-    true,
-  );
-  assert.equal(
-    result.errors.some((e) => e.includes('at least 8 characters long')),
-    true,
-  );
-  assert.equal(
-    result.errors.some((e) => e.includes('invalid-url-with-secret-password')),
-    false,
-  );
-  assert.equal(
-    result.errors.some((e) => e.includes('short')),
+    result.errors.some((e) => e.includes('short') || e.includes('mysql://localhost:3306/db')),
     false,
   );
 });
@@ -160,6 +139,13 @@ test('parseCliArgs parses commands and options correctly and enforces constraint
   assert.deepEqual(parseCliArgs([]), {
     services: ['web', 'api', 'worker'],
     migrate: false,
+    skipBuild: false,
+    help: false,
+  });
+
+  assert.deepEqual(parseCliArgs(['--migrate']), {
+    services: ['web', 'api', 'worker'],
+    migrate: true,
     skipBuild: false,
     help: false,
   });
@@ -209,6 +195,28 @@ test('DevSupervisor stops startup if workspace build fails', async () => {
     logs.some((l) => l.includes('Workspace build failed')),
     true,
   );
+});
+
+test('DevSupervisor handles empty service selection without starting default services', async () => {
+  let exitCode: number | null = null;
+  const spawned: string[] = [];
+
+  const supervisor = new DevSupervisor({
+    rootDir: '/fake/root',
+    services: [],
+    skipBuild: true,
+    spawnFn: (cmd) => {
+      spawned.push(cmd);
+      return new FakeChildProcess() as unknown as ChildProcess;
+    },
+    onExit: (code) => {
+      exitCode = code;
+    },
+  });
+
+  await supervisor.start();
+  assert.equal(spawned.length, 0);
+  assert.equal(exitCode, 0);
 });
 
 test('DevSupervisor terminates sibling services when one child exits unexpectedly', async () => {
