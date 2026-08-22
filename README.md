@@ -53,41 +53,135 @@ FalseRoute strictly maintains containment and provenance boundaries:
 
 ---
 
-## Quickstart
+## Local Development Quickstart
 
 ### Prerequisites
 
-- Node.js `24.19.0`
-- pnpm `11.22.0`
-- Docker & Docker Compose (for local PostgreSQL)
+- **Node.js**: `24.19.0` (managed via `.nvmrc`)
+- **pnpm**: `11.22.0`
+- **Docker & Docker Compose**: For local PostgreSQL container
 
-### 1. Start Local Infrastructure
+### 1. Install Dependencies
 
 ```bash
-docker compose -f infrastructure/docker/compose.yml up -d
+pnpm install
 ```
 
-### 2. Install Dependencies & Run Database Migrations
+### 2. Configure Environment
+
+Copy the example environment file:
 
 ```bash
-# Installs workspace dependencies and configures Husky pre-commit hooks
-pnpm install
+cp .env.example .env
+```
 
-# Deploy schema to development database
-DATABASE_URL="postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public" pnpm --filter @false-route/database migrate:deploy
+The default `.env.example` includes synthetic development credentials:
 
-# Idempotently create and migrate test database on existing or new containers
+- `OPERATOR_ACCESS_TOKEN=not-a-real-local-operator-token`
+- `DATABASE_URL=postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public`
+
+### 3. Start Local Infrastructure
+
+Start the containerized PostgreSQL database service:
+
+```bash
+pnpm dev:infra
+```
+
+### 4. Run Database Migrations
+
+Apply development migrations safely through the guarded migration runner:
+
+```bash
+pnpm dev:migrate
+```
+
+_(Optional)_ Prepare the isolated test database for local integration testing:
+
+```bash
 pnpm db:setup:test
 ```
 
-### 3. Start Development Services
+### 5. Start Development Environment
+
+Launch Web, API, and Worker under the local-development supervisor:
 
 ```bash
-# In separate terminal sessions or concurrently:
-pnpm --filter @false-route/api dev
-pnpm --filter @false-route/worker dev
-pnpm --filter @false-route/web dev
+pnpm dev
 ```
+
+The supervisor:
+
+- Loads the root `.env`.
+- Builds workspace dependencies using cached Turborepo tasks.
+- Spawns Web, API, and Worker concurrently with prefixed logs (`[web]`, `[api]`, `[worker]`).
+- Supervise all processes, forwarding `SIGINT`/`SIGTERM` and cleaning up child processes upon exit.
+
+### 6. Access and Test
+
+1. Open `http://localhost:5173` in your browser.
+2. Unlock the controlled demonstration using `not-a-real-local-operator-token`.
+3. In the **Intrusion Event Simulator**, select a preset (e.g., **Decoy Credential Trigger**).
+4. Submit the event and observe the Worker process and transition it from `PENDING` to `DECIDED`.
+
+### 7. Stopping Services & Infrastructure
+
+- **Stop Development Services**: Press `Ctrl+C` in the terminal running `pnpm dev`. The supervisor terminates all child processes cleanly without leaving orphan processes.
+- **Stop Database Infrastructure**: When finished, stop local Docker Compose services:
+
+```bash
+pnpm dev:infra:down
+```
+
+---
+
+## Optional Individual Service Commands
+
+If you wish to run individual components in isolation:
+
+| Command               | Description                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm dev:web`        | Start only the React/Vite web server (`http://localhost:5173`)                     |
+| `pnpm dev:api`        | Load `.env` and start only the Express API in watch mode (`http://127.0.0.1:3000`) |
+| `pnpm dev:worker`     | Load `.env` and start only the background Worker in watch mode                     |
+| `pnpm dev:services`   | Start API and Worker concurrently without Web                                      |
+| `pnpm dev:migrate`    | Load `.env` and run guarded Prisma migrations                                      |
+| `pnpm dev:infra`      | Start local PostgreSQL container in background                                     |
+| `pnpm dev:infra:down` | Stop local PostgreSQL container                                                    |
+
+---
+
+## Troubleshooting
+
+### Port 3000 already in use
+
+Another process is listening on the default API port. Stop the conflicting process or specify an alternative port in your `.env` (e.g. `PORT=3001`) and adjust `VITE_API_TARGET=http://127.0.0.1:3001`.
+
+### Port 5173 already in use
+
+Another process is using Vite's default dev server port. Vite will automatically offer or select the next available port (e.g., 5174). Make sure CORS origins in `.env` include the active frontend port if modified.
+
+### PostgreSQL unavailable
+
+Ensure Docker is running and execute:
+
+```bash
+pnpm dev:infra
+```
+
+Verify container status with `docker ps` to ensure container `falseroute-postgres-local` is healthy on port `5434`.
+
+### Migration not applied
+
+If the API or Worker fails to start with relation/table errors, run:
+
+```bash
+pnpm dev:migrate
+```
+
+### Missing operator token / Unauthorized in dashboard
+
+Ensure `.env` contains `OPERATOR_ACCESS_TOKEN=not-a-real-local-operator-token` (must be at least 8 characters) and that you enter this exact token on the dashboard unlock screen.
 
 ---
 
@@ -97,29 +191,13 @@ pnpm --filter @false-route/web dev
 # Run all static checks, typechecks, builds, unit tests, and repo governance
 pnpm check
 
-# Run all unit tests
+# Run all unit tests including script suites
 pnpm test
 
-# Prepare test database (if not already done) & run integration suites serially
+# Run database integration tests (requires PostgreSQL running)
 pnpm db:setup:test
 TEST_DATABASE_URL="postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public" pnpm test:integration
-
-# Run 3-tier design token validation
-pnpm check:design-tokens
 
 # Scan tracked and unignored repository files for secrets and credentials
 pnpm check:secrets
 ```
-
----
-
-## Controlled Demonstration Workflow
-
-1. Navigate to the Web Dashboard at `http://localhost:5173`.
-2. Unlock the controlled demonstration session using the configured `OPERATOR_ACCESS_TOKEN`.
-3. In the **Intrusion Event Simulator**, select an attack preset:
-   - **Decoy Credential Trigger**: Uses fictional credential `mock-admin-decoy-creds` on `mock-admin-portal` to trigger deterministic false-route assignment (`mock-admin-decoy`).
-   - **Standard Access**: Non-decoy control event triggering observation.
-   - **High-Frequency Anomaly**: Non-decoy anomaly triggering operator alerting.
-4. Submit the event and observe real-time background transition from `PENDING` to `DECIDED`.
-5. Inspect the event to review the deterministic action, matched policy rule, audit record (`ruleVersion: 2026.08.1`), and model enrichment or degraded fallback state.

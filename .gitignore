@@ -59,6 +59,7 @@ Thumbs.db
 scratch/
 tmp/
 *.tmp
+mock-*.html
 
 # Markdown is internal by default. Public documentation requires an explicit allowlist entry.
 *.md

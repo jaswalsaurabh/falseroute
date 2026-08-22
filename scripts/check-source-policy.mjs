@@ -26,8 +26,8 @@ function success(msg) {
 // Allowlisted files with documented justification (empty by default)
 const LINE_LIMIT_ALLOWLIST = new Set([]);
 
-// Find first-party source files in apps/*, packages/*, tests/*
-const SOURCE_ROOTS = ['apps', 'packages', 'tests'];
+// Find first-party source files in apps/*, packages/*, tests/*, scripts/*
+const SOURCE_ROOTS = ['apps', 'packages', 'tests', 'scripts'];
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
 function isGenerated(filename, fullPath) {
@@ -128,6 +128,8 @@ const CANONICAL_CONTRACT_NAMES = getContractExportNames();
 
 for (const filePath of allSourceFiles) {
   const relPath = filePath.replace(ROOT + '/', '');
+  // This checker contains the marker and prohibited-value patterns it enforces.
+  const isPolicyChecker = relPath === 'scripts/check-source-policy.mjs';
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   const lineCount = lines.length;
@@ -146,7 +148,7 @@ for (const filePath of allSourceFiles) {
   // 2. Prohibited placeholders & untracked markers in production code (skip tests)
   const isTest =
     relPath.includes('.test.') || relPath.includes('.spec.') || relPath.startsWith('tests/');
-  if (!isTest) {
+  if (!isTest && !isPolicyChecker) {
     lines.forEach((line, idx) => {
       // Check prohibited fake values
       for (const pattern of PROHIBITED_PRODUCT_VALUES) {

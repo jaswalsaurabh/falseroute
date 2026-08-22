@@ -6,6 +6,7 @@ packages:
 onlyBuiltDependencies:
   - '@google/genai'
   - '@prisma/engines'
+  - 'esbuild'
   - 'prisma'
   - 'protobufjs'
 
@@ -44,6 +45,7 @@ catalog:
   react-dom: 19.2.8
   supertest: 7.2.2
   turbo: 2.10.10
+  tsx: 4.23.12
   typescript: 6.0.2
   vite: 8.2.2
   vitest: 4.1.10
@@ -52,5 +54,6 @@ catalog:
 allowBuilds:
   '@google/genai': true
   '@prisma/engines': true
+  esbuild: true
   prisma: true
   protobufjs: true
