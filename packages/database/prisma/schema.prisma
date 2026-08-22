@@ -56,16 +56,20 @@ model IntrusionEvent {
   containmentMode     ContainmentMode          @map("containment_mode")
   usedDecoyCredential Boolean                  @map("used_decoy_credential")
   decoyIdentifier     String?                  @map("decoy_identifier") @db.VarChar(64)
-  status              ProcessingStatus         @map("status")
-  provenance          ProvenanceClassification @map("provenance")
-  createdAt           DateTime                 @default(now()) @map("created_at")
-  updatedAt           DateTime                 @updatedAt @map("updated_at")
+  status                   ProcessingStatus         @map("status")
+  provenance               ProvenanceClassification @map("provenance")
+  processingClaimToken     String?                  @map("processing_claim_token") @db.Uuid
+  processingLeaseExpiresAt DateTime?                @map("processing_lease_expires_at")
+  processingAttemptCount   Int                      @default(0) @map("processing_attempt_count")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
 
   decision DeceptionDecision?
 
   @@index([occurredAt])
   @@index([status])
   @@index([correlationId])
+  @@index([status, processingLeaseExpiresAt])
   @@map("intrusion_events")
 }
 
@@ -84,9 +88,11 @@ model DeceptionDecision {
   createdAt          DateTime                 @default(now()) @map("created_at")
   updatedAt          DateTime                 @updatedAt @map("updated_at")
 
-  event       IntrusionEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  auditRecord DecisionAuditRecord?
+  event           IntrusionEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  auditRecord     DecisionAuditRecord?
+  simulatedEffect SimulatedDeceptionEffect?
 
+  @@unique([id, action, correlationId, assignedFalseRoute, containmentMode], map: "uq_deception_decisions_integrity")
   @@index([correlationId])
   @@index([decidedAt])
   @@map("deception_decisions")
@@ -102,4 +108,24 @@ model DecisionAuditRecord {
   decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
 
   @@map("decision_audit_records")
+}
+
+model SimulatedDeceptionEffect {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  decisionId         String                   @unique @map("decision_id") @db.Uuid
+  correlationId      String                   @map("correlation_id") @db.VarChar(64)
+  effectKind         DeceptionAction          @default(ASSIGN_FALSE_ROUTE) @map("effect_kind")
+  status             String                   @map("status") @db.VarChar(32)
+  containmentMode    ContainmentMode          @map("containment_mode")
+  assignedFalseRoute String                   @map("assigned_false_route") @db.VarChar(64)
+  provenance         ProvenanceClassification @map("provenance")
+  recordedAt         DateTime                 @map("recorded_at")
+  adapterVersion     String                   @map("adapter_version") @db.VarChar(32)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+
+  decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([correlationId])
+  @@index([recordedAt])
+  @@map("simulated_deception_effects")
 }

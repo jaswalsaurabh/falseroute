@@ -22,22 +22,18 @@ class FakeChildProcess extends EventEmitter {
   public kill(signal?: NodeJS.Signals | string): boolean {
     this.killed = true;
     this.signalSent = signal ?? 'SIGTERM';
-    process.nextTick(() => {
-      this.emit('exit', 0, signal ?? 'SIGTERM');
-    });
+    process.nextTick(() => this.emit('exit', 0, signal ?? 'SIGTERM'));
     return true;
   }
-
   public simulateExit(code: number | null, signal: string | null = null): void {
     this.emit('exit', code, signal);
   }
-
   public simulateError(err: Error): void {
     this.emit('error', err);
   }
 }
 
-test('parseEnvFile parses simple and quoted variables correctly', () => {
+test('parseEnvFile parses simple, quoted, and commented variables correctly', () => {
   const input = `
 # Comment line
 NODE_ENV=development
@@ -45,7 +41,9 @@ PORT="3000"
 OPERATOR_ACCESS_TOKEN='not-a-real-token'
 DATABASE_URL=postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public # inline comment
 EXPORTED_VAR=test
-export ANOTHER_EXPORT="hello\\nworld"
+export ANOTHER_EXPORT="hello\\nworld" # trailing comment
+QUOTED_WITH_HASH="pass#word" # real comment
+SINGLE_QUOTED_WITH_HASH='pass#word2' # real comment 2
 `;
 
   const parsed = parseEnvFile(input);
@@ -58,32 +56,27 @@ export ANOTHER_EXPORT="hello\\nworld"
   );
   assert.equal(parsed['EXPORTED_VAR'], 'test');
   assert.equal(parsed['ANOTHER_EXPORT'], 'hello\nworld');
+  assert.equal(parsed['QUOTED_WITH_HASH'], 'pass#word');
+  assert.equal(parsed['SINGLE_QUOTED_WITH_HASH'], 'pass#word2');
 });
 
 test('loadEnvironment gives precedence to process.env over file defaults', () => {
   const result = loadEnvironment({
     rootDir: process.cwd(),
     envFile: '.env.example',
-    processEnv: {
-      PORT: '4000',
-      CUSTOM_INJECTED: 'active',
-    },
+    processEnv: { PORT: '4000', CUSTOM_INJECTED: 'active' },
   });
 
   assert.equal(result.hasEnvFile, true);
-  // process.env override
   assert.equal(result.env['PORT'], '4000');
   assert.equal(result.env['CUSTOM_INJECTED'], 'active');
-  // file fallback
   assert.equal(result.env['OPERATOR_ACCESS_TOKEN'], 'not-a-real-local-operator-token');
 });
 
-test('validateServiceEnvironment validates according to selected services', () => {
-  // Web only needs nothing special
+test('validateServiceEnvironment validates according to selected services and deduplicates errors', () => {
   const webValid = validateServiceEnvironment(['web'], {}, true);
   assert.equal(webValid.valid, true);
 
-  // API needs DATABASE_URL and OPERATOR_ACCESS_TOKEN
   const apiInvalid = validateServiceEnvironment(['api'], {}, true);
   assert.equal(apiInvalid.valid, false);
   assert.equal(
@@ -95,86 +88,88 @@ test('validateServiceEnvironment validates according to selected services', () =
     true,
   );
 
-  // Valid API environment
   const apiValid = validateServiceEnvironment(
     ['api'],
     {
-      DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/dev',
-      OPERATOR_ACCESS_TOKEN: 'not-a-real-operator-token',
+      DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev',
+      OPERATOR_ACCESS_TOKEN: 'not-a-real-secret-token',
     },
     true,
   );
   assert.equal(apiValid.valid, true);
 
-  // Worker needs DATABASE_URL
   const workerInvalid = validateServiceEnvironment(['worker'], {}, true);
   assert.equal(workerInvalid.valid, false);
-  assert.equal(
-    workerInvalid.errors.some((e) => e.includes('DATABASE_URL')),
-    true,
-  );
+  assert.equal(workerInvalid.errors.length, 1);
+  assert.equal(workerInvalid.errors[0]?.includes('DATABASE_URL'), true);
+
+  const bothInvalid = validateServiceEnvironment(['api', 'worker'], {}, true);
+  assert.equal(bothInvalid.valid, false);
+  assert.equal(bothInvalid.errors.length, 3);
 });
 
 test('validateServiceEnvironment rejects invalid DATABASE_URL and short token without leaking values', () => {
   const result = validateServiceEnvironment(
     ['api'],
-    {
-      DATABASE_URL: 'mysql://invalid-url',
-      OPERATOR_ACCESS_TOKEN: 'short',
-    },
+    { DATABASE_URL: 'mysql://localhost:3306/db', OPERATOR_ACCESS_TOKEN: 'short' },
     true,
   );
 
   assert.equal(result.valid, false);
+  assert.equal(result.errors.length, 2);
+  assert.equal(result.errors[0]?.includes('must be a valid postgresql://'), true);
+  assert.equal(result.errors[1]?.includes('must be at least 8 characters'), true);
   assert.equal(
-    result.errors.some((e) => e.includes('valid postgresql:// connection string')),
-    true,
-  );
-  assert.equal(
-    result.errors.some((e) => e.includes('at least 8 characters long')),
-    true,
-  );
-  // Ensure no values are leaked in the error strings
-  assert.equal(
-    result.errors.some((e) => e.includes('mysql://invalid-url')),
-    false,
-  );
-  assert.equal(
-    result.errors.some((e) => e.includes('short')),
+    result.errors.some((e) => e.includes('short') || e.includes('mysql://localhost:3306/db')),
     false,
   );
 });
 
-test('parseCliArgs parses commands and service options correctly', () => {
+test('parseCliArgs parses commands and options correctly and tracks explicit services', () => {
   assert.deepEqual(parseCliArgs([]), {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
     migrate: false,
     skipBuild: false,
-    help: false,
-  });
-
-  assert.deepEqual(parseCliArgs(['--services=api,worker']), {
-    services: ['api', 'worker'],
-    migrate: false,
-    skipBuild: false,
-    help: false,
-  });
-
-  assert.deepEqual(parseCliArgs(['--services=web', '--no-build']), {
-    services: ['web'],
-    migrate: false,
-    skipBuild: true,
     help: false,
   });
 
   assert.deepEqual(parseCliArgs(['--migrate']), {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
     migrate: true,
     skipBuild: false,
     help: false,
   });
 
+  assert.deepEqual(parseCliArgs(['--migrate', '--services=api']), {
+    services: ['api'],
+    hasExplicitServices: true,
+    migrate: true,
+    skipBuild: false,
+    help: false,
+  });
+
+  assert.deepEqual(parseCliArgs(['--services=api,worker', '--env-file=.env.local']), {
+    services: ['api', 'worker'],
+    hasExplicitServices: true,
+    migrate: false,
+    skipBuild: false,
+    envFile: '.env.local',
+    help: false,
+  });
+
+  assert.deepEqual(parseCliArgs(['--services=web', '--no-build']), {
+    services: ['web'],
+    hasExplicitServices: true,
+    migrate: false,
+    skipBuild: true,
+    help: false,
+  });
+
   assert.throws(() => parseCliArgs(['--services=unknown']), /Unknown service/);
+  assert.throws(() => parseCliArgs(['--services=']), /At least one valid service/);
+  assert.throws(() => parseCliArgs(['--env-file=']), /A path must be specified/);
   assert.throws(() => parseCliArgs(['--unknown-flag']), /Unknown option/);
 });
 
@@ -185,7 +180,7 @@ test('DevSupervisor stops startup if workspace build fails', async () => {
   const supervisor = new DevSupervisor({
     rootDir: '/fake/root',
     services: ['web'],
-    buildFn: () => false, // Build fails
+    buildFn: () => false,
     spawnFn: () => {
       throw new Error('Should not spawn if build fails');
     },
@@ -204,6 +199,28 @@ test('DevSupervisor stops startup if workspace build fails', async () => {
   );
 });
 
+test('DevSupervisor handles empty service selection without starting default services', async () => {
+  let exitCode: number | null = null;
+  const spawned: string[] = [];
+
+  const supervisor = new DevSupervisor({
+    rootDir: '/fake/root',
+    services: [],
+    skipBuild: true,
+    spawnFn: (cmd) => {
+      spawned.push(cmd);
+      return new FakeChildProcess() as unknown as ChildProcess;
+    },
+    onExit: (code) => {
+      exitCode = code;
+    },
+  });
+
+  await supervisor.start();
+  assert.equal(spawned.length, 0);
+  assert.equal(exitCode, 0);
+});
+
 test('DevSupervisor terminates sibling services when one child exits unexpectedly', async () => {
   let exitCode: number | null = null;
   const children = new Map<string, FakeChildProcess>();
@@ -213,8 +230,7 @@ test('DevSupervisor terminates sibling services when one child exits unexpectedl
     services: ['api', 'worker'],
     skipBuild: true,
     spawnFn: (_cmd, args) => {
-      const isApi = args.includes('@false-route/api');
-      const name = isApi ? 'api' : 'worker';
+      const name = args.includes('@false-route/api') ? 'api' : 'worker';
       const fake = new FakeChildProcess();
       children.set(name, fake);
       return fake as unknown as ChildProcess;
@@ -226,19 +242,14 @@ test('DevSupervisor terminates sibling services when one child exits unexpectedl
   });
 
   await supervisor.start();
-
   assert.equal(children.size, 2);
   const apiChild = children.get('api')!;
   const workerChild = children.get('worker')!;
 
-  // Simulate unexpected crash of api child with code 2
   apiChild.simulateExit(2);
-
-  // Worker sibling should receive SIGTERM termination
   assert.equal(workerChild.killed, true);
   assert.equal(workerChild.signalSent, 'SIGTERM');
 
-  // Once all children exit, supervisor exits with child's failure exit code
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(exitCode, 2);
 });
@@ -268,9 +279,7 @@ test('DevSupervisor forwards SIGINT/SIGTERM cleanly to all running services', as
   await supervisor.start();
   assert.equal(children.size, 3);
 
-  // Send manual stopAll (as SIGINT)
   supervisor.stopAll('SIGINT');
-
   for (const child of children.values()) {
     assert.equal(child.killed, true);
     assert.equal(child.signalSent, 'SIGINT');
@@ -285,6 +294,7 @@ test('supervisor forcefully terminates a process tree after graceful timeout', a
   let exitCode: number | null = null;
   const child = new FakeChildProcess();
   child.kill = () => true;
+
   const supervisor = new DevSupervisor({
     rootDir: '/fake/root',
     services: ['web'],
@@ -305,7 +315,7 @@ test('supervisor forcefully terminates a process tree after graceful timeout', a
   assert.equal(exitCode, 0);
 });
 
-test('DevSupervisor handles child startup error event properly', async () => {
+test('DevSupervisor handles child startup error event and synchronous spawn throw properly', async () => {
   let exitCode: number | null = null;
   const children = new Map<string, FakeChildProcess>();
 
@@ -314,8 +324,7 @@ test('DevSupervisor handles child startup error event properly', async () => {
     services: ['api', 'worker'],
     skipBuild: true,
     spawnFn: (_cmd, args) => {
-      const isApi = args.includes('@false-route/api');
-      const name = isApi ? 'api' : 'worker';
+      const name = args.includes('@false-route/api') ? 'api' : 'worker';
       const fake = new FakeChildProcess();
       children.set(name, fake);
       return fake as unknown as ChildProcess;
@@ -327,15 +336,29 @@ test('DevSupervisor handles child startup error event properly', async () => {
   });
 
   await supervisor.start();
-
   const apiChild = children.get('api')!;
   const workerChild = children.get('worker')!;
 
   apiChild.simulateError(new Error('ENOENT: spawn failed'));
-
   assert.equal(workerChild.killed, true);
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(exitCode, 1);
+
+  // Synchronous spawn throw
+  let syncExitCode: number | null = null;
+  const syncSupervisor = new DevSupervisor({
+    rootDir: '/fake/root',
+    services: ['api'],
+    skipBuild: true,
+    spawnFn: () => {
+      throw new Error('EACCES permission denied');
+    },
+    onExit: (code) => {
+      syncExitCode = code;
+    },
+  });
+  await syncSupervisor.start();
+  assert.equal(syncExitCode, 1);
 });
 
 test('validateServiceEnvironment succeeds without .env file if process.env provides all required variables', () => {
@@ -345,7 +368,7 @@ test('validateServiceEnvironment succeeds without .env file if process.env provi
       DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev',
       OPERATOR_ACCESS_TOKEN: 'not-a-real-operator-token',
     },
-    false, // no .env file
+    false,
   );
 
   assert.equal(result.valid, true);
@@ -353,12 +376,7 @@ test('validateServiceEnvironment succeeds without .env file if process.env provi
 });
 
 test('validateServiceEnvironment warns about missing .env file if required variables are missing', () => {
-  const result = validateServiceEnvironment(
-    ['api'],
-    {},
-    false, // no .env file
-  );
-
+  const result = validateServiceEnvironment(['api'], {}, false);
   assert.equal(result.valid, false);
   assert.equal(
     result.errors.some((e) => e.includes('Environment file .env was not found')),
@@ -385,7 +403,6 @@ test('validateServiceEnvironment rejects non-local DATABASE_URL targets', () => 
 });
 
 test('validateMigrationEnvironment validates DATABASE_URL independently of API requirements', () => {
-  // Valid local migration env without API tokens
   const validMigration = validateMigrationEnvironment(
     {
       DATABASE_URL:
@@ -394,9 +411,7 @@ test('validateMigrationEnvironment validates DATABASE_URL independently of API r
     true,
   );
   assert.equal(validMigration.valid, true);
-  assert.equal(validMigration.errors.length, 0);
 
-  // Missing DATABASE_URL
   const missingDb = validateMigrationEnvironment({}, true);
   assert.equal(missingDb.valid, false);
   assert.equal(
@@ -404,11 +419,8 @@ test('validateMigrationEnvironment validates DATABASE_URL independently of API r
     true,
   );
 
-  // Remote DATABASE_URL rejected for migration
   const remoteDb = validateMigrationEnvironment(
-    {
-      DATABASE_URL: 'postgresql://falseroute:falseroute@db.example.com:5432/falseroute_dev',
-    },
+    { DATABASE_URL: 'postgresql://falseroute:falseroute@db.example.com:5432/falseroute_dev' },
     true,
   );
   assert.equal(remoteDb.valid, false);
@@ -417,7 +429,6 @@ test('validateMigrationEnvironment validates DATABASE_URL independently of API r
     true,
   );
 
-  // Missing .env file warning if DATABASE_URL absent
   const noEnv = validateMigrationEnvironment({}, false);
   assert.equal(noEnv.valid, false);
   assert.equal(
@@ -435,8 +446,7 @@ test('DevSupervisor terminates sibling services when one child exits cleanly (co
     services: ['api', 'worker'],
     skipBuild: true,
     spawnFn: (_cmd, args) => {
-      const isApi = args.includes('@false-route/api');
-      const name = isApi ? 'api' : 'worker';
+      const name = args.includes('@false-route/api') ? 'api' : 'worker';
       const fake = new FakeChildProcess();
       children.set(name, fake);
       return fake as unknown as ChildProcess;
@@ -448,15 +458,11 @@ test('DevSupervisor terminates sibling services when one child exits cleanly (co
   });
 
   await supervisor.start();
-
   assert.equal(children.size, 2);
   const apiChild = children.get('api')!;
   const workerChild = children.get('worker')!;
 
-  // Simulate unexpected clean exit of api child with code 0
   apiChild.simulateExit(0);
-
-  // Worker sibling should receive SIGTERM termination
   assert.equal(workerChild.killed, true);
   assert.equal(workerChild.signalSent, 'SIGTERM');
 
@@ -474,20 +480,15 @@ test('validateLocalDatabaseUrl accurately validates local host targets and rejec
     null,
   );
 
-  // Missing or empty
   assert.equal(validateLocalDatabaseUrl(''), 'Missing required environment variable: DATABASE_URL');
   assert.equal(
     validateLocalDatabaseUrl(undefined),
     'Missing required environment variable: DATABASE_URL',
   );
-
-  // Invalid scheme
   assert.equal(
     validateLocalDatabaseUrl('mysql://localhost:3306/db'),
     'DATABASE_URL must be a valid postgresql:// connection string',
   );
-
-  // Non-local host
   assert.equal(
     validateLocalDatabaseUrl('postgresql://user:pass@rds.amazonaws.com:5432/db'),
     'DATABASE_URL must target a local database host (e.g. localhost, 127.0.0.1) for local development',

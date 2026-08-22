@@ -9,6 +9,7 @@ const checks = [
   { name: 'Dependency & Version Policy', script: 'scripts/check-dependencies.mjs' },
   { name: 'Source Size & Placeholder Policy', script: 'scripts/check-source-policy.mjs' },
   { name: 'Design Token Guardrails', script: 'scripts/check-design-tokens.mjs' },
+  { name: 'Cloud Run Deployment Templates', script: 'scripts/validate-cloud-run-templates.ts' },
   { name: 'Secret & Credential Policy', script: 'scripts/check-secrets.ts --all' },
 ];
 

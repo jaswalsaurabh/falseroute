@@ -11,6 +11,7 @@ export {
   type IntrusionEvent,
   type DeceptionDecision,
   type DecisionAuditRecord,
+  type SimulatedDeceptionEffect,
   ProcessingStatus,
   ContainmentMode,
   EventType,

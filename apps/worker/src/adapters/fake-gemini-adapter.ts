@@ -15,29 +15,134 @@ export type FakeAdapterMode =
   | 'timeout'
   | 'unavailable'
   | 'invalid-output'
-  | 'conflicting-recommendation';
+  | 'conflicting-recommendation'
+  | 'rate-limited'
+  | 'server-error'
+  | 'terminal-auth-error'
+  | 'concurrency-saturation'
+  | 'slow-response';
+
+export interface FakeAdapterOptions {
+  readonly mode?: FakeAdapterMode;
+  readonly modelIdentifier?: string;
+  readonly delayMs?: number;
+  readonly transientFailuresBeforeSuccess?: number;
+}
 
 export class FakeGeminiAdapter implements GeminiEnrichmentAdapter {
   private mode: FakeAdapterMode;
   private readonly modelIdentifier: string;
+  private readonly delayMs: number;
+  private transientFailuresRemaining: number;
+  public callCount = 0;
 
-  constructor(mode: FakeAdapterMode = 'auto', modelIdentifier = 'gemini-3.5-fake') {
-    this.mode = mode;
-    this.modelIdentifier = modelIdentifier;
+  constructor(
+    modeOrOptions: FakeAdapterMode | FakeAdapterOptions = 'auto',
+    modelIdentifier = 'gemini-3.5-fake',
+  ) {
+    if (typeof modeOrOptions === 'string') {
+      this.mode = modeOrOptions;
+      this.modelIdentifier = modelIdentifier;
+      this.delayMs = 0;
+      this.transientFailuresRemaining = 0;
+    } else {
+      this.mode = modeOrOptions.mode ?? 'auto';
+      this.modelIdentifier = modeOrOptions.modelIdentifier ?? modelIdentifier;
+      this.delayMs = modeOrOptions.delayMs ?? 0;
+      this.transientFailuresRemaining = modeOrOptions.transientFailuresBeforeSuccess ?? 0;
+    }
   }
 
   setMode(mode: FakeAdapterMode): void {
     this.mode = mode;
   }
 
-  async enrichEvent(event: IntrusionEvent): Promise<ModelEnrichmentResult | DegradedModelResult> {
+  setTransientFailuresRemaining(count: number): void {
+    this.transientFailuresRemaining = count;
+  }
+
+  async enrichEvent(
+    event: IntrusionEvent,
+    parentSignal?: AbortSignal,
+  ): Promise<ModelEnrichmentResult | DegradedModelResult> {
+    this.callCount++;
+
+    if (this.delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        if (parentSignal?.aborted) {
+          reject(parentSignal.reason ?? new Error('Aborted'));
+          return;
+        }
+        const timer = setTimeout(resolve, this.delayMs);
+        parentSignal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            reject(parentSignal.reason ?? new Error('Aborted'));
+          },
+          { once: true },
+        );
+      });
+    }
+
     const evaluatedAt = new Date().toISOString();
+
+    if (this.transientFailuresRemaining > 0) {
+      this.transientFailuresRemaining--;
+      return DegradedModelResultSchema.parse({
+        correlationId: event.correlationId,
+        status: 'UNAVAILABLE',
+        reason: 'Simulated transient upstream 503 error',
+        provenance: 'UNAVAILABLE',
+        evaluatedAt,
+      });
+    }
 
     if (this.mode === 'timeout') {
       return DegradedModelResultSchema.parse({
         correlationId: event.correlationId,
         status: 'TIMEOUT',
-        reason: 'Simulated fake timeout after 5000ms',
+        reason: 'Simulated fake timeout after deadline',
+        provenance: 'UNAVAILABLE',
+        evaluatedAt,
+      });
+    }
+
+    if (this.mode === 'rate-limited') {
+      return DegradedModelResultSchema.parse({
+        correlationId: event.correlationId,
+        status: 'UNAVAILABLE',
+        reason: 'Simulated rate limit quota exceeded (HTTP 429)',
+        provenance: 'UNAVAILABLE',
+        evaluatedAt,
+      });
+    }
+
+    if (this.mode === 'server-error') {
+      return DegradedModelResultSchema.parse({
+        correlationId: event.correlationId,
+        status: 'UNAVAILABLE',
+        reason: 'Simulated internal server error (HTTP 503)',
+        provenance: 'UNAVAILABLE',
+        evaluatedAt,
+      });
+    }
+
+    if (this.mode === 'terminal-auth-error') {
+      return DegradedModelResultSchema.parse({
+        correlationId: event.correlationId,
+        status: 'UNAVAILABLE',
+        reason: 'Simulated authentication failure (HTTP 401)',
+        provenance: 'UNAVAILABLE',
+        evaluatedAt,
+      });
+    }
+
+    if (this.mode === 'concurrency-saturation') {
+      return DegradedModelResultSchema.parse({
+        correlationId: event.correlationId,
+        status: 'UNAVAILABLE',
+        reason: 'Provider concurrency limit saturated',
         provenance: 'UNAVAILABLE',
         evaluatedAt,
       });
@@ -64,7 +169,6 @@ export class FakeGeminiAdapter implements GeminiEnrichmentAdapter {
     }
 
     if (this.mode === 'conflicting-recommendation') {
-      // Recommends false route even when event does not use decoy credential
       return ModelEnrichmentResultSchema.parse({
         correlationId: event.correlationId,
         confidence: 0.88,

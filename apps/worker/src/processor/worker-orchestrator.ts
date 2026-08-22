@@ -59,8 +59,11 @@ export class WorkerOrchestrator {
         const nextDelay = result.processed ? 50 : this.pollIntervalMs;
         scheduleNext(nextDelay);
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown loop error';
-        this.logger.error({ error: errorMsg }, 'Error in worker loop; backing off');
+        const errorType = err instanceof Error ? err.constructor.name : 'UnknownError';
+        this.logger.error(
+          { loopFailure: 'UNCAUGHT_STEP_ERROR', errorType },
+          'Error in worker loop; backing off',
+        );
         scheduleNext(this.pollIntervalMs * 2);
       }
     })();

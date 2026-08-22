@@ -2,9 +2,16 @@ import { spawnSync, type ChildProcess } from 'node:child_process';
 
 export type ProcessTreeKill = (child: ChildProcess, signal: NodeJS.Signals | string) => void;
 
+export type ProcessTreeSpawnSync = (
+  command: string,
+  args: readonly string[],
+  options?: unknown,
+) => { error?: Error | undefined; status?: number | null | undefined };
+
 export interface ProcessTreeOptions {
   platform?: NodeJS.Platform;
   processKill?: (pid: number, signal: NodeJS.Signals) => void;
+  spawnSync?: ProcessTreeSpawnSync | typeof spawnSync;
 }
 
 /**
@@ -20,6 +27,7 @@ export function terminateProcessTree(
   const pid = child.pid;
   const platform = options.platform ?? process.platform;
   const processKill = options.processKill ?? process.kill;
+  const syncSpawn = options.spawnSync ?? spawnSync;
 
   if (pid && platform !== 'win32') {
     try {
@@ -34,10 +42,13 @@ export function terminateProcessTree(
   if (pid && platform === 'win32') {
     const taskkillArgs = ['/PID', String(pid), '/T'];
     if (signal === 'SIGKILL') taskkillArgs.push('/F');
-    const result = spawnSync('taskkill', taskkillArgs, { stdio: 'ignore' });
-    const errorCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
-    if (result.error && errorCode !== 'ESRCH') throw result.error;
-    return;
+    const result = syncSpawn('taskkill', taskkillArgs, { stdio: 'ignore' });
+    if (result.error) {
+      const errorCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+      if (errorCode !== 'ESRCH' && errorCode !== 'ENOENT') throw result.error;
+    } else if (result.status === 0) {
+      return;
+    }
   }
 
   try {

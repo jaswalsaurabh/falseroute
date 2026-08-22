@@ -2,7 +2,7 @@
 
 > **Status: Active Engineering Implementation**
 
-FalseRoute is an autonomous cyber-deception and containment control-plane designed to ingest simulated intrusion signals, evaluate events against deterministic deception policies, safely redirect adversaries to simulated false-route targets, and provide transparent provenance and auditability for security operators.
+FalseRoute is an autonomous cyber-deception and containment control-plane designed to ingest simulated intrusion signals, evaluate events against deterministic deception policies, record simulated false-route assignments to decoy targets, and provide transparent provenance and auditability for security operators.
 
 ---
 
@@ -10,7 +10,7 @@ FalseRoute is an autonomous cyber-deception and containment control-plane design
 
 FalseRoute strictly maintains containment and provenance boundaries:
 
-1. **Deterministic Containment Boundary**: Pure domain policy governs all deception actions. Gemini model outputs are treated as untrusted advisory enrichments and can never override deterministic policy or redirect non-decoy assets.
+1. **Deterministic Containment Boundary**: Pure domain policy governs all deception actions. Gemini model outputs are treated as untrusted advisory enrichments and can never override deterministic policy or assign non-decoy assets to false routes.
 2. **Strict Provenance Tracking**: Every data point explicitly models its source provenance:
    - `OBSERVED`: Ground-truth ingested event telemetry.
    - `DERIVED`: Deterministic rule evaluations by the policy engine.
@@ -197,6 +197,12 @@ pnpm test
 # Run database integration tests (requires PostgreSQL running)
 pnpm db:setup:test
 TEST_DATABASE_URL="postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public" pnpm test:integration
+
+# Verify production container packaging, non-root user, read-only FS, and smoke tests
+pnpm verify:containers
+
+# Validate declarative Cloud Run service templates and zero-secret policies
+pnpm check:templates
 
 # Scan tracked and unignored repository files for secrets and credentials
 pnpm check:secrets

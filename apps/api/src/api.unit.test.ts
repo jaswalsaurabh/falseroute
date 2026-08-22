@@ -15,6 +15,7 @@ import {
   ReadinessCheckResponseSchema,
   type IntrusionEvent,
   type DeceptionDecision,
+  type SimulatedDeceptionEffect,
 } from '@false-route/contracts';
 
 const mockConfig = {
@@ -25,6 +26,7 @@ const mockConfig = {
   OPERATOR_ACCESS_TOKEN: 'test-secret-operator-token-12345',
   CORS_ORIGINS: 'http://localhost:5173',
   ENABLE_TELEMETRY: false,
+  TRUST_PROXY_HOPS: 0,
 };
 
 const mockLogger = createLogger({
@@ -36,7 +38,7 @@ const mockLogger = createLogger({
   }),
 });
 
-const mockDecoyEvent: IntrusionEvent = {
+const mockPendingEvent: IntrusionEvent = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
   occurredAt: '2026-08-22T00:00:00.000Z',
   receivedAt: '2026-08-22T00:00:01.000Z',
@@ -53,6 +55,11 @@ const mockDecoyEvent: IntrusionEvent = {
   provenance: 'OBSERVED',
 };
 
+const mockDecoyEvent: IntrusionEvent = {
+  ...mockPendingEvent,
+  status: 'DECIDED',
+};
+
 const mockDecision: DeceptionDecision = {
   id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
   eventId: mockDecoyEvent.id,
@@ -67,19 +74,36 @@ const mockDecision: DeceptionDecision = {
   auditRecord: { ruleVersion: '2026.08.1', evaluatedAt: '2026-08-22T00:00:02.000Z' },
 };
 
+const mockSimulatedEffect: SimulatedDeceptionEffect = {
+  id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
+  decisionId: mockDecision.id,
+  correlationId: mockDecision.correlationId,
+  effectKind: 'ASSIGN_FALSE_ROUTE',
+  status: 'RECORDED',
+  containmentMode: 'SIMULATED',
+  assignedFalseRoute: 'mock-admin-decoy',
+  provenance: 'DERIVED',
+  recordedAt: '2026-08-22T00:00:03.000Z',
+  adapterVersion: 'simulated-deception-agent-v1',
+};
+
 function createMockRepository(): ApiRepository {
   return {
     async createEvent() {
-      return mockDecoyEvent;
+      return mockPendingEvent;
     },
     async listEvents() {
-      return { events: [mockDecoyEvent], total: 1 };
+      return { events: [mockPendingEvent], total: 1 };
     },
     async getEventById(id: string) {
-      return id === mockDecoyEvent.id ? { event: mockDecoyEvent, decision: mockDecision } : null;
+      return id === mockDecoyEvent.id
+        ? { event: mockDecoyEvent, decision: mockDecision, simulatedEffect: mockSimulatedEffect }
+        : null;
     },
     async getDecisionByEventId(eventId: string) {
-      return eventId === mockDecoyEvent.id ? mockDecision : null;
+      return eventId === mockDecoyEvent.id
+        ? { decision: mockDecision, simulatedEffect: mockSimulatedEffect }
+        : null;
     },
     async checkHealth() {
       return true;
@@ -102,15 +126,8 @@ describe('Express API Unit Tests', () => {
     expect(res.headers['x-correlation-id']).toBeDefined();
   });
 
-  it('rejects unauthenticated access to readiness endpoint', async () => {
+  it('allows unauthenticated access to readiness endpoint for platform probes', async () => {
     const res = await request(app).get('/api/v1/ready');
-    expect(res.status).toBe(401);
-    const parsed = ApiErrorResponseSchema.parse(res.body);
-    expect(parsed.error).toBe('UNAUTHORIZED');
-  });
-
-  it('allows authenticated access to readiness endpoint', async () => {
-    const res = await request(app).get('/api/v1/ready').set('Authorization', authHeader);
     expect(res.status).toBe(200);
     const parsed = ReadinessCheckResponseSchema.parse(res.body);
     expect(parsed.status).toBe('ready');
@@ -169,7 +186,7 @@ describe('Express API Unit Tests', () => {
     expect(parsed.total).toBe(1);
   });
 
-  it('returns single intrusion event with decision adhering to schema', async () => {
+  it('returns single intrusion event with decision and simulated effect adhering to schema', async () => {
     const res = await request(app)
       .get(`/api/v1/intrusion-events/${mockDecoyEvent.id}`)
       .set('Authorization', authHeader);
@@ -178,6 +195,12 @@ describe('Express API Unit Tests', () => {
     const parsed = GetIntrusionEventResponseSchema.parse(res.body);
     expect(parsed.event.id).toBe(mockDecoyEvent.id);
     expect(parsed.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(parsed.simulatedEffect).toBeDefined();
+    expect(parsed.simulatedEffect?.status).toBe('RECORDED');
+    expect(parsed.simulatedEffect?.containmentMode).toBe('SIMULATED');
+    expect(parsed.simulatedEffect?.assignedFalseRoute).toBe('mock-admin-decoy');
+    expect(parsed.simulatedEffect?.provenance).toBe('DERIVED');
+    expect(parsed.simulatedEffect?.adapterVersion).toBe('simulated-deception-agent-v1');
   });
 
   it('returns 404 for non-existent event ID', async () => {
@@ -190,7 +213,7 @@ describe('Express API Unit Tests', () => {
     expect(parsed.error).toBe('NOT_FOUND');
   });
 
-  it('returns deception decision for an event adhering to schema', async () => {
+  it('returns deception decision with simulated effect for an event adhering to schema', async () => {
     const res = await request(app)
       .get(`/api/v1/intrusion-events/${mockDecoyEvent.id}/decision`)
       .set('Authorization', authHeader);
@@ -199,6 +222,74 @@ describe('Express API Unit Tests', () => {
     const parsed = GetDeceptionDecisionResponseSchema.parse(res.body);
     expect(parsed.decision.action).toBe('ASSIGN_FALSE_ROUTE');
     expect(parsed.decision.assignedFalseRoute).toBe('mock-admin-decoy');
+    expect(parsed.simulatedEffect).toBeDefined();
+    expect(parsed.simulatedEffect?.status).toBe('RECORDED');
+    expect(parsed.simulatedEffect?.assignedFalseRoute).toBe('mock-admin-decoy');
+  });
+
+  it('returns no simulated effect for a non-route decision', async () => {
+    const nonRouteDecision: DeceptionDecision = {
+      id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44',
+      eventId: mockDecoyEvent.id,
+      correlationId: mockDecoyEvent.correlationId,
+      action: 'OBSERVE',
+      matchedPolicy: 'DEFAULT_OBSERVATION',
+      reason: 'Low risk event placed in observation.',
+      containmentMode: 'SIMULATED',
+      decisionProvenance: 'DERIVED',
+      decidedAt: '2026-08-22T00:00:02.000Z',
+      auditRecord: { ruleVersion: '2026.08.1', evaluatedAt: '2026-08-22T00:00:02.000Z' },
+    };
+
+    const nonRouteRepo = createMockRepository();
+    vi.spyOn(nonRouteRepo, 'getEventById').mockResolvedValueOnce({
+      event: mockDecoyEvent,
+      decision: nonRouteDecision,
+      simulatedEffect: null,
+    });
+
+    const customApp = createApp({
+      config: mockConfig,
+      db: mockDb,
+      logger: mockLogger,
+      repository: nonRouteRepo,
+    });
+
+    const res = await request(customApp)
+      .get(`/api/v1/intrusion-events/${mockDecoyEvent.id}`)
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    const parsed = GetIntrusionEventResponseSchema.parse(res.body);
+    expect(parsed.decision?.action).toBe('OBSERVE');
+    expect(parsed.simulatedEffect).toBeNull();
+  });
+
+  it('rejects malformed repository projection data at response boundary with 400 VALIDATION_ERROR', async () => {
+    const corruptRepo = createMockRepository();
+    vi.spyOn(corruptRepo, 'getEventById').mockResolvedValueOnce({
+      event: mockDecoyEvent,
+      decision: {
+        id: 'invalid-id',
+        action: 'UNKNOWN_ACTION',
+      } as unknown as DeceptionDecision,
+      simulatedEffect: null,
+    });
+
+    const corruptApp = createApp({
+      config: mockConfig,
+      db: mockDb,
+      logger: mockLogger,
+      repository: corruptRepo,
+    });
+
+    const res = await request(corruptApp)
+      .get(`/api/v1/intrusion-events/${mockDecoyEvent.id}`)
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(400);
+    const parsed = ApiErrorResponseSchema.parse(res.body);
+    expect(parsed.error).toBe('VALIDATION_ERROR');
   });
 
   it('does not expose internal stack traces, messages, or secrets in response or emitted logs on server error', async () => {

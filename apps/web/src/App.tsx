@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { type IntrusionEvent, type DeceptionDecision } from '@false-route/contracts';
+import {
+  type IntrusionEvent,
+  type DeceptionDecision,
+  type SimulatedDeceptionEffect,
+} from '@false-route/contracts';
 import { ApiClient } from './api/client.js';
 import { Header } from './components/Header.js';
 import { UnlockScreen } from './features/auth/UnlockScreen.js';
@@ -12,6 +16,8 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<IntrusionEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<IntrusionEvent | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<DeceptionDecision | null>(null);
+  const [selectedSimulatedEffect, setSelectedSimulatedEffect] =
+    useState<SimulatedDeceptionEffect | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -42,6 +48,7 @@ export const App: React.FC = () => {
           const detail = await apiClient.getEvent(currentSelected.id);
           setSelectedEvent(detail.event);
           setSelectedDecision(detail.decision ?? null);
+          setSelectedSimulatedEffect(detail.simulatedEffect ?? null);
         }
       }
     } catch (err) {
@@ -66,12 +73,14 @@ export const App: React.FC = () => {
   const handleSelectEvent = async (event: IntrusionEvent) => {
     setSelectedEvent(event);
     setSelectedDecision(null);
+    setSelectedSimulatedEffect(null);
 
     if (apiClient) {
       try {
         const detail = await apiClient.getEvent(event.id);
         setSelectedEvent(detail.event);
         setSelectedDecision(detail.decision ?? null);
+        setSelectedSimulatedEffect(detail.simulatedEffect ?? null);
       } catch (err) {
         console.error('Failed to load event details:', err);
       }
@@ -81,6 +90,7 @@ export const App: React.FC = () => {
   const handleCloseModal = () => {
     setSelectedEvent(null);
     setSelectedDecision(null);
+    setSelectedSimulatedEffect(null);
   };
 
   return (
@@ -90,6 +100,9 @@ export const App: React.FC = () => {
         onLock={() => {
           setOperatorToken(null);
           setEvents([]);
+          setSelectedEvent(null);
+          setSelectedDecision(null);
+          setSelectedSimulatedEffect(null);
         }}
       />
 
@@ -114,6 +127,7 @@ export const App: React.FC = () => {
               onClose={handleCloseModal}
               event={selectedEvent}
               decision={selectedDecision}
+              simulatedEffect={selectedSimulatedEffect}
             />
           </div>
         )}

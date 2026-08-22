@@ -29,11 +29,12 @@ This document defines the automated quality gates and activation schedule for Fa
 | **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                | Yes                 |
 | **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism       | Yes                 |
 | **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests           | Yes                 |
-| **System Integration Pipeline**        | `pnpm test:integration`                                | **Active**      | Full API -> DB -> Worker -> API integration     | Yes                 |
 | **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation             | Yes                 |
+| **Container Security & Verification**  | `pnpm verify:containers`                               | **Active**      | Non-root, read-only FS, probe verification      | Yes                 |
+| **Cloud Run Template Validation**      | `pnpm check:templates`                                 | **Active**      | Knative schema, zero-secret, single-instance    | Yes                 |
 | **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy) | No                  |
 | **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary     | Yes                 |
-| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Planned**     | Before public or horizontally scaled deployment | Yes when active     |
+| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls  | Yes                 |
 | **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added    | Yes when applicable |
 
 ---
@@ -159,21 +160,40 @@ This document defines the automated quality gates and activation schedule for Fa
 
 ### 16. Abuse, Rate-Limit, and Overload Verification
 
-Before the API is publicly exposed or horizontally scaled, focused tests must prove:
-
-- Default per-principal behavior, trusted-proxy-aware IP fallback, and isolation between two principals.
-- Endpoint-class overrides for reads, writes, authentication failures, and expensive work.
-- Burst allowance, window/refill behavior, retry guidance, and bounded response payloads.
-- Concurrency and spend budgets for Gemini or another slow/paid provider.
-- One abusive principal cannot consume every client's allowance.
-- Cross-instance enforcement is atomic at the chosen edge, gateway, or distributed store; process-local state is never described as global.
-- Service overload is distinguished from a client quota rejection, and neither path reaches protected database/provider work after rejection.
-
-The current process-local `100 requests/minute/source address` middleware is a demo control and has no focused regression suite yet. Therefore this gate is **planned**, not reported as passed.
+- **Command:** `pnpm --filter @false-route/api test`
+- **Scope:** Validates API pipeline order, token bucket rate limiter, secondary IP boundary, overload guard, and request size limits.
+- **Rules Enforced:**
+  - Overload guard sheds excess requests with `HTTP 503` before body parsing.
+  - Principal identifier evaluates authenticated identity or falls back to trusted-proxy client IP.
+  - Secondary IP boundary prevents cross-origin quota spoofing for unauthenticated requests.
+  - Token-bucket counter correctly refills and tracks burst allowances.
+  - Request body limits (64KB general, 8KB event payload) execute strictly after rate-limiting.
+  - Process-local in-memory state is never described as a global/distributed guarantee. Distributed cross-instance rate limiting remains deferred for multi-instance deployment.
 
 ### 17. Dependency Failure Isolation
 
 When a remote or separately deployable dependency is introduced or its behavior changes, relevant tests must cover timeout, cancellation, finite retries, retryable versus terminal errors, concurrency saturation, backpressure, recovery, and the documented degraded or fail-closed result. Circuit breakers, bulkheads, queues, or fallbacks are required only when the concrete failure mode justifies them.
+
+### 18. Container Security & Packaging Verification
+
+- **Command:** `pnpm verify:containers`
+- **Script:** [scripts/verify-containers.ts](../../scripts/verify-containers.ts)
+- **Rules Enforced:**
+  - Multi-stage Docker builds pin `node:24.19.0-bookworm-slim` and `pnpm 11.22.0`.
+  - Non-root runtime user (`node`, UID 1000) verified via container metadata inspection.
+  - Prohibits `.env` files, `.git` metadata, and private documentation in container filesystems.
+  - Container smoke verification asserts probe responses (API `/api/v1/health` 200, Web `/health` 200), read-only root filesystem compatibility, and graceful `SIGTERM` shutdown.
+
+### 19. Cloud Run Deployment Template Validation
+
+- **Command:** `pnpm check:templates`
+- **Script:** [scripts/validate-cloud-run-templates.ts](../../scripts/validate-cloud-run-templates.ts)
+- **Rules Enforced:**
+  - Knative Serving schema compliance for all declarative service templates in `infrastructure/cloud-run/`.
+  - Enforces `autoscaling.knative.dev/maxScale: "1"` single-instance constraint while abuse controls remain process-local.
+  - Enforces always-on CPU allocation (`run.googleapis.com/cpu-throttling: "false"`) and `minScale: "1"` for worker services.
+  - Prohibits plaintext credentials; sensitive environment variables must resolve via `secretKeyRef`.
+  - Prohibits local filesystem path references.
 
 ---
 
@@ -181,8 +201,7 @@ When a remote or separately deployable dependency is introduced or its behavior 
 
 The following quality gates remain deferred in the local backlog and will be activated when corresponding production infrastructure or tooling is introduced:
 
-- **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging.
-- **Container Build & Non-Root User Verification:** Automated validation of container image security and non-root execution.
+- **Browser End-to-End Playwright Scenarios:** Browser automation verifying intrusion simulation across the Web UI in staging (tracked in `BACKLOG.md`).
 - **Outbound HTTP Security Checks:** Enforcement of scheme policy, DNS/IP validation, and streaming byte limits for outbound HTTP adapters.
 - **Distributed Rate and Concurrency Enforcement:** Atomic cross-instance quotas, endpoint-class budgets, trusted-proxy behavior, retry guidance, and load-shedding verification before public or horizontally scaled deployment.
 - **Infrastructure DDoS and Capacity Verification:** Evidence that edge filtering, connection/request limits, autoscaling bounds, provider quotas, and overload behavior match load-tested application capacity before public exposure.

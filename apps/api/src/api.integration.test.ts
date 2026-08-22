@@ -22,6 +22,7 @@ const mockConfig = {
   OPERATOR_ACCESS_TOKEN: 'integration-test-operator-token-xyz',
   CORS_ORIGINS: 'http://localhost:5173',
   ENABLE_TELEMETRY: false,
+  TRUST_PROXY_HOPS: 0,
 };
 
 const noopLogger = createLogger({
@@ -109,5 +110,91 @@ describe('API PostgreSQL Integration Tests', () => {
 
     expect(listRes.status).toBe(200);
     expect(listRes.body.events.some((e: { id: string }) => e.id === eventId)).toBe(true);
+  });
+
+  it('retrieves an event and decision with persisted simulated effect evidence', async () => {
+    const eventId = randomUUID();
+    const decisionId = randomUUID();
+    const effectId = randomUUID();
+    createdFixtureIds.add(eventId);
+    const correlationId = `corr-api-eff-${Date.now()}`;
+
+    // 1. Seed event in PostgreSQL
+    await db.intrusionEvent.create({
+      data: {
+        id: eventId,
+        occurredAt: new Date(),
+        receivedAt: new Date(),
+        correlationId,
+        sourceIp: '198.51.100.43',
+        targetAsset: 'mock-admin-portal',
+        eventType: 'UNAUTHORIZED_ACCESS_ATTEMPT',
+        failedLoginCount: 2,
+        riskIndicators: ['decoy_creds'],
+        containmentMode: 'SIMULATED',
+        usedDecoyCredential: true,
+        decoyIdentifier: 'mock-admin-decoy-creds',
+        status: 'DECIDED',
+        provenance: 'OBSERVED',
+        decision: {
+          create: {
+            id: decisionId,
+            correlationId,
+            action: 'ASSIGN_FALSE_ROUTE',
+            assignedFalseRoute: 'mock-admin-decoy',
+            matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+            reason: 'Decoy credential used.',
+            containmentMode: 'SIMULATED',
+            decisionProvenance: 'DERIVED',
+            decidedAt: new Date(),
+            auditRecord: {
+              create: {
+                id: randomUUID(),
+                ruleVersion: '2026.08.1',
+                evaluatedAt: new Date(),
+              },
+            },
+            simulatedEffect: {
+              create: {
+                id: effectId,
+                correlationId,
+                effectKind: 'ASSIGN_FALSE_ROUTE',
+                status: 'RECORDED',
+                containmentMode: 'SIMULATED',
+                assignedFalseRoute: 'mock-admin-decoy',
+                provenance: 'DERIVED',
+                recordedAt: new Date(),
+                adapterVersion: 'simulated-deception-agent-v1',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // 2. Fetch event detail
+    const eventRes = await request(app)
+      .get(`/api/v1/intrusion-events/${eventId}`)
+      .set('Authorization', authHeader);
+
+    expect(eventRes.status).toBe(200);
+    expect(eventRes.body.event.id).toBe(eventId);
+    expect(eventRes.body.decision.id).toBe(decisionId);
+    expect(eventRes.body.decision.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(eventRes.body.simulatedEffect).toBeDefined();
+    expect(eventRes.body.simulatedEffect.id).toBe(effectId);
+    expect(eventRes.body.simulatedEffect.status).toBe('RECORDED');
+    expect(eventRes.body.simulatedEffect.containmentMode).toBe('SIMULATED');
+    expect(eventRes.body.simulatedEffect.assignedFalseRoute).toBe('mock-admin-decoy');
+
+    // 3. Fetch decision detail
+    const decisionRes = await request(app)
+      .get(`/api/v1/intrusion-events/${eventId}/decision`)
+      .set('Authorization', authHeader);
+
+    expect(decisionRes.status).toBe(200);
+    expect(decisionRes.body.decision.id).toBe(decisionId);
+    expect(decisionRes.body.simulatedEffect.id).toBe(effectId);
+    expect(decisionRes.body.simulatedEffect.status).toBe('RECORDED');
   });
 });

@@ -5,8 +5,10 @@ import { type DatabaseClient } from '@false-route/database';
 import { type Logger } from '@false-route/observability';
 import { type ApiConfig } from './config/api-config.js';
 import { correlationMiddleware } from './middleware/correlation.js';
+import { createPrincipalIdentifier } from './middleware/principal.js';
 import { operatorAuthMiddleware } from './middleware/auth.js';
-import { rateLimitMiddleware } from './middleware/rate-limit.js';
+import { createRateLimiter } from './middleware/rate-limit.js';
+import { createOverloadGuard } from './middleware/load-shed.js';
 import { errorHandlerMiddleware, NotFoundError } from './middleware/error-handler.js';
 import { PrismaApiRepository, type ApiRepository } from './persistence/api-repository.js';
 import { EventService } from './services/event-service.js';
@@ -20,6 +22,8 @@ export interface AppOptions {
   readonly db: DatabaseClient;
   readonly logger: Logger;
   readonly repository?: ApiRepository | undefined;
+  readonly clock?: (() => number) | undefined;
+  readonly isReady?: (() => boolean) | undefined;
 }
 
 /**
@@ -27,11 +31,17 @@ export interface AppOptions {
  * route composition, middleware pipeline, and error handling boundaries.
  */
 export function createApp(options: AppOptions): Express {
-  const { config, db, logger } = options;
+  const { config, db, logger, clock } = options;
 
   const app = express();
 
-  // Security Headers and CORS Origin Allowlist
+  // Source-IP resolution trusts declared reverse-proxy hops only; 0 hops
+  // (default) fails closed and ignores client-supplied forwarding headers.
+  if ((config.TRUST_PROXY_HOPS ?? 0) > 0) {
+    app.set('trust proxy', config.TRUST_PROXY_HOPS);
+  }
+
+  // Security Headers and CORS Origin Allowlist (preflightContinue allows quota controls before preflight response)
   app.use(helmet());
   const allowedOrigins = config.CORS_ORIGINS.split(',').map((o) => o.trim());
   app.use(
@@ -40,37 +50,86 @@ export function createApp(options: AppOptions): Express {
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id'],
+      preflightContinue: true,
     }),
   );
 
-  // Request Context & Security Limiting
+  // Request Context, Load Shedding & Abuse Boundaries before body parsing
   app.use(correlationMiddleware());
+  app.use(createOverloadGuard());
+
+  // Early Principal Identification (attaches non-secret principal fingerprint for valid tokens)
+  app.use(createPrincipalIdentifier({ expectedToken: config.OPERATOR_ACCESS_TOKEN }));
+
+  // Global Default Quota Boundary (applies per-principal limit with IP fallback and secondary IP boundary)
+  const defaultLimiter = createRateLimiter({
+    className: 'default',
+    secondaryKeyMode: 'ip',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  app.use(defaultLimiter);
+
+  // Explicit Preflight Terminator (after CORS headers set and rate limiting evaluated)
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
+  // Request Body Limits & Parsing (executed only after overload and default rate limit pass)
   app.use(express.json({ limit: '64kb' }));
-  app.use(rateLimitMiddleware());
 
   // Component Composition
   const repository = options.repository ?? new PrismaApiRepository(db);
   const eventService = new EventService(repository);
   const eventController = new EventController(eventService);
-  const healthController = new HealthController(repository);
+  const healthController = new HealthController(repository, options.isReady);
 
   const authMiddleware = operatorAuthMiddleware({
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
+    ...(clock !== undefined ? { clock } : {}),
+  });
+
+  // Stricter request-class budgets (process-local, see config/rate-limits.ts)
+  const readLimiter = createRateLimiter({
+    className: 'read',
+    secondaryKeyMode: 'ip',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  const writeLimiter = createRateLimiter({
+    className: 'write',
+    secondaryKeyMode: 'ip',
+    ...(clock !== undefined ? { clock } : {}),
+  });
+  const healthLimiter = createRateLimiter({
+    className: 'health',
+    keyMode: 'ip',
+    ...(clock !== undefined ? { clock } : {}),
   });
 
   // Mount API Endpoints
-  const healthRouter = createHealthRouter(healthController, authMiddleware);
+  const healthRouter = createHealthRouter({
+    controller: healthController,
+    authMiddleware,
+    healthLimiter,
+  });
   app.use('/api/v1', healthRouter);
 
-  const eventRouter = createEventRouter(eventController);
+  const eventRouter = createEventRouter({
+    controller: eventController,
+    readLimiter,
+    writeLimiter,
+  });
   app.use('/api/v1/intrusion-events', authMiddleware, eventRouter);
 
-  // Fallback 404 Handler
+  // Unmatched Route Boundary
   app.use((req, _res, next) => {
-    next(new NotFoundError(`Endpoint not found: ${req.method} ${req.originalUrl}`));
+    next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
   });
 
-  // Outer Error Boundary
+  // Centralized Error Boundary
   app.use(errorHandlerMiddleware(logger));
 
   return app;

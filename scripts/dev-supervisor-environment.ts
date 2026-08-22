@@ -5,6 +5,7 @@ import type { ServiceKey } from './dev-supervisor.ts';
 
 export interface ParsedCliArgs {
   services: ServiceKey[];
+  hasExplicitServices: boolean;
   migrate: boolean;
   skipBuild: boolean;
   envFile?: string | undefined;
@@ -14,6 +15,7 @@ export interface ParsedCliArgs {
 export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
   const result: ParsedCliArgs = {
     services: ['web', 'api', 'worker'],
+    hasExplicitServices: false,
     migrate: false,
     skipBuild: false,
     help: false,
@@ -45,8 +47,13 @@ export function parseCliArgs(args: readonly string[]): ParsedCliArgs {
         throw new Error('At least one valid service must be specified with --services');
       }
       result.services = parsedServices;
+      result.hasExplicitServices = true;
     } else if (arg.startsWith('--env-file=')) {
-      result.envFile = arg.slice('--env-file='.length).trim();
+      const file = arg.slice('--env-file='.length).trim();
+      if (!file) {
+        throw new Error('A path must be specified with --env-file');
+      }
+      result.envFile = file;
     } else {
       throw new Error(`Unknown option "${arg}". Use --help to view available options.`);
     }
@@ -70,19 +77,27 @@ export function parseEnvFile(content: string): Record<string, string> {
     let value = line.slice(eqIndex + 1).trim();
     if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
 
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      const quote = value[0];
-      value = value.slice(1, -1);
-      if (quote === '"') {
-        value = value
+    if (value.startsWith('"')) {
+      const match = /^"((?:[^"\\]|\\.)*)"(?:\s*#.*)?$/.exec(value);
+      if (match && match[1] !== undefined) {
+        value = match[1]
           .replace(/\\n/g, '\n')
           .replace(/\\r/g, '\r')
           .replace(/\\t/g, '\t')
           .replace(/\\"/g, '"')
           .replace(/\\\\/g, '\\');
+      } else {
+        // Fallback for unclosed quotes: treat as raw with comment strip
+        const hashIndex = value.indexOf('#');
+        if (hashIndex !== -1) value = value.slice(0, hashIndex).trim();
+      }
+    } else if (value.startsWith("'")) {
+      const match = /^'([^']*)'(?:\s*#.*)?$/.exec(value);
+      if (match && match[1] !== undefined) {
+        value = match[1];
+      } else {
+        const hashIndex = value.indexOf('#');
+        if (hashIndex !== -1) value = value.slice(0, hashIndex).trim();
       }
     } else {
       const hashIndex = value.indexOf('#');
@@ -107,15 +122,16 @@ export function loadEnvironment(options: {
   processEnv?: NodeJS.ProcessEnv | undefined;
 }): LoadedEnvResult {
   const envFilePath = resolve(options.rootDir, options.envFile ?? '.env');
-  const hasEnvFile = existsSync(envFilePath);
+  let hasEnvFile = false;
   let fileEnv: Record<string, string> = {};
 
-  if (hasEnvFile) {
-    try {
+  try {
+    if (existsSync(envFilePath)) {
       fileEnv = parseEnvFile(readFileSync(envFilePath, 'utf8'));
-    } catch {
-      // An unreadable file is treated like a missing file and validated below.
+      hasEnvFile = true;
     }
+  } catch {
+    hasEnvFile = false;
   }
 
   const merged = { ...fileEnv };
@@ -199,16 +215,21 @@ export function validateServiceEnvironment(
     }
   }
 
+  const validatedVars = new Set<string>();
+
   for (const service of services) {
     for (const key of requiredEnvVars[service]) {
       const value = env[key];
       if (!value?.trim()) {
         errors.push(`Missing required environment variable for ${service}: ${key}`);
-      } else if (key === 'DATABASE_URL') {
-        const dbError = validateLocalDatabaseUrl(value);
-        if (dbError) errors.push(dbError);
-      } else if (key === 'OPERATOR_ACCESS_TOKEN' && value.length < 8) {
-        errors.push('OPERATOR_ACCESS_TOKEN must be at least 8 characters long');
+      } else if (!validatedVars.has(key)) {
+        validatedVars.add(key);
+        if (key === 'DATABASE_URL') {
+          const dbError = validateLocalDatabaseUrl(value);
+          if (dbError) errors.push(dbError);
+        } else if (key === 'OPERATOR_ACCESS_TOKEN' && value.length < 8) {
+          errors.push('OPERATOR_ACCESS_TOKEN must be at least 8 characters long');
+        }
       }
     }
   }
