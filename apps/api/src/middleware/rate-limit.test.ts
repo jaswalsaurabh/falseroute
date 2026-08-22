@@ -131,23 +131,35 @@ describe('TokenBucketCounter', () => {
     expect(counter.getRecord('ip-5')).toBeDefined();
   });
 
-  it('prunes expired idle entries properly during maintenance sweeps', () => {
+  it('prunes expired idle entries only when fully refilled and retains partially refilled idle entries', () => {
     let now = 1_000_000;
+    // Budget with 100 capacity, refilling 1 token every 10s (0.1 token/s)
+    const slowRefillBudget = {
+      windowMs: 60_000,
+      maxRequests: 60,
+      burstCapacity: 100,
+      refillRatePerSecond: 0.1,
+    };
     const counter = new TokenBucketCounter({
-      budget: testBudget,
+      budget: slowRefillBudget,
       clock: () => now,
     });
 
-    counter.consume('ip-1');
-    counter.consume('ip-2');
-    expect(counter.size).toBe(2);
+    // Client 1 consumes 1 token (99 remaining). Refilling 1 token needs 10s.
+    counter.consume('client-1');
+    // Client 2 consumes 50 tokens (50 remaining). Refilling 50 tokens needs 500s.
+    counter.consume('client-2', 50);
 
-    // Advance past idle expiration window (2 * 60_000 = 120_000ms)
-    now += 150_000;
+    // Advance by 120s (past idle threshold of 2 * 60s = 120s).
+    // In 120s, client-1 refills 12 tokens -> reaches capacity 100 (fully refilled).
+    // In 120s, client-2 refills 12 tokens -> reaches 62 tokens (NOT fully refilled, still has deficit).
+    now += 121_000;
 
-    const pruned = counter.pruneExpired();
-    expect(pruned).toBe(2);
-    expect(counter.size).toBe(0);
+    const pruned = counter.pruneExpired(120_000);
+    expect(pruned).toBe(1);
+    expect(counter.getRecord('client-1')).toBeUndefined();
+    expect(counter.getRecord('client-2')).toBeDefined();
+    expect(counter.size).toBe(1);
   });
 });
 
@@ -356,5 +368,85 @@ describe('createRateLimiter middleware', () => {
     expect(statusCode).toBe(429);
     expect(limiter.counter.getRecord('principal:operator:shared')?.tokens).toBe(0);
     expect(limiter.secondaryCounter?.getRecord('ip:198.51.100.13')).toBeUndefined();
+  });
+
+  it('enforces default class secondary IP boundary across distinct synthetic principals and avoids double consumption for unauthenticated requests', () => {
+    const limiter = createRateLimiter({
+      className: 'default',
+      secondaryKeyMode: 'ip',
+      customBudget: {
+        windowMs: 60_000,
+        maxRequests: 2,
+        burstCapacity: 2,
+        refillRatePerSecond: 2 / 60,
+      },
+      maxKeys: 2,
+      clock: () => 1_000_000,
+    });
+    let statusCode = 200;
+    let nextCalls = 0;
+    const res = {
+      setHeader: noop,
+      status: (code: number) => {
+        statusCode = code;
+        return res;
+      },
+      json: () => res,
+    } as unknown as Response;
+
+    // 1. Unauthenticated request: key is ip:198.51.100.20, secondaryKey is also ip:198.51.100.20
+    // Must NOT consume secondary counter (secondaryKey === key)
+    limiter(
+      {
+        ip: '198.51.100.20',
+        socket: {},
+        correlationId: 'corr-unauth-1',
+      } as unknown as Request,
+      res,
+      () => {
+        nextCalls += 1;
+      },
+    );
+    expect(nextCalls).toBe(1);
+    expect(limiter.counter.getRecord('ip:198.51.100.20')?.tokens).toBe(1);
+    expect(limiter.secondaryCounter?.getRecord('ip:198.51.100.20')).toBeUndefined();
+
+    // 2. Distinct synthetic principals on same IP exhaust secondary IP counter
+    const p1Req = {
+      principalId: 'operator:synth-1',
+      ip: '198.51.100.30',
+      socket: {},
+      correlationId: 'corr-synth-1',
+    } as unknown as Request;
+    const p2Req = {
+      principalId: 'operator:synth-2',
+      ip: '198.51.100.30',
+      socket: {},
+      correlationId: 'corr-synth-2',
+    } as unknown as Request;
+    const p3Req = {
+      principalId: 'operator:synth-3',
+      ip: '198.51.100.30',
+      socket: {},
+      correlationId: 'corr-synth-3',
+    } as unknown as Request;
+
+    limiter(p1Req, res, () => {
+      nextCalls += 1;
+    });
+    limiter(p2Req, res, () => {
+      nextCalls += 1;
+    });
+    // 3rd principal on same IP should be blocked by secondary IP counter
+    limiter(p3Req, res, () => {
+      nextCalls += 1;
+    });
+    expect(nextCalls).toBe(3);
+    expect(statusCode).toBe(429);
+    expect(limiter.secondaryCounter?.getRecord('ip:198.51.100.30')?.tokens).toBe(0);
+
+    // 3. Primary and secondary counters independently perform bounded LRU eviction
+    expect(limiter.counter.size).toBeLessThanOrEqual(2);
+    expect(limiter.secondaryCounter?.size).toBeLessThanOrEqual(2);
   });
 });

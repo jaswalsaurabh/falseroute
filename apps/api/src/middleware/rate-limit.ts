@@ -61,9 +61,13 @@ export class TokenBucketCounter {
    */
   pruneExpired(idleMs = this.budget.windowMs * 2): number {
     const currentTime = this.now();
+    const refillRatePerMs = this.budget.refillRatePerSecond / 1000;
+    const capacity = this.budget.burstCapacity;
     let pruned = 0;
     for (const [key, record] of this.records.entries()) {
-      if (currentTime - record.lastAccessMs > idleMs) {
+      const elapsedMs = Math.max(0, currentTime - record.lastRefillMs);
+      const currentTokens = Math.min(capacity, record.tokens + elapsedMs * refillRatePerMs);
+      if (currentTokens >= capacity && currentTime - record.lastAccessMs > idleMs) {
         this.records.delete(key);
         pruned += 1;
       }

@@ -40,7 +40,7 @@ export function createApp(options: AppOptions): Express {
     app.set('trust proxy', config.TRUST_PROXY_HOPS);
   }
 
-  // Security Headers and CORS Origin Allowlist
+  // Security Headers and CORS Origin Allowlist (preflightContinue allows quota controls before preflight response)
   app.use(helmet());
   const allowedOrigins = config.CORS_ORIGINS.split(',').map((o) => o.trim());
   app.use(
@@ -49,23 +49,36 @@ export function createApp(options: AppOptions): Express {
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id'],
+      preflightContinue: true,
     }),
   );
 
-  // Request Context, Load Shedding & Body Limits
+  // Request Context, Load Shedding & Abuse Boundaries before body parsing
   app.use(correlationMiddleware());
-  app.use(express.json({ limit: '64kb' }));
   app.use(createOverloadGuard());
 
   // Early Principal Identification (attaches non-secret principal fingerprint for valid tokens)
   app.use(createPrincipalIdentifier({ expectedToken: config.OPERATOR_ACCESS_TOKEN }));
 
-  // Global Default Quota Boundary (applies per-principal limit with IP fallback across all routes)
+  // Global Default Quota Boundary (applies per-principal limit with IP fallback and secondary IP boundary)
   const defaultLimiter = createRateLimiter({
     className: 'default',
+    secondaryKeyMode: 'ip',
     ...(clock !== undefined ? { clock } : {}),
   });
   app.use(defaultLimiter);
+
+  // Explicit Preflight Terminator (after CORS headers set and rate limiting evaluated)
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
+  // Request Body Limits & Parsing (executed only after overload and default rate limit pass)
+  app.use(express.json({ limit: '64kb' }));
 
   // Component Composition
   const repository = options.repository ?? new PrismaApiRepository(db);
