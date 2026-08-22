@@ -300,6 +300,52 @@ describe('EventProcessor', () => {
     expect(releasedClaims[0]?.claimToken).toBe(`claim-${mockDecoyEvent.id}`);
   });
 
+  it('logs only safe claim context when persistence rejects with credential-bearing details', async () => {
+    const { logger, rawLines } = createCapturingLogger();
+    const { repository, claimedEvents, releasedClaims } = createMockRepository();
+    claimedEvents.push(mockDecoyEvent);
+
+    const databaseCredential = 'not-a-real-database-password';
+    const bearerToken = 'dummy-not-a-real-bearer-token';
+    const longDiagnostic = 'RAW_DATABASE_DIAGNOSTIC_'.repeat(80);
+    const persistenceError = new Error(
+      `Persistence failed\n` +
+        `url=postgresql://dummy-user:${databaseCredential}@database.example.test/falseroute\n` +
+        `Authorization: Bearer ${bearerToken}\n` +
+        `diagnostic=${longDiagnostic}`,
+    );
+    vi.spyOn(repository, 'persistDecision').mockRejectedValueOnce(persistenceError);
+
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: new FakeGeminiAdapter('auto'),
+      logger,
+    });
+
+    await expect(processor.processNextPending()).rejects.toBe(persistenceError);
+
+    expect(releasedClaims).toEqual([
+      {
+        eventId: mockDecoyEvent.id,
+        claimToken: `claim-${mockDecoyEvent.id}`,
+        outcome: 'FAILED',
+      },
+    ]);
+
+    const failureLog = rawLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((line) => line.msg === 'Worker failed to complete processing for claimed event');
+    expect(failureLog).toMatchObject({
+      eventId: mockDecoyEvent.id,
+      correlationId: mockDecoyEvent.correlationId,
+      outcome: 'FAILED',
+    });
+    const combinedLogs = rawLines.join('\n');
+    expect(combinedLogs).not.toContain(databaseCredential);
+    expect(combinedLogs).not.toContain(bearerToken);
+    expect(combinedLogs).not.toContain(longDiagnostic);
+  });
+
   it('does not leak API keys, bearer tokens, prompts, or raw error messages into logs during adapter failure', async () => {
     const { logger, rawLines } = createCapturingLogger();
     const { repository, claimedEvents } = createMockRepository();

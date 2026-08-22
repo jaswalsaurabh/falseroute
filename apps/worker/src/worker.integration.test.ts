@@ -11,7 +11,11 @@ import {
   ProvenanceClassification,
 } from '@false-route/database';
 import { createLogger } from '@false-route/observability';
-import { PrismaWorkerRepository } from './persistence/worker-repository.js';
+import {
+  PrismaWorkerRepository,
+  type ClaimReleaseOutcome,
+  type WorkerRepository,
+} from './persistence/worker-repository.js';
 import { FakeGeminiAdapter } from './adapters/fake-gemini-adapter.js';
 import { EventProcessor } from './processor/event-processor.js';
 import { evaluateDeceptionPolicy } from './domain/policy-engine.js';
@@ -281,31 +285,42 @@ describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () =
     expect(row?.processingClaimToken).toBeNull();
   });
 
-  it('never downgrades an already committed DECIDED event to FAILED', async () => {
+  it('reconciles a decision that commits durably before persistence reports failure', async () => {
     const { eventId } = await createTestEvent();
+    let releaseOutcome: ClaimReleaseOutcome | undefined;
 
-    // 1. Claim event
-    const claim = await repository.claimNextPendingEvent();
-    expect(claim?.event.id).toBe(eventId);
+    const uncertainCommitRepository: WorkerRepository = {
+      claimNextPendingEvent: (options) => repository.claimNextPendingEvent(options),
+      persistDecision: async (decision, claimToken) => {
+        await repository.persistDecision(decision, claimToken);
+        throw new Error('Simulated post-commit acknowledgement failure');
+      },
+      releaseOrFailClaim: async (claimedEventId, claimToken, options) => {
+        releaseOutcome = await repository.releaseOrFailClaim(claimedEventId, claimToken, options);
+        return releaseOutcome;
+      },
+    };
 
-    // 2. Persist decision
-    const decision = evaluateDeceptionPolicy({
-      event: claim!.event,
-      decisionId: randomUUID(),
+    const processor = new EventProcessor({
+      repository: uncertainCommitRepository,
+      geminiAdapter: new FakeGeminiAdapter('auto'),
+      logger: noopLogger,
     });
-    await repository.persistDecision(decision, claim!.claimToken);
 
-    // 3. Simulate failure handler executing after uncertain commit
-    const outcome = await repository.releaseOrFailClaim(eventId, claim!.claimToken);
-    expect(outcome).toBe('ALREADY_DECIDED');
+    await expect(processor.processNextPending()).rejects.toThrow(
+      'Simulated post-commit acknowledgement failure',
+    );
+    expect(releaseOutcome).toBe('ALREADY_DECIDED');
 
-    // 4. Verify event remains DECIDED and decision/audit record remain intact
     const row = await db.intrusionEvent.findUnique({
       where: { id: eventId },
       include: { decision: { include: { auditRecord: true } } },
     });
     expect(row?.status).toBe(ProcessingStatus.DECIDED);
-    expect(row?.decision).toBeDefined();
-    expect(row?.decision?.auditRecord).toBeDefined();
+    expect(row?.processingClaimToken).toBeNull();
+    expect(row?.processingLeaseExpiresAt).toBeNull();
+    expect(row?.decision?.eventId).toBe(eventId);
+    expect(row?.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(row?.decision?.auditRecord).not.toBeNull();
   });
 });

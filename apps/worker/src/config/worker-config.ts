@@ -17,16 +17,28 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   GEMINI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(2),
   GEMINI_MAX_QUEUE_SIZE: z.coerce.number().int().min(0).max(100).default(0),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
+  // Reserves time for deterministic policy evaluation and the fenced database transaction
+  // after the complete Gemini operation deadline has elapsed.
+  WORKER_CLAIM_PERSISTENCE_MARGIN_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
   WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(15000),
   WORKER_MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   ENABLE_TELEMETRY: z
     .string()
     .optional()
     .transform((val) => val === 'true'),
-}).refine((config) => config.WORKER_CLAIM_LEASE_MS > config.GEMINI_OPERATION_DEADLINE_MS, {
-  message: 'WORKER_CLAIM_LEASE_MS must be greater than GEMINI_OPERATION_DEADLINE_MS',
-  path: ['WORKER_CLAIM_LEASE_MS'],
-});
+}).refine(
+  (config) => {
+    return (
+      config.WORKER_CLAIM_LEASE_MS >=
+      config.GEMINI_OPERATION_DEADLINE_MS + config.WORKER_CLAIM_PERSISTENCE_MARGIN_MS
+    );
+  },
+  {
+    message:
+      'WORKER_CLAIM_LEASE_MS must be at least GEMINI_OPERATION_DEADLINE_MS plus WORKER_CLAIM_PERSISTENCE_MARGIN_MS',
+    path: ['WORKER_CLAIM_LEASE_MS'],
+  },
+);
 
 export type WorkerConfig = z.infer<typeof WorkerConfigSchema>;
 
