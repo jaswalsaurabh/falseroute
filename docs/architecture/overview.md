@@ -5,20 +5,23 @@
 
 FalseRoute begins as a TypeScript monorepo with separate Web, API, and Worker applications. Shared packages own contracts, persistence, configuration, security, and observability concerns. The first architecture proves one simulated intrusion-to-deception workflow without introducing a real network agent.
 
-## Initial Logical Flow
+## Logical Flow and Autonomous Control Plane
 
 ```mermaid
 flowchart LR
-    Simulator[Event Simulator] -->|Untrusted intrusion event| API[Express API]
-    API -->|Validate and persist| DB[(PostgreSQL)]
-    API -.->|Logical background handoff| Worker[Worker]
-    Worker -->|Minimized event| Gemini[Gemini]
-    Gemini -->|Untrusted structured recommendation| Worker
-    Worker -->|Deterministic policy and decision| DB
-    Dashboard[React Dashboard] -->|Read events and decisions| API
+    Operator[Operator / Injector] -->|Synthetic Scenario Request| API[Express API]
+    API -->|Validate & Publish Envelope| PubSub[Pub/Sub intrusion-events]
+    PubSub -->|Authenticated Push| Worker[Worker Orchestrator]
+    Worker -->|Bounded Minimized Event| Gemini[Gemini 3.5+]
+    Gemini -->|Structured Tool Requests| ToolGateway[Deterministic Tool Gateway]
+    ToolGateway -->|Authorize / Reject| Policy[Application Policy]
+    Policy -->|Idempotent Lease Action| Tools[Decoy / Route / Quarantine Adapters]
+    Worker -->|State & Audit| DB[(PostgreSQL)]
+    DB -->|Monotonic Activity Log| SSE[Activity Stream / SSE]
+    SSE -->|Authenticated Fetch Stream| Dashboard[React Operator Console]
 ```
 
-The diagram is logical. The asynchronous delivery mechanism between the API and Worker remains deferred until delivery, retry, ordering, and latency requirements are documented. Redis or a queue must not be introduced merely to complete this diagram.
+Under proposed ADR-0005, FalseRoute establishes a controlled autonomous foundation. Pub/Sub provides asynchronous transport with deduplication and dead-letter handling. Gemini interacts strictly through a closed five-tool catalog, with all execution decisions owned by deterministic application policy. All live cloud mutations remain disabled by default until ADR-0005 is accepted.
 
 ## Component Boundaries
 

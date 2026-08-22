@@ -1,6 +1,7 @@
 import {
   type CreateIntrusionEventRequest,
   type CreateIntrusionEventResponse,
+  type CreateAutonomousScenarioRequest,
   type ListIntrusionEventsQuery,
   type ListIntrusionEventsResponse,
   type GetIntrusionEventResponse,
@@ -91,6 +92,19 @@ export class ApiClient {
       {
         method: 'POST',
         body: JSON.stringify(event),
+      },
+      (data) => CreateIntrusionEventResponseSchema.parse(data),
+    );
+  }
+
+  async createAutonomousScenario(
+    scenario: CreateAutonomousScenarioRequest,
+  ): Promise<CreateIntrusionEventResponse> {
+    return this.request(
+      '/api/v1/intrusion-events/scenarios',
+      {
+        method: 'POST',
+        body: JSON.stringify(scenario),
       },
       (data) => CreateIntrusionEventResponseSchema.parse(data),
     );

@@ -3,6 +3,7 @@ import { type DatabaseClient } from '@false-route/database';
 import { type Logger, type TelemetryHandle } from '@false-route/observability';
 import { startWorker } from './lifecycle.js';
 import { type WorkerRepository } from './persistence/worker-repository.js';
+import { type PubSubPushHandler } from './integrations/pubsub-push-handler.js';
 
 function createMockDb(): DatabaseClient {
   return {
@@ -36,6 +37,51 @@ function createMockRepo(healthy = true): WorkerRepository {
 }
 
 describe('Worker Lifecycle & Health Server', () => {
+  it('mounts the authenticated autonomous push handler only when explicitly enabled', async () => {
+    const pushHandler = {
+      handlePushRequest: vi.fn().mockResolvedValue({
+        statusCode: 200,
+        body: { status: 'COMPLETED' },
+      }),
+    } as unknown as PubSubPushHandler;
+    const instance = await startWorker({
+      env: {
+        PORT: '0',
+        DATABASE_URL:
+          'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public',
+        NODE_ENV: 'test',
+        AUTONOMOUS_PUSH_MODE: 'LOCAL_SHARED_SECRET',
+        AUTONOMOUS_LOCAL_PUSH_TOKEN: 'not-a-real-local-push-token',
+      },
+      db: createMockDb(),
+      repository: createMockRepo(true),
+      logger: createMockLogger(),
+      telemetry: createMockTelemetry(),
+      pushHandler,
+      registerSignalHandlers: false,
+    });
+
+    try {
+      const address = instance.healthServer?.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      const response = await fetch(`http://127.0.0.1:${port}/pubsub/push`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer not-a-real-local-push-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: 'test' }),
+      });
+      expect(response.status).toBe(200);
+      expect(pushHandler.handlePushRequest).toHaveBeenCalledWith(
+        'Bearer not-a-real-local-push-token',
+        { message: 'test' },
+      );
+    } finally {
+      await instance.stop('test-cleanup');
+    }
+  });
+
   it('starts worker, initializes telemetry, starts health listener, and reports ready status', async () => {
     const mockDb = createMockDb();
     const mockLogger = createMockLogger();
@@ -355,5 +401,49 @@ describe('Worker Lifecycle & Health Server', () => {
     expect(elapsed).toBeGreaterThanOrEqual(280);
     expect(elapsed).toBeLessThan(1400);
     expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts cleanly and does not leave polling active when health server binding fails', async () => {
+    const http = await import('node:http');
+    // Bind a blocking server on OS-assigned port
+    const blocker = http.createServer();
+    const occupiedPort = await new Promise<number>((resolve) => {
+      blocker.listen(0, '0.0.0.0', () => {
+        const addr = blocker.address();
+        resolve(typeof addr === 'object' && addr !== null ? addr.port : 0);
+      });
+    });
+
+    const mockDb = createMockDb();
+    const mockLogger = createMockLogger();
+    const mockTelemetry = createMockTelemetry();
+    const mockRepo = createMockRepo(true);
+
+    try {
+      await expect(
+        startWorker({
+          env: {
+            PORT: String(occupiedPort),
+            DATABASE_URL:
+              'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public',
+            NODE_ENV: 'test',
+            WORKER_POLL_INTERVAL_MS: '100',
+          },
+          db: mockDb,
+          repository: mockRepo,
+          logger: mockLogger,
+          telemetry: mockTelemetry,
+          registerSignalHandlers: false,
+        }),
+      ).rejects.toThrow();
+
+      // Wait a tick to ensure no rogue timer fires
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(mockRepo.claimNextPendingEvent).not.toHaveBeenCalled();
+      expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
   });
 });

@@ -3,6 +3,7 @@ import { BaseEnvironmentSchema, ConfigurationError } from '@false-route/config';
 
 export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   PORT: z.coerce.number().int().min(0).max(65535).default(8080),
+  WORKER_PORT: z.coerce.number().int().min(0).max(65535).optional(),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -17,6 +18,10 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
   GEMINI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(2),
   GEMINI_MAX_QUEUE_SIZE: z.coerce.number().int().min(0).max(100).default(0),
+  AUTONOMOUS_PUSH_MODE: z.enum(['DISABLED', 'LOCAL_SHARED_SECRET', 'OIDC']).default('DISABLED'),
+  AUTONOMOUS_LOCAL_PUSH_TOKEN: z.string().min(16).optional(),
+  PUBSUB_OIDC_AUDIENCE: z.string().url().optional(),
+  PUBSUB_OIDC_SERVICE_ACCOUNT: z.string().email().optional(),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
   // Reserves time for deterministic policy evaluation and the fenced database transaction
   // after the complete Gemini operation deadline has elapsed.
@@ -32,6 +37,34 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     .optional()
     .transform((val) => val === 'true'),
 })
+  .superRefine((config, ctx) => {
+    if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
+      if (config.NODE_ENV === 'production') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['AUTONOMOUS_PUSH_MODE'],
+          message: 'Local shared-secret push authentication is prohibited in production',
+        });
+      }
+      if (!config.AUTONOMOUS_LOCAL_PUSH_TOKEN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['AUTONOMOUS_LOCAL_PUSH_TOKEN'],
+          message: 'AUTONOMOUS_LOCAL_PUSH_TOKEN is required for local push mode',
+        });
+      }
+    }
+    if (
+      config.AUTONOMOUS_PUSH_MODE === 'OIDC' &&
+      (!config.PUBSUB_OIDC_AUDIENCE || !config.PUBSUB_OIDC_SERVICE_ACCOUNT)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AUTONOMOUS_PUSH_MODE'],
+        message: 'OIDC push mode requires expected audience and service-account identity',
+      });
+    }
+  })
   .refine(
     (config) => {
       return (
@@ -81,5 +114,8 @@ export function parseWorkerConfig(env: Record<string, string | undefined>): Read
   if (!result.success) {
     throw ConfigurationError.fromZodError(result.error);
   }
-  return Object.freeze({ ...result.data });
+  return Object.freeze({
+    ...result.data,
+    PORT: result.data.WORKER_PORT ?? result.data.PORT,
+  });
 }

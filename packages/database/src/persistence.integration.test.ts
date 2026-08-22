@@ -27,6 +27,12 @@ describe('PostgreSQL Database Persistence Integration', () => {
   afterAll(async () => {
     if (db) {
       if (createdFixtureIds.size > 0) {
+        await db.replayAttempt.deleteMany({
+          where: { originalEventId: { in: Array.from(createdFixtureIds) } },
+        });
+        await db.deadLetterRecord.deleteMany({
+          where: { originalEventId: { in: Array.from(createdFixtureIds) } },
+        });
         await db.intrusionEvent.deleteMany({
           where: { id: { in: Array.from(createdFixtureIds) } },
         });

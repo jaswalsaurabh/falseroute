@@ -16,6 +16,11 @@ describe('worker configuration claim lease safety margin', () => {
     );
   });
 
+  it('supports an explicit local worker port without overriding the API port', () => {
+    const config = parseWorkerConfig({ ...validWorkerEnv, PORT: '3000', WORKER_PORT: '8080' });
+    expect(config.PORT).toBe(8080);
+  });
+
   it('accepts a lease exactly equal to the Gemini deadline plus the persistence margin', () => {
     const config = parseWorkerConfig({
       ...validWorkerEnv,
@@ -60,5 +65,41 @@ describe('worker configuration claim lease safety margin', () => {
     });
     expect(config.WORKER_SHUTDOWN_TIMEOUT_MS).toBe(8000);
     expect(config.WORKER_DRAIN_TIMEOUT_MS).toBe(5000);
+  });
+
+  it('requires an exact local push credential and prohibits local auth in production', () => {
+    expect(() =>
+      parseWorkerConfig({
+        ...validWorkerEnv,
+        AUTONOMOUS_PUSH_MODE: 'LOCAL_SHARED_SECRET',
+      }),
+    ).toThrow(ConfigurationError);
+    expect(() =>
+      parseWorkerConfig({
+        ...validWorkerEnv,
+        NODE_ENV: 'production',
+        AUTONOMOUS_PUSH_MODE: 'LOCAL_SHARED_SECRET',
+        AUTONOMOUS_LOCAL_PUSH_TOKEN: 'not-a-real-local-push-token',
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('requires explicit OIDC audience and service identity in OIDC push mode', () => {
+    expect(() =>
+      parseWorkerConfig({
+        ...validWorkerEnv,
+        NODE_ENV: 'production',
+        AUTONOMOUS_PUSH_MODE: 'OIDC',
+      }),
+    ).toThrow(ConfigurationError);
+
+    const config = parseWorkerConfig({
+      ...validWorkerEnv,
+      NODE_ENV: 'production',
+      AUTONOMOUS_PUSH_MODE: 'OIDC',
+      PUBSUB_OIDC_AUDIENCE: 'https://worker.example.com/pubsub/push',
+      PUBSUB_OIDC_SERVICE_ACCOUNT: 'pubsub-invoker@example-project.iam.gserviceaccount.com',
+    });
+    expect(config.AUTONOMOUS_PUSH_MODE).toBe('OIDC');
   });
 });

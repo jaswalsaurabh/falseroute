@@ -4,6 +4,7 @@ import { Writable } from 'node:stream';
 import { type DatabaseClient } from '@false-route/database';
 import { createLogger } from '@false-route/observability';
 import { createApp } from './app.js';
+import { type EventPublisher } from './integrations/event-publisher.js';
 import { type ApiRepository } from './persistence/api-repository.js';
 import {
   CreateIntrusionEventResponseSchema,
@@ -157,6 +158,50 @@ describe('Express API Unit Tests', () => {
     const parsed = CreateIntrusionEventResponseSchema.parse(res.body);
     expect(parsed.status).toBe('PENDING');
     expect(parsed.id).toBe(createPayload.id);
+  });
+
+  it('validates and publishes a strict autonomous scenario envelope', async () => {
+    const eventPublisher = {
+      publish: vi.fn().mockResolvedValue({ transportId: 'local-message-1' }),
+    } as EventPublisher;
+    const autonomousApp = createApp({
+      config: mockConfig,
+      db: mockDb,
+      logger: mockLogger,
+      repository,
+      eventPublisher,
+    });
+    const payload = {
+      id: mockPendingEvent.id,
+      correlationId: mockPendingEvent.correlationId,
+      occurredAt: mockPendingEvent.occurredAt,
+      scenarioKind: 'ENV_FILE_PROBE',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'ENV_FILE_PROBE',
+        requestedPath: '/.env',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-api-scanner/1.0',
+        sourceIp: '198.51.100.25',
+        matchedString: '.env',
+        isPositiveMatch: true,
+      },
+    };
+
+    const res = await request(autonomousApp)
+      .post('/api/v1/intrusion-events/scenarios')
+      .set('Authorization', authHeader)
+      .send(payload);
+
+    expect(res.status).toBe(202);
+    expect(eventPublisher.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: mockPendingEvent.id,
+        scenarioKind: 'ENV_FILE_PROBE',
+        sourceIp: '198.51.100.25',
+        evidence: payload.evidence,
+      }),
+    );
   });
 
   it('rejects malformed intrusion event payload with 400 and validation details', async () => {

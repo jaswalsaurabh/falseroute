@@ -15,10 +15,14 @@ import {
   type ProcessingStatus,
   type DeceptionAction,
   type ProvenanceClassification,
+  Prisma,
 } from '@false-route/database';
 
 export interface ApiRepository {
-  createEvent(input: SimulatedIntrusionEventInput): Promise<IntrusionEvent>;
+  createEvent(
+    input: SimulatedIntrusionEventInput,
+    scenarioMeta?: { scenarioKind?: string; evidence?: unknown },
+  ): Promise<IntrusionEvent>;
   listEvents(query: ListIntrusionEventsQuery): Promise<{ events: IntrusionEvent[]; total: number }>;
   getEventById(id: string): Promise<{
     event: IntrusionEvent;
@@ -35,7 +39,10 @@ export interface ApiRepository {
 export class PrismaApiRepository implements ApiRepository {
   constructor(private readonly db: DatabaseClient) {}
 
-  async createEvent(input: SimulatedIntrusionEventInput): Promise<IntrusionEvent> {
+  async createEvent(
+    input: SimulatedIntrusionEventInput,
+    scenarioMeta?: { scenarioKind?: string; evidence?: unknown },
+  ): Promise<IntrusionEvent> {
     const receivedAt = new Date();
 
     const created = await this.db.intrusionEvent.create({
@@ -53,6 +60,8 @@ export class PrismaApiRepository implements ApiRepository {
         usedDecoyCredential: input.usedDecoyCredential,
         decoyIdentifier:
           input.usedDecoyCredential && input.decoyIdentifier ? input.decoyIdentifier : null,
+        scenarioKind: scenarioMeta?.scenarioKind ?? null,
+        evidence: (scenarioMeta?.evidence as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         status: 'PENDING' as ProcessingStatus,
         provenance: 'OBSERVED' as ProvenanceClassification,
       },

@@ -12,6 +12,7 @@ export function createEventRouter(handlers: EventRouterHandlers): Router {
   const router = Router();
 
   router.post('/', writeLimiter, controller.create);
+  router.post('/scenarios', writeLimiter, controller.createAutonomousScenario);
   router.get('/', readLimiter, controller.list);
   router.get('/:id', readLimiter, controller.getById);
   router.get('/:id/decision', readLimiter, controller.getDecision);

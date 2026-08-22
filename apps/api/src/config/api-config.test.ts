@@ -41,4 +41,37 @@ describe('API Configuration Shutdown Budget Validation', () => {
       }),
     ).toThrow(ConfigurationError);
   });
+
+  it('requires a distinct elevated token for replay authorization', () => {
+    expect(() =>
+      parseApiConfig({
+        ...validApiEnv,
+        OPERATOR_REPLAY_TOKEN: validApiEnv.OPERATOR_ACCESS_TOKEN,
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('allows local worker delivery only outside production with an explicit credential', () => {
+    const local = parseApiConfig({
+      ...validApiEnv,
+      EVENT_PUBLISHER_MODE: 'LOCAL_HTTP',
+      LOCAL_WORKER_PUSH_TOKEN: 'not-a-real-local-push-token',
+    });
+    expect(local.EVENT_PUBLISHER_MODE).toBe('LOCAL_HTTP');
+
+    expect(() =>
+      parseApiConfig({
+        ...validApiEnv,
+        NODE_ENV: 'production',
+        EVENT_PUBLISHER_MODE: 'LOCAL_HTTP',
+        LOCAL_WORKER_PUSH_TOKEN: 'not-a-real-local-push-token',
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('rejects an in-memory production publisher', () => {
+    expect(() => parseApiConfig({ ...validApiEnv, NODE_ENV: 'production' })).toThrow(
+      ConfigurationError,
+    );
+  });
 });

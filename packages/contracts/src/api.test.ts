@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CreateAutonomousScenarioRequestSchema,
   CreateIntrusionEventResponseSchema,
   ListIntrusionEventsResponseSchema,
   GetIntrusionEventResponseSchema,
@@ -10,6 +11,46 @@ import {
 } from './api.js';
 
 describe('API Contract Schemas', () => {
+  it('validates a strict autonomous scenario request', () => {
+    const request = {
+      id: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-autonomous-scenario-1',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      scenarioKind: 'ENV_FILE_PROBE',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'ENV_FILE_PROBE',
+        requestedPath: '/.env',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-contract-scanner/1.0',
+        sourceIp: '198.51.100.25',
+        matchedString: '.env',
+        isPositiveMatch: true,
+      },
+    };
+    expect(CreateAutonomousScenarioRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it('rejects autonomous evidence whose kind or source identity contradicts the request', () => {
+    const result = CreateAutonomousScenarioRequestSchema.safeParse({
+      id: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-autonomous-scenario-2',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      scenarioKind: 'ENV_FILE_PROBE',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'WORDPRESS_CONFIG_PROBE',
+        requestedPath: '/wp-config.php',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-contract-scanner/1.0',
+        sourceIp: '198.51.100.26',
+        matchedString: 'wp-config',
+        isPositiveMatch: true,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('validates CreateIntrusionEventResponse', () => {
     const valid = {
       id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',

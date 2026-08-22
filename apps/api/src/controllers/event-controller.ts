@@ -1,6 +1,7 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import {
   CreateIntrusionEventRequestSchema,
+  CreateAutonomousScenarioRequestSchema,
   ListIntrusionEventsQuerySchema,
   UuidSchema,
 } from '@false-route/contracts';
@@ -13,6 +14,20 @@ export class EventController {
     try {
       const validatedInput = CreateIntrusionEventRequestSchema.parse(req.body);
       const response = await this.eventService.createEvent(validatedInput);
+      res.status(202).json(response);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  createAutonomousScenario = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const validatedInput = CreateAutonomousScenarioRequestSchema.parse(req.body);
+      const response = await this.eventService.createAutonomousScenario(validatedInput);
       res.status(202).json(response);
     } catch (err) {
       next(err);

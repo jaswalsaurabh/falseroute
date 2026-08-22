@@ -1,7 +1,12 @@
 import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type { Express } from 'express';
-import { createDatabaseClient, type DatabaseClient } from '@false-route/database';
+import {
+  ActivityEventRepository,
+  createDatabaseClient,
+  PrismaClient,
+  type DatabaseClient,
+} from '@false-route/database';
 import {
   createLogger,
   createTelemetry,
@@ -11,6 +16,7 @@ import {
 import { parseApiConfig, type ApiConfig } from './config/api-config.js';
 import { createApp } from './app.js';
 import type { ApiRepository } from './persistence/api-repository.js';
+import { ActivityStreamService } from './services/activity-stream-service.js';
 
 export interface StartApiServerOptions {
   readonly config?: ApiConfig | undefined;
@@ -19,6 +25,8 @@ export interface StartApiServerOptions {
   readonly logger?: Logger | undefined;
   readonly telemetry?: TelemetryHandle | undefined;
   readonly repository?: ApiRepository | undefined;
+  readonly activityRepo?: ActivityEventRepository | undefined;
+  readonly streamService?: ActivityStreamService | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
   readonly onShutdownComplete?: ((exitCode: number) => void) | undefined;
 }
@@ -30,6 +38,7 @@ export interface ApiServerInstance {
   readonly db: DatabaseClient;
   readonly telemetry: TelemetryHandle;
   readonly logger: Logger;
+  readonly streamService: ActivityStreamService;
   readonly isReady: () => boolean;
   readonly stop: (reason?: string) => Promise<void>;
 }
@@ -86,16 +95,22 @@ export async function startApiServer(
 
   let db: DatabaseClient | null = null;
   let server: Server | null = null;
+  let streamService: ActivityStreamService | null = null;
   const trackedSockets = new Set<Socket>();
 
   try {
     db = options.db ?? createDatabaseClient({ connectionString: config.DATABASE_URL });
     await telemetry.init();
 
+    const activityRepo = options.activityRepo ?? new ActivityEventRepository(db as PrismaClient);
+    streamService = options.streamService ?? new ActivityStreamService(activityRepo);
+
     const app = createApp({
       config,
       db,
       logger,
+      activityRepo,
+      streamService,
       ...(options.repository !== undefined ? { repository: options.repository } : {}),
       isReady,
     });
@@ -137,7 +152,20 @@ export async function startApiServer(
         );
 
         const shutdownTask = (async () => {
-          // Phase 1: Stop accepting new HTTP connections and drain active sockets within drain sub-budget
+          // Phase 1: Stop accepting new HTTP connections, close SSE streams, and drain active sockets within drain sub-budget
+          if (streamService) {
+            try {
+              streamService.closeAll();
+            } catch (streamErr) {
+              const errorType =
+                streamErr instanceof Error ? streamErr.constructor.name : 'UnknownError';
+              logger.warn(
+                { errorType },
+                'Error closing activity stream service during API shutdown',
+              );
+            }
+          }
+
           if (server) {
             const currentServer = server;
             const drainPromise = new Promise<void>((resolve) => {
@@ -214,6 +242,7 @@ export async function startApiServer(
       db,
       telemetry,
       logger,
+      streamService: streamService!,
       isReady,
       stop,
     };
@@ -247,6 +276,13 @@ export async function startApiServer(
     const errorType = startupErr instanceof Error ? startupErr.constructor.name : 'UnknownError';
     logger.error({ errorType }, 'Fatal API startup error; aborting without listener');
 
+    if (streamService) {
+      try {
+        streamService.closeAll();
+      } catch {
+        // Suppress secondary stream service close errors during startup abort
+      }
+    }
     if (db) {
       try {
         await db.$disconnect();
