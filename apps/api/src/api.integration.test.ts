@@ -22,6 +22,7 @@ const mockConfig = {
   OPERATOR_ACCESS_TOKEN: 'integration-test-operator-token-xyz',
   CORS_ORIGINS: 'http://localhost:5173',
   ENABLE_TELEMETRY: false,
+  TRUST_PROXY_HOPS: 0,
 };
 
 const noopLogger = createLogger({
