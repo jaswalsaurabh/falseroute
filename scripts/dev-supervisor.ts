@@ -109,7 +109,8 @@ export class DevSupervisor {
 
   constructor(options: DevSupervisorOptions) {
     this.rootDir = options.rootDir;
-    this.services = options.services ?? ['web', 'api', 'worker'];
+    this.services =
+      options.services && options.services.length > 0 ? options.services : ['web', 'api', 'worker'];
     this.env = options.env ?? {};
     this.skipBuild = options.skipBuild ?? false;
     this.spawnFn = options.spawnFn ?? spawn;
@@ -120,6 +121,7 @@ export class DevSupervisor {
           cwd: rootDir,
           env: process.env,
           stdio: 'inherit',
+          shell: process.platform === 'win32',
         });
         return res.status === 0;
       });
@@ -176,6 +178,7 @@ export class DevSupervisor {
           },
           stdio: ['pipe', 'pipe', 'pipe'],
           detached: process.platform !== 'win32',
+          shell: process.platform === 'win32',
         });
 
         this.activeProcesses.set(serviceKey, child);
@@ -295,7 +298,7 @@ export class DevSupervisor {
 }
 
 export function runMigration(rootDir: string, env: Record<string, string>): number {
-  const result = spawnSync('node', ['scripts/prisma-guard.ts', 'migrate', 'deploy'], {
+  const result = spawnSync(process.execPath, ['scripts/prisma-guard.ts', 'migrate', 'deploy'], {
     cwd: rootDir,
     env: {
       ...process.env,
