@@ -40,6 +40,48 @@
 
   --color-black-alpha-75: rgba(0, 0, 0, 0.75);
 
+  /* Light control-room palette and composited primitive values. */
+  --color-surface-page: #f4f7fb;
+  --color-surface-header: rgba(255, 255, 255, 0.86);
+  --color-surface-card: rgba(255, 255, 255, 0.94);
+  --color-surface-hover: #f7fbff;
+  --color-surface-raised: #eef2f8;
+  --color-surface-input: #f8fafc;
+  --color-surface-backdrop: rgba(15, 23, 42, 0.55);
+  --color-border-light: rgba(26, 41, 62, 0.1);
+  --color-border-default-light: rgba(26, 41, 62, 0.18);
+  --color-ink-light: #162033;
+  --color-ink-body: #38465b;
+  --color-ink-secondary: #52627a;
+  --color-ink-muted: #67758b;
+  --color-white: #fff;
+  --color-teal-50: #e7f7fa;
+  --color-teal-100: #e7f7fa;
+  --color-teal-300: #9bdce4;
+  --color-teal-600: #087c8d;
+  --color-teal-700: #066b79;
+  --color-violet-50: #eeecff;
+  --color-violet-300: #c2bbff;
+  --color-violet-600: #6655cf;
+  --color-green-50: #e7f6ef;
+  --color-green-300: #9bd7ba;
+  --color-green-600: #147a53;
+  --color-amber-50: #fff4df;
+  --color-amber-300: #f4c878;
+  --color-amber-600: #a86408;
+  --color-red-50: #ffe9ed;
+  --color-red-300: #ef9aaa;
+  --color-red-600: #c3354d;
+  --color-terminal-bg: #111827;
+  --color-terminal-border: #344054;
+  --color-terminal-text: #d8e1ed;
+  --color-terminal-muted: #718096;
+  --color-teal-alpha-11: rgba(20, 148, 168, 0.11);
+  --color-violet-alpha-12: rgba(98, 86, 220, 0.12);
+  --color-green-alpha-08: rgba(20, 122, 83, 0.08);
+  --color-red-alpha-08: rgba(195, 53, 77, 0.08);
+  --shadow-card-light: 0 12px 30px rgba(26, 41, 62, 0.08);
+
   /* Tier 1 Primitive Spacing */
 
   --space-1: 4px;

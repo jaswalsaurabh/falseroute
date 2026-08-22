@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
+import { Crosshair, Send, Server, ShieldAlert } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   CreateAutonomousScenarioRequestSchema,
   SCENARIO_CATALOG,
   type ScenarioKind,
 } from '@false-route/contracts';
 import { type ApiClient } from '../../api/client.js';
-
+import { Badge } from '../../components/Badge.js';
+import { Button } from '../../components/Button.js';
+import { IconBadge } from '../../components/IconBadge.js';
 export interface ScenarioInjectorProps {
   readonly client: ApiClient;
   readonly onInjected?: () => void;
 }
-
 export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({ client, onInjected }) => {
   const [selectedScenario, setSelectedScenario] = useState<ScenarioKind>('ENV_FILE_PROBE');
   const [customIp, setCustomIp] = useState('198.51.100.25');
@@ -18,150 +21,99 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({ client, onIn
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
-
-  const scenarioPreset = SCENARIO_CATALOG[selectedScenario];
-
-  const handleScenarioChange = (scenario: ScenarioKind) => {
-    setSelectedScenario(scenario);
-    setFeedback(null);
-  };
-
-  const handleInject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const preset = SCENARIO_CATALOG[selectedScenario];
+  const handleInject = async (event: React.FormEvent) => {
+    event.preventDefault();
     setIsSubmitting(true);
     setFeedback(null);
-
     try {
-      const eventId = crypto.randomUUID();
       const payload = CreateAutonomousScenarioRequestSchema.parse({
-        id: eventId,
+        id: crypto.randomUUID(),
         occurredAt: new Date().toISOString(),
         correlationId: `corr-scenario-${Date.now().toString(36)}`,
         scenarioKind: selectedScenario,
         sourceIp: customIp,
-        evidence: {
-          ...scenarioPreset.defaultEvidence,
-          sourceIp: customIp,
-        },
+        evidence: { ...preset.defaultEvidence, sourceIp: customIp },
       });
-
       const result = await client.createAutonomousScenario(payload);
-      setFeedback({
-        type: 'success',
-        message: `Scenario '${scenarioPreset.title}': ${result.message}.`,
-      });
+      const message = `Scenario '${preset.title}': ${result.message}.`;
+      setFeedback({ type: 'success', message });
+      toast.success('Telemetry dispatched', { description: message });
       onInjected?.();
-    } catch (err) {
-      setFeedback({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to dispatch scenario event',
-      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to dispatch scenario event';
+      setFeedback({ type: 'error', message });
+      toast.error('Telemetry dispatch failed', { description: message });
     } finally {
       setIsSubmitting(false);
     }
   };
-
   return (
-    <section className="card" aria-labelledby="scenario-injector-heading">
-      <h2
-        id="scenario-injector-heading"
-        style={{ fontSize: 'var(--text-size-lg)', marginBottom: 'var(--space-unit-md)' }}
-      >
-        1. Autonomous Scenario Injector
-      </h2>
-
-      <form
-        onSubmit={handleInject}
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-unit-md)' }}
-      >
-        <div>
-          <label
-            htmlFor="scenario-select"
-            style={{
-              display: 'block',
-              fontWeight: 600,
-              marginBottom: 'var(--space-unit-xs)',
-              fontSize: 'var(--text-size-sm)',
-            }}
-          >
-            Attack Scenario Pattern
-          </label>
+    <section className="pane pane-telemetry" aria-labelledby="scenario-injector-heading">
+      <div className="pane-header">
+        <div className="pane-title">
+          <IconBadge tone="observed">
+            <Crosshair size={17} />
+          </IconBadge>
+          <div>
+            <h2 id="scenario-injector-heading">
+              Telemetry <span className="sr-only">1. Autonomous Scenario Injector</span>
+            </h2>
+            <p>Incoming signals, normalized and queued</p>
+          </div>
+        </div>
+        <Badge variant="success">Live</Badge>
+      </div>
+      <form className="injector-form" onSubmit={handleInject}>
+        <div className="section-kicker">
+          <ShieldAlert size={15} /> Fixed synthetic scenario
+        </div>
+        <label htmlFor="scenario-select">
+          Attack Scenario Pattern
           <select
             id="scenario-select"
             className="input-field"
             value={selectedScenario}
-            onChange={(e) => handleScenarioChange(e.target.value as ScenarioKind)}
+            onChange={(event) => {
+              setSelectedScenario(event.target.value as ScenarioKind);
+              setFeedback(null);
+            }}
           >
-            {Object.values(SCENARIO_CATALOG).map((preset) => (
-              <option key={preset.kind} value={preset.kind}>
-                {preset.title}
+            {Object.values(SCENARIO_CATALOG).map((item) => (
+              <option key={item.kind} value={item.kind}>
+                {item.title}
               </option>
             ))}
           </select>
+        </label>
+        <div className="scenario-preview">
+          <strong>{preset.description}</strong>
+          <span>
+            <Server size={14} /> policy: <code>{preset.expectedPolicy}</code>
+          </span>
+          <span>decoy: {preset.decoyTemplate ?? 'quarantine response'}</span>
         </div>
-
-        <div
-          style={{
-            padding: 'var(--space-unit-md)',
-            backgroundColor: 'var(--surface-input)',
-            borderRadius: 'var(--radius-card)',
-            fontSize: 'var(--text-size-xs)',
-          }}
-        >
-          <p style={{ marginBottom: 'var(--space-unit-xs)' }}>
-            <strong>Description:</strong> {scenarioPreset.description}
-          </p>
-          <p style={{ marginBottom: 'var(--space-unit-xs)' }}>
-            <strong>Expected Policy:</strong> <code>{scenarioPreset.expectedPolicy}</code>
-          </p>
-          <p style={{ marginBottom: 'var(--space-unit-xs)' }}>
-            <strong>Decoy Template:</strong>{' '}
-            {scenarioPreset.decoyTemplate ?? 'None (Quarantine response)'}
-          </p>
-          <p>
-            <strong>Allowed Actions:</strong> {scenarioPreset.allowedActions.join(', ')}
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="custom-ip-input"
-            style={{
-              display: 'block',
-              fontWeight: 600,
-              marginBottom: 'var(--space-unit-xs)',
-              fontSize: 'var(--text-size-sm)',
-            }}
-          >
-            Synthetic Source IP Address
-          </label>
+        <label htmlFor="custom-ip-input">
+          Synthetic source IP
           <input
             id="custom-ip-input"
             type="text"
-            className="input-field"
+            className="input-field mono"
             value={customIp}
-            onChange={(e) => setCustomIp(e.target.value)}
+            onChange={(event) => setCustomIp(event.target.value)}
             pattern="^(\d{1,3}\.){3}\d{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
             required
           />
-        </div>
-
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isSubmitting}
-          style={{ alignSelf: 'flex-start' }}
-        >
-          {isSubmitting ? 'Injecting Telemetry...' : 'Inject Attack Scenario'}
-        </button>
-
+        </label>
+        <Button type="submit" aria-label="Inject Attack Scenario" isLoading={isSubmitting}>
+          <Send size={15} /> {isSubmitting ? 'Injecting telemetry' : 'Inject attack scenario'}
+        </Button>
         {feedback && (
-          <div
-            role="status"
-            className={`badge ${feedback.type === 'success' ? 'badge-success' : 'badge-danger'}`}
-            style={{ padding: 'var(--space-unit-sm)' }}
-          >
-            {feedback.message}
+          <div role="status" className={`feedback feedback-${feedback.type}`}>
+            <Badge variant={feedback.type === 'success' ? 'success' : 'danger'}>
+              {feedback.type}
+            </Badge>
+            <span>{feedback.message}</span>
           </div>
         )}
       </form>

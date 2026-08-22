@@ -1,6 +1,16 @@
 import React from 'react';
 
-export type BadgeVariant = 'simulated' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type BadgeVariant =
+  | 'simulated'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'neutral'
+  | 'observed'
+  | 'inferred'
+  | 'derived'
+  | 'recorded';
 
 export interface BadgeProps {
   readonly variant?: BadgeVariant;
