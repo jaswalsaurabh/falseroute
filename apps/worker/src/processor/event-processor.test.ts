@@ -4,7 +4,10 @@ import { createLogger } from '@false-route/observability';
 import { Writable } from 'node:stream';
 import { EventProcessor } from './event-processor.js';
 import { FakeGeminiAdapter } from '../adapters/fake-gemini-adapter.js';
-import { type WorkerRepository } from '../persistence/worker-repository.js';
+import {
+  type WorkerRepository,
+  type ClaimReleaseOutcome,
+} from '../persistence/worker-repository.js';
 
 const mockDecoyEvent: IntrusionEvent = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -41,27 +44,51 @@ const mockNonDecoyEvent: IntrusionEvent = {
 
 function createMockRepository(): {
   repository: WorkerRepository;
-  persistedDecisions: DeceptionDecision[];
+  persistedDecisions: Array<{ decision: DeceptionDecision; claimToken: string }>;
   claimedEvents: IntrusionEvent[];
-  failedEvents: string[];
+  releasedClaims: Array<{ eventId: string; claimToken: string; outcome: ClaimReleaseOutcome }>;
 } {
-  const persistedDecisions: DeceptionDecision[] = [];
+  const persistedDecisions: Array<{ decision: DeceptionDecision; claimToken: string }> = [];
   const claimedEvents: IntrusionEvent[] = [];
-  const failedEvents: string[] = [];
+  const releasedClaims: Array<{
+    eventId: string;
+    claimToken: string;
+    outcome: ClaimReleaseOutcome;
+  }> = [];
 
   const repository: WorkerRepository = {
     async claimNextPendingEvent() {
-      return claimedEvents.shift() ?? null;
+      const event = claimedEvents.shift();
+      if (!event) return null;
+      return { event, claimToken: `claim-${event.id}` };
     },
-    async persistDecision(decision: DeceptionDecision) {
-      persistedDecisions.push(decision);
+    async persistDecision(decision: DeceptionDecision, claimToken: string) {
+      persistedDecisions.push({ decision, claimToken });
     },
-    async markEventFailed(eventId: string) {
-      failedEvents.push(eventId);
+    async releaseOrFailClaim(eventId: string, claimToken: string) {
+      const outcome: ClaimReleaseOutcome = 'FAILED';
+      releasedClaims.push({ eventId, claimToken, outcome });
+      return outcome;
     },
   };
 
-  return { repository, persistedDecisions, claimedEvents, failedEvents };
+  return { repository, persistedDecisions, claimedEvents, releasedClaims };
+}
+
+function createCapturingLogger() {
+  const rawLines: string[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, callback) {
+      rawLines.push(chunk.toString());
+      callback();
+    },
+  });
+  const logger = createLogger({
+    serviceName: 'capturing-test-worker',
+    level: 'trace',
+    destination: stream,
+  });
+  return { logger, rawLines };
 }
 
 const noopLogger = createLogger({
@@ -74,7 +101,7 @@ const noopLogger = createLogger({
 });
 
 describe('EventProcessor', () => {
-  it('processes decoy event and persists ASSIGN_FALSE_ROUTE decision', async () => {
+  it('processes decoy event and persists ASSIGN_FALSE_ROUTE decision with claimToken', async () => {
     const { repository, persistedDecisions, claimedEvents } = createMockRepository();
     claimedEvents.push(mockDecoyEvent);
 
@@ -94,7 +121,8 @@ describe('EventProcessor', () => {
       expect(result.decision.assignedFalseRoute).toBe('mock-admin-decoy');
     }
     expect(persistedDecisions.length).toBe(1);
-    expect(persistedDecisions[0]?.eventId).toBe(mockDecoyEvent.id);
+    expect(persistedDecisions[0]?.decision.eventId).toBe(mockDecoyEvent.id);
+    expect(persistedDecisions[0]?.claimToken).toBe(`claim-${mockDecoyEvent.id}`);
   });
 
   it('processes non-decoy event without assigning false route', async () => {
@@ -113,7 +141,7 @@ describe('EventProcessor', () => {
     expect(result.processed).toBe(true);
     expect(result.decision?.action).toBe('OBSERVE');
     expect(persistedDecisions.length).toBe(1);
-    expect(persistedDecisions[0]?.action).not.toBe('ASSIGN_FALSE_ROUTE');
+    expect(persistedDecisions[0]?.decision.action).not.toBe('ASSIGN_FALSE_ROUTE');
   });
 
   it('completes deterministic decision when Gemini times out', async () => {
@@ -206,7 +234,7 @@ describe('EventProcessor', () => {
 
     expect(result.processed).toBe(true);
     expect(result.decision?.action).toBe('OBSERVE');
-    expect(persistedDecisions[0]?.action).not.toBe('ASSIGN_FALSE_ROUTE');
+    expect(persistedDecisions[0]?.decision.action).not.toBe('ASSIGN_FALSE_ROUTE');
   });
 
   it('completes deterministic decision safely when adapter returns mismatched correlation ID', async () => {
@@ -251,8 +279,8 @@ describe('EventProcessor', () => {
     expect(result.processed).toBe(false);
   });
 
-  it('marks event FAILED if persistence throws', async () => {
-    const { repository, claimedEvents, failedEvents } = createMockRepository();
+  it('releases or fails claim when persistence throws', async () => {
+    const { repository, claimedEvents, releasedClaims } = createMockRepository();
     claimedEvents.push(mockDecoyEvent);
 
     vi.spyOn(repository, 'persistDecision').mockRejectedValueOnce(
@@ -267,6 +295,56 @@ describe('EventProcessor', () => {
     });
 
     await expect(processor.processNextPending()).rejects.toThrow('Simulated database crash');
-    expect(failedEvents).toContain(mockDecoyEvent.id);
+    expect(releasedClaims.length).toBe(1);
+    expect(releasedClaims[0]?.eventId).toBe(mockDecoyEvent.id);
+    expect(releasedClaims[0]?.claimToken).toBe(`claim-${mockDecoyEvent.id}`);
+  });
+
+  it('does not leak API keys, bearer tokens, prompts, or raw error messages into logs during adapter failure', async () => {
+    const { logger, rawLines } = createCapturingLogger();
+    const { repository, claimedEvents } = createMockRepository();
+    claimedEvents.push(mockDecoyEvent);
+
+    const secretApiKey = 'dummy-not-a-real-provider-key';
+    const secretBearerToken = 'not-a-real-bearer-token';
+    const sensitivePrompt = 'CRITICAL_PROMPT_INSTRUCTION: classify this mock credential payload';
+    const sensitiveUrl = 'https://dummy-user:not-a-real-pass@gemini.example.com/v1';
+    const longResponse = 'VERY_LONG_RAW_RESPONSE_TEXT_'.repeat(50);
+
+    const leakyError = new Error(
+      `Adapter failure with apiKey=${secretApiKey}\n` +
+        `Authorization: Bearer ${secretBearerToken}\n` +
+        `prompt: "${sensitivePrompt}"\n` +
+        `endpoint: ${sensitiveUrl}\n` +
+        `response: ${longResponse}`,
+    );
+
+    const failingAdapter = {
+      async enrichEvent(): Promise<never> {
+        throw leakyError;
+      },
+    };
+
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: failingAdapter,
+      logger,
+    });
+
+    const result = await processor.processNextPending();
+    expect(result.processed).toBe(true);
+    expect(result.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
+    expect(result.decision?.modelEnrichment?.provenance).toBe('UNAVAILABLE');
+
+    const combinedLogs = rawLines.join('\n');
+    expect(combinedLogs).not.toContain(secretApiKey);
+    expect(combinedLogs).not.toContain(secretBearerToken);
+    expect(combinedLogs).not.toContain(sensitivePrompt);
+    expect(combinedLogs).not.toContain(sensitiveUrl);
+    expect(combinedLogs).not.toContain(longResponse);
+    expect(combinedLogs).not.toContain('CRITICAL_PROMPT_INSTRUCTION');
+
+    expect(combinedLogs).toContain('corr-proc-001');
+    expect(combinedLogs).toContain(mockDecoyEvent.id);
   });
 });

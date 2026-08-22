@@ -56,16 +56,20 @@ model IntrusionEvent {
   containmentMode     ContainmentMode          @map("containment_mode")
   usedDecoyCredential Boolean                  @map("used_decoy_credential")
   decoyIdentifier     String?                  @map("decoy_identifier") @db.VarChar(64)
-  status              ProcessingStatus         @map("status")
-  provenance          ProvenanceClassification @map("provenance")
-  createdAt           DateTime                 @default(now()) @map("created_at")
-  updatedAt           DateTime                 @updatedAt @map("updated_at")
+  status                   ProcessingStatus         @map("status")
+  provenance               ProvenanceClassification @map("provenance")
+  processingClaimToken     String?                  @map("processing_claim_token") @db.Uuid
+  processingLeaseExpiresAt DateTime?                @map("processing_lease_expires_at")
+  processingAttemptCount   Int                      @default(0) @map("processing_attempt_count")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
 
   decision DeceptionDecision?
 
   @@index([occurredAt])
   @@index([status])
   @@index([correlationId])
+  @@index([status, processingLeaseExpiresAt])
   @@map("intrusion_events")
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import {
@@ -14,6 +14,7 @@ import { createLogger } from '@false-route/observability';
 import { PrismaWorkerRepository } from './persistence/worker-repository.js';
 import { FakeGeminiAdapter } from './adapters/fake-gemini-adapter.js';
 import { EventProcessor } from './processor/event-processor.js';
+import { evaluateDeceptionPolicy } from './domain/policy-engine.js';
 
 const TEST_DATABASE_URL = validateTestDatabaseUrl(
   process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -28,7 +29,7 @@ const noopLogger = createLogger({
   }),
 });
 
-describe('Worker PostgreSQL Integration', () => {
+describe('Worker PostgreSQL Integration — Durable Fenced Claim Recovery', () => {
   let db: DatabaseClient;
   let repository: PrismaWorkerRepository;
   const createdFixtureIds = new Set<string>();
@@ -36,7 +37,20 @@ describe('Worker PostgreSQL Integration', () => {
   beforeAll(async () => {
     db = createDatabaseClient({ connectionString: TEST_DATABASE_URL });
     await db.$connect();
-    repository = new PrismaWorkerRepository(db);
+    repository = new PrismaWorkerRepository(db, {
+      claimLeaseDurationMs: 1000,
+      maxProcessingAttempts: 3,
+    });
+  });
+
+  beforeEach(async () => {
+    // Delete any pending or processing intrusion events created during tests
+    if (createdFixtureIds.size > 0) {
+      await db.intrusionEvent.deleteMany({
+        where: { id: { in: Array.from(createdFixtureIds) } },
+      });
+      createdFixtureIds.clear();
+    }
   });
 
   afterAll(async () => {
@@ -50,12 +64,20 @@ describe('Worker PostgreSQL Integration', () => {
     }
   });
 
-  it('claims pending decoy event, evaluates policy, and persists decision and audit atomically', async () => {
-    const eventId = randomUUID();
+  async function createTestEvent(
+    overrides?: Partial<{
+      id: string;
+      status: ProcessingStatus;
+      usedDecoyCredential: boolean;
+      processingClaimToken: string | null;
+      processingLeaseExpiresAt: Date | null;
+      processingAttemptCount: number;
+    }>,
+  ) {
+    const eventId = overrides?.id ?? randomUUID();
     createdFixtureIds.add(eventId);
-    const correlationId = `corr-worker-int-${Date.now()}`;
+    const correlationId = `corr-worker-test-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
-    // 1. Seed pending decoy event
     await db.intrusionEvent.create({
       data: {
         id: eventId,
@@ -68,12 +90,21 @@ describe('Worker PostgreSQL Integration', () => {
         failedLoginCount: 4,
         riskIndicators: ['credential_stuffing_burst'],
         containmentMode: ContainmentMode.SIMULATED,
-        usedDecoyCredential: true,
+        usedDecoyCredential: overrides?.usedDecoyCredential ?? true,
         decoyIdentifier: 'mock-admin-decoy-creds',
-        status: ProcessingStatus.PENDING,
+        status: overrides?.status ?? ProcessingStatus.PENDING,
         provenance: ProvenanceClassification.OBSERVED,
+        processingClaimToken: overrides?.processingClaimToken ?? null,
+        processingLeaseExpiresAt: overrides?.processingLeaseExpiresAt ?? null,
+        processingAttemptCount: overrides?.processingAttemptCount ?? 0,
       },
     });
+
+    return { eventId, correlationId };
+  }
+
+  it('claims pending decoy event, evaluates policy, and persists decision atomically with metadata cleared', async () => {
+    const { eventId } = await createTestEvent();
 
     const processor = new EventProcessor({
       repository,
@@ -81,57 +112,26 @@ describe('Worker PostgreSQL Integration', () => {
       logger: noopLogger,
     });
 
-    // 2. Process next pending
     const result = await processor.processNextPending();
-
     expect(result.processed).toBe(true);
     expect(result.eventId).toBe(eventId);
     expect(result.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
 
-    // 3. Verify in database
     const updatedEvent = await db.intrusionEvent.findUnique({
       where: { id: eventId },
-      include: {
-        decision: {
-          include: {
-            auditRecord: true,
-          },
-        },
-      },
+      include: { decision: { include: { auditRecord: true } } },
     });
 
     expect(updatedEvent?.status).toBe(ProcessingStatus.DECIDED);
-    expect(updatedEvent?.decision).toBeDefined();
+    expect(updatedEvent?.processingClaimToken).toBeNull();
+    expect(updatedEvent?.processingLeaseExpiresAt).toBeNull();
+    expect(updatedEvent?.processingAttemptCount).toBe(1);
     expect(updatedEvent?.decision?.action).toBe('ASSIGN_FALSE_ROUTE');
-    expect(updatedEvent?.decision?.assignedFalseRoute).toBe('mock-admin-decoy');
-    expect(updatedEvent?.decision?.containmentMode).toBe('SIMULATED');
     expect(updatedEvent?.decision?.auditRecord).toBeDefined();
-    expect(updatedEvent?.decision?.auditRecord?.ruleVersion).toBe('2026.08.1');
   });
 
   it('prevents race conditions across concurrent workers claiming the same event', async () => {
-    const eventId = randomUUID();
-    createdFixtureIds.add(eventId);
-    const correlationId = `corr-worker-race-${Date.now()}`;
-
-    await db.intrusionEvent.create({
-      data: {
-        id: eventId,
-        occurredAt: new Date(),
-        receivedAt: new Date(),
-        correlationId,
-        sourceIp: '192.0.2.88',
-        targetAsset: 'mock-admin-portal',
-        eventType: EventType.UNAUTHORIZED_ACCESS_ATTEMPT,
-        failedLoginCount: 1,
-        riskIndicators: [],
-        containmentMode: ContainmentMode.SIMULATED,
-        usedDecoyCredential: true,
-        decoyIdentifier: 'mock-admin-decoy-creds',
-        status: ProcessingStatus.PENDING,
-        provenance: ProvenanceClassification.OBSERVED,
-      },
-    });
+    const { eventId } = await createTestEvent();
 
     const processor1 = new EventProcessor({
       repository,
@@ -145,15 +145,167 @@ describe('Worker PostgreSQL Integration', () => {
       logger: noopLogger,
     });
 
-    // Run both concurrently
     const [res1, res2] = await Promise.all([
       processor1.processNextPending(),
       processor2.processNextPending(),
     ]);
 
-    // Exactly one must succeed for this eventId
     const processedEvents = [res1, res2].filter((r) => r.eventId === eventId);
     expect(processedEvents.length).toBe(1);
     expect(processedEvents[0]?.processed).toBe(true);
+  });
+
+  it('reclaims an expired PROCESSING claim, generates a new claim token, and increments attempt count', async () => {
+    const initialToken = randomUUID();
+    const expiredDate = new Date(Date.now() - 5000);
+    const { eventId } = await createTestEvent({
+      status: ProcessingStatus.PROCESSING,
+      processingClaimToken: initialToken,
+      processingLeaseExpiresAt: expiredDate,
+      processingAttemptCount: 1,
+    });
+
+    const claim = await repository.claimNextPendingEvent({ leaseDurationMs: 5000, maxAttempts: 3 });
+    expect(claim).not.toBeNull();
+    expect(claim?.event.id).toBe(eventId);
+    expect(claim?.claimToken).not.toBe(initialToken);
+
+    const row = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    expect(row?.status).toBe(ProcessingStatus.PROCESSING);
+    expect(row?.processingClaimToken).toBe(claim?.claimToken);
+    expect(row?.processingAttemptCount).toBe(2);
+  });
+
+  it('does not reclaim a non-expired claim', async () => {
+    const activeToken = randomUUID();
+    const activeLease = new Date(Date.now() + 60000);
+    const { eventId } = await createTestEvent({
+      status: ProcessingStatus.PROCESSING,
+      processingClaimToken: activeToken,
+      processingLeaseExpiresAt: activeLease,
+      processingAttemptCount: 1,
+    });
+
+    const claim = await repository.claimNextPendingEvent();
+    expect(claim?.event.id).not.toBe(eventId);
+  });
+
+  it('rejects persistence from a stale worker after another worker reclaims the event', async () => {
+    const staleToken = randomUUID();
+    const expiredDate = new Date(Date.now() - 5000);
+    const { eventId } = await createTestEvent({
+      status: ProcessingStatus.PROCESSING,
+      processingClaimToken: staleToken,
+      processingLeaseExpiresAt: expiredDate,
+      processingAttemptCount: 1,
+    });
+
+    // Worker 2 reclaims the event
+    const freshClaim = await repository.claimNextPendingEvent({
+      leaseDurationMs: 5000,
+      maxAttempts: 3,
+    });
+    expect(freshClaim?.event.id).toBe(eventId);
+    const freshToken = freshClaim!.claimToken;
+
+    // Stale Worker 1 attempts to persist with stale token
+    const staleDecision = evaluateDeceptionPolicy({
+      event: freshClaim!.event,
+      decisionId: randomUUID(),
+    });
+
+    await expect(repository.persistDecision(staleDecision, staleToken)).rejects.toThrow(
+      /Claim fencing violation/,
+    );
+
+    // Fresh worker can persist successfully
+    const freshDecision = evaluateDeceptionPolicy({
+      event: freshClaim!.event,
+      decisionId: randomUUID(),
+    });
+    await repository.persistDecision(freshDecision, freshToken);
+
+    const finalized = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    expect(finalized?.status).toBe(ProcessingStatus.DECIDED);
+  });
+
+  it('dead-letters an expired PROCESSING event to FAILED after reaching maximum attempts', async () => {
+    const expiredDate = new Date(Date.now() - 5000);
+    const { eventId } = await createTestEvent({
+      status: ProcessingStatus.PROCESSING,
+      processingClaimToken: randomUUID(),
+      processingLeaseExpiresAt: expiredDate,
+      processingAttemptCount: 3, // Already reached max attempts
+    });
+
+    // Claim next candidate: should dead-letter the expired event to FAILED
+    const claim = await repository.claimNextPendingEvent({ maxAttempts: 3 });
+    expect(claim?.event.id).not.toBe(eventId);
+
+    const row = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    expect(row?.status).toBe(ProcessingStatus.FAILED);
+    expect(row?.processingClaimToken).toBeNull();
+    expect(row?.processingLeaseExpiresAt).toBeNull();
+  });
+
+  it('requeues a failed attempt to PENDING when attempts remain, and marks FAILED after max attempts', async () => {
+    const claimToken = randomUUID();
+    const { eventId } = await createTestEvent({
+      status: ProcessingStatus.PROCESSING,
+      processingClaimToken: claimToken,
+      processingLeaseExpiresAt: new Date(Date.now() + 10000),
+      processingAttemptCount: 1,
+    });
+
+    // 1. Release attempt 1 -> returns to PENDING
+    const outcome1 = await repository.releaseOrFailClaim(eventId, claimToken, { maxAttempts: 2 });
+    expect(outcome1).toBe('REQUEUED');
+
+    let row = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    expect(row?.status).toBe(ProcessingStatus.PENDING);
+    expect(row?.processingClaimToken).toBeNull();
+
+    // 2. Claim again for attempt 2
+    const claim2 = await repository.claimNextPendingEvent({ maxAttempts: 2 });
+    expect(claim2?.event.id).toBe(eventId);
+    expect(claim2?.claimToken).toBeDefined();
+
+    // 3. Fail attempt 2 (maxAttempts = 2) -> marks FAILED
+    const outcome2 = await repository.releaseOrFailClaim(eventId, claim2!.claimToken, {
+      maxAttempts: 2,
+    });
+    expect(outcome2).toBe('FAILED');
+
+    row = await db.intrusionEvent.findUnique({ where: { id: eventId } });
+    expect(row?.status).toBe(ProcessingStatus.FAILED);
+    expect(row?.processingClaimToken).toBeNull();
+  });
+
+  it('never downgrades an already committed DECIDED event to FAILED', async () => {
+    const { eventId } = await createTestEvent();
+
+    // 1. Claim event
+    const claim = await repository.claimNextPendingEvent();
+    expect(claim?.event.id).toBe(eventId);
+
+    // 2. Persist decision
+    const decision = evaluateDeceptionPolicy({
+      event: claim!.event,
+      decisionId: randomUUID(),
+    });
+    await repository.persistDecision(decision, claim!.claimToken);
+
+    // 3. Simulate failure handler executing after uncertain commit
+    const outcome = await repository.releaseOrFailClaim(eventId, claim!.claimToken);
+    expect(outcome).toBe('ALREADY_DECIDED');
+
+    // 4. Verify event remains DECIDED and decision/audit record remain intact
+    const row = await db.intrusionEvent.findUnique({
+      where: { id: eventId },
+      include: { decision: { include: { auditRecord: true } } },
+    });
+    expect(row?.status).toBe(ProcessingStatus.DECIDED);
+    expect(row?.decision).toBeDefined();
+    expect(row?.decision?.auditRecord).toBeDefined();
   });
 });

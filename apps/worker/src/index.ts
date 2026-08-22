@@ -60,7 +60,10 @@ async function main() {
   await telemetry.init();
 
   const db = createDatabaseClient({ connectionString: config.DATABASE_URL });
-  const repository = new PrismaWorkerRepository(db);
+  const repository = new PrismaWorkerRepository(db, {
+    claimLeaseDurationMs: config.WORKER_CLAIM_LEASE_MS,
+    maxProcessingAttempts: config.WORKER_MAX_PROCESSING_ATTEMPTS,
+  });
 
   let geminiAdapter: GeminiEnrichmentAdapter;
   if (config.GEMINI_API_KEY) {
@@ -117,7 +120,8 @@ async function main() {
 // Run main only when executed directly
 if (process.argv[1]?.endsWith('dist/index.js') || process.argv[1]?.endsWith('src/index.ts')) {
   main().catch((err) => {
-    console.error('Fatal worker startup error:', err);
+    const errorType = err instanceof Error ? err.constructor.name : 'UnknownError';
+    console.error(`Fatal worker startup error: [${errorType}]`);
     process.exit(1);
   });
 }
