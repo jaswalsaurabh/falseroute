@@ -132,6 +132,24 @@ export const GetIntrusionEventResponseSchema = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    if (data.event.status === 'DECIDED') {
+      if (!data.decision) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'decision is required when event status is DECIDED',
+          path: ['decision'],
+        });
+      }
+    } else {
+      if (data.decision !== undefined && data.decision !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `decision must be null or undefined when event status is ${data.event.status}`,
+          path: ['decision'],
+        });
+      }
+    }
+
     validateDecisionAndEffectIntegrity(data, ctx);
     if (data.decision && data.decision.eventId !== data.event.id) {
       ctx.addIssue({

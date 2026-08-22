@@ -214,6 +214,50 @@ describe('API Contract Schemas', () => {
         },
       }),
     ).toThrow('must match decision correlationId');
+
+    // 6. Event status is DECIDED but decision is missing/null
+    expect(() =>
+      GetIntrusionEventResponseSchema.parse({
+        event: baseEvent,
+        decision: null,
+      }),
+    ).toThrow('decision is required when event status is DECIDED');
+
+    // 7. Event status is PENDING but decision is present
+    expect(() =>
+      GetIntrusionEventResponseSchema.parse({
+        event: {
+          ...baseEvent,
+          status: 'PENDING' as const,
+        },
+        decision: validDecision,
+        simulatedEffect: validEffect,
+      }),
+    ).toThrow('decision must be null or undefined when event status is PENDING');
+
+    // 8. Event status is PROCESSING but decision is present
+    expect(() =>
+      GetIntrusionEventResponseSchema.parse({
+        event: {
+          ...baseEvent,
+          status: 'PROCESSING' as const,
+        },
+        decision: validDecision,
+        simulatedEffect: validEffect,
+      }),
+    ).toThrow('decision must be null or undefined when event status is PROCESSING');
+
+    // 9. Event status is FAILED but decision is present
+    expect(() =>
+      GetIntrusionEventResponseSchema.parse({
+        event: {
+          ...baseEvent,
+          status: 'FAILED' as const,
+        },
+        decision: validDecision,
+        simulatedEffect: validEffect,
+      }),
+    ).toThrow('decision must be null or undefined when event status is FAILED');
   });
 
   it('validates GetDeceptionDecisionResponse with valid decision and effect', () => {

@@ -58,7 +58,22 @@ ALTER TABLE "simulated_deception_effects" ADD CONSTRAINT "chk_simulated_effects_
     "effect_kind" = 'ASSIGN_FALSE_ROUTE'
 );
 
--- Function & Deferred Constraint Trigger enforcing simulated effect existence for ASSIGN_FALSE_ROUTE decisions
+-- Handle pre-existing ASSIGN_FALSE_ROUTE decisions without inventing historical RECORDED evidence
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM "deception_decisions" d
+        WHERE d."action" = 'ASSIGN_FALSE_ROUTE'
+        AND NOT EXISTS (
+            SELECT 1 FROM "simulated_deception_effects" s
+            WHERE s."decision_id" = d."id"
+        )
+    ) THEN
+        RAISE NOTICE 'Pre-existing ASSIGN_FALSE_ROUTE decisions detected without simulated effect records; preserving unrecorded provenance boundary.';
+    END IF;
+END $$;
+
+-- Parent-Side Function & Deferred Constraint Trigger enforcing simulated effect existence for ASSIGN_FALSE_ROUTE decisions
 CREATE OR REPLACE FUNCTION check_decision_simulated_effect_exists()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -80,3 +95,29 @@ AFTER INSERT OR UPDATE ON "deception_decisions"
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION check_decision_simulated_effect_exists();
+
+-- Child-Side Function & Deferred Constraint Trigger enforcing that deleting or updating a simulated effect does not orphan an active ASSIGN_FALSE_ROUTE decision
+CREATE OR REPLACE FUNCTION check_simulated_effect_deletion_integrity()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM "deception_decisions"
+        WHERE "id" = OLD.decision_id AND "action" = 'ASSIGN_FALSE_ROUTE'
+    ) THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM "simulated_deception_effects"
+            WHERE "decision_id" = OLD.decision_id
+        ) THEN
+            RAISE EXCEPTION 'Cannot remove or reassign simulated_deception_effects record for active ASSIGN_FALSE_ROUTE decision %', OLD.decision_id
+            USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER "trg_check_simulated_effect_deletion"
+AFTER DELETE OR UPDATE OF "decision_id" ON "simulated_deception_effects"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+EXECUTE FUNCTION check_simulated_effect_deletion_integrity();

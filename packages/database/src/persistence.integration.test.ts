@@ -364,4 +364,76 @@ describe('PostgreSQL Database Persistence Integration', () => {
     // Clean up
     await db.intrusionEvent.delete({ where: { id: eventId } });
   });
+
+  it('enforces child-side deferred trigger preventing deletion of simulated effect while ASSIGN_FALSE_ROUTE decision exists', async () => {
+    const eventId = randomUUID();
+    const decisionId = randomUUID();
+    const effectId = randomUUID();
+    const correlationId = `corr-test-del-trig-${Date.now()}`;
+
+    // Create event, decision, and effect in atomic transaction
+    await db.$transaction(async (tx) => {
+      await tx.intrusionEvent.create({
+        data: {
+          id: eventId,
+          occurredAt: new Date(),
+          receivedAt: new Date(),
+          correlationId,
+          sourceIp: '198.51.100.17',
+          targetAsset: 'mock-admin-portal',
+          eventType: EventType.UNAUTHORIZED_ACCESS_ATTEMPT,
+          failedLoginCount: 1,
+          riskIndicators: [],
+          containmentMode: ContainmentMode.SIMULATED,
+          usedDecoyCredential: true,
+          decoyIdentifier: 'mock-admin-decoy-creds',
+          status: ProcessingStatus.DECIDED,
+          provenance: ProvenanceClassification.OBSERVED,
+        },
+      });
+
+      await tx.deceptionDecision.create({
+        data: {
+          id: decisionId,
+          eventId,
+          correlationId,
+          action: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          assignedFalseRoute: 'mock-admin-decoy',
+          matchedPolicy: 'DECOY_CREDENTIAL_TRIGGER',
+          reason: 'Testing child-side deletion trigger.',
+          containmentMode: ContainmentMode.SIMULATED,
+          decisionProvenance: ProvenanceClassification.DERIVED,
+          decidedAt: new Date(),
+        },
+      });
+
+      await tx.simulatedDeceptionEffect.create({
+        data: {
+          id: effectId,
+          decisionId,
+          correlationId,
+          effectKind: DeceptionAction.ASSIGN_FALSE_ROUTE,
+          status: 'RECORDED',
+          containmentMode: ContainmentMode.SIMULATED,
+          assignedFalseRoute: 'mock-admin-decoy',
+          provenance: ProvenanceClassification.DERIVED,
+          recordedAt: new Date(),
+          adapterVersion: 'simulated-deception-agent-v1',
+        },
+      });
+    });
+
+    // Attempting to delete simulated_deception_effects directly while the decision exists must fail
+    await expect(
+      db.simulatedDeceptionEffect.delete({ where: { id: effectId } }),
+    ).rejects.toThrowError(/Cannot remove or reassign simulated_deception_effects record/);
+
+    // Deleting the parent event/decision cascades cleanly
+    await db.intrusionEvent.delete({ where: { id: eventId } });
+
+    const remainingEffect = await db.simulatedDeceptionEffect.findUnique({
+      where: { id: effectId },
+    });
+    expect(remainingEffect).toBeNull();
+  });
 });

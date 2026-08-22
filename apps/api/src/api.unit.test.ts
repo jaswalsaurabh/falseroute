@@ -38,7 +38,7 @@ const mockLogger = createLogger({
   }),
 });
 
-const mockDecoyEvent: IntrusionEvent = {
+const mockPendingEvent: IntrusionEvent = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
   occurredAt: '2026-08-22T00:00:00.000Z',
   receivedAt: '2026-08-22T00:00:01.000Z',
@@ -53,6 +53,11 @@ const mockDecoyEvent: IntrusionEvent = {
   decoyIdentifier: 'mock-admin-decoy-creds',
   status: 'PENDING',
   provenance: 'OBSERVED',
+};
+
+const mockDecoyEvent: IntrusionEvent = {
+  ...mockPendingEvent,
+  status: 'DECIDED',
 };
 
 const mockDecision: DeceptionDecision = {
@@ -85,10 +90,10 @@ const mockSimulatedEffect: SimulatedDeceptionEffect = {
 function createMockRepository(): ApiRepository {
   return {
     async createEvent() {
-      return mockDecoyEvent;
+      return mockPendingEvent;
     },
     async listEvents() {
-      return { events: [mockDecoyEvent], total: 1 };
+      return { events: [mockPendingEvent], total: 1 };
     },
     async getEventById(id: string) {
       return id === mockDecoyEvent.id
