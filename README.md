@@ -2,20 +2,60 @@
 
 # FalseRoute
 
-### A bounded control plane for simulated cyber deception.
-
-FalseRoute turns synthetic intrusion signals into explainable, auditable response decisions—while keeping every deception effect inside a deliberate simulation boundary.
+### Safe, explainable cyber deception for testing intrusion response—without touching real systems.
 
 [Architecture](#architecture) · [Local setup](#local-development) · [Scenarios](#scenario-catalog) · [Security](#security-boundaries) · [Quality gates](#quality-gates)
 
 ![CI](https://github.com/jaswalsaurabh/falseroute/actions/workflows/ci.yml/badge.svg)
 ![Node.js](https://img.shields.io/badge/Node.js-24.19.0-5FA04E?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Google Cloud Pub/Sub](https://img.shields.io/badge/Google%20Cloud-Pub%2FSub-4285F4?logo=googlecloud&logoColor=white)
 ![Cloud Run](https://img.shields.io/badge/runtime-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
 ---
+
+## Problem and approach
+
+Imagine a security team receives a suspicious signal but does not yet know whether it is harmless, malicious, or part of a larger attack. FalseRoute lets the team safely test that situation with fictional data and a fixed set of scenarios.
+
+Instead of changing a real network or customer system, FalseRoute records what happened, checks the evidence, evaluates possible responses, and shows the result in an operator dashboard. It can also record a simulated deception response, such as presenting a decoy route, so people can study the workflow without putting production systems at risk.
+
+### The problem
+
+Security tools can produce alerts, but an alert alone does not explain what should happen next. Teams need to know:
+
+- What signal was received?
+- Which facts were directly observed, and which were inferred?
+- Why was a response recommended or rejected?
+- What would happen if a dependency failed or the same event arrived twice?
+
+FalseRoute makes those questions visible in one traceable workflow.
+
+### How FalseRoute helps
+
+1. A person chooses a safe, pre-built intrusion scenario.
+2. FalseRoute validates and records the scenario as an event.
+3. Its worker evaluates the evidence using deterministic policy—rules owned by the application—not AI alone.
+4. Gemini may provide additional analysis, but it can only recommend actions from a closed tool catalog.
+5. The dashboard shows the decision, evidence, activity, and simulated effect, including failures or degraded states.
+
+Nothing in this workflow claims to contain a real attacker or redirect real customer traffic.
+
+### Terms used in this README
+
+| Term                       | Plain-language meaning                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Control plane**          | The part of a system that coordinates decisions and records what happened.                                                |
+| **Synthetic scenario**     | Fictional test data created to imitate a security event safely.                                                           |
+| **Decoy**                  | A simulated resource designed to attract or observe activity in the demonstration.                                        |
+| **False route**            | A recorded simulated assignment that represents where activity could be sent; it is not a real network redirect.          |
+| **Deterministic policy**   | Explicit application rules that produce a predictable decision from the available evidence.                               |
+| **Bounded AI assistance**  | AI used within strict limits: it can advise, but it cannot choose arbitrary tools, resources, identities, or credentials. |
+| **Provenance**             | A record of where a value came from and whether it was observed, calculated, inferred, or unavailable.                    |
+| **At-least-once delivery** | A message may arrive more than once, so the system must safely recognize duplicates.                                      |
 
 ## Why FalseRoute?
 
@@ -164,15 +204,15 @@ tests/integration/        Cross-application integration coverage
 
 ## Technology
 
-- **Runtime:** Node.js 24, TypeScript, pnpm, Turborepo
-- **API:** Express 5
-- **UI:** React 19, Vite, Vitest
-- **Contracts:** Zod schemas with shared typed boundaries
-- **Persistence:** PostgreSQL, Prisma 7
-- **Async transport:** Google Cloud Pub/Sub
-- **AI adapter:** Gemini through a bounded provider boundary
-- **Deployment:** Cloud Run, Artifact Registry, Cloud SQL, Secret Manager, Terraform
-- **Observability:** Pino and OpenTelemetry interfaces
+- **Runtime:** Node.js 24, TypeScript, pnpm, Turborepo — runs the application and manages the monorepo.
+- **API:** Express 5 — receives validated requests and exposes the control-plane endpoints.
+- **UI:** React 19, Vite, Vitest — builds the operator dashboard and tests the Web experience.
+- **Contracts:** Zod schemas with shared typed boundaries — checks that data has the expected shape before it moves between services.
+- **Persistence:** PostgreSQL, Prisma 7 — stores events, decisions, retries, leases, and audit records durably.
+- **Async transport:** Google Cloud Pub/Sub — moves events between the API and worker without requiring both to run at the same time.
+- **AI adapter:** Gemini through a bounded provider boundary — adds optional analysis while application policy remains in control.
+- **Deployment:** Cloud Run, Artifact Registry, Cloud SQL, Secret Manager, Terraform — packages, hosts, and configures the services in Google Cloud.
+- **Observability:** Pino and OpenTelemetry interfaces — make service activity and failures easier to inspect.
 
 ## Security boundaries
 
@@ -217,6 +257,10 @@ The repository also runs these checks in GitHub Actions. The staging deployment 
 - [Engineering principles](docs/architecture/engineering-principles.md)
 - [Quality gates](docs/architecture/quality-gates.md)
 - [Frontend architecture](docs/architecture/frontend.md)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
 
 ## Project status
 
