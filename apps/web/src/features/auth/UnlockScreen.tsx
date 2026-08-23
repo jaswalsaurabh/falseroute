@@ -25,13 +25,17 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
     setErrorMessage(null);
 
     try {
-      // Test the candidate token against the API readiness probe
+      // Validate candidate token and system readiness against API server
       const client = new ApiClient(tokenInput.trim());
-      await client.checkReadiness();
+      await client.validateCredentials();
       onUnlock(tokenInput.trim());
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'UNAUTHORIZED') {
-        setErrorMessage('Invalid operator access token. Please check your credentials.');
+      if (err instanceof ApiError) {
+        if (err.code === 'UNAUTHORIZED') {
+          setErrorMessage('Invalid operator access token. Please check your credentials.');
+        } else {
+          setErrorMessage(err.message);
+        }
       } else {
         setErrorMessage(
           err instanceof Error ? err.message : 'Unable to connect to FalseRoute API server.',
