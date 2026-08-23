@@ -124,7 +124,7 @@ describe('Durable Budget Enforcement Integration Tests', () => {
   });
 
   it('prevents competing concurrent requests from overspending the same budget ceiling', async () => {
-    const windowKey = '2026-08-23-concurrency';
+    const windowKey = 'synthetic-concurrency-window';
     const limit = 10.0;
     const reservationAmount = 2.0;
 
