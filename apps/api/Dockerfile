@@ -39,6 +39,10 @@ ENV PORT=3000
 
 # Copy pruned production application from builder stage
 COPY --from=builder --chown=node:node /app/pruned ./
+# The same immutable API image is also used by the decoupled Cloud Run
+# migration job. Keep the reviewed schema and migrations outside the service
+# startup path; the job invokes Prisma explicitly before a revision rollout.
+COPY --from=builder --chown=node:node /app/packages/database/prisma /app/prisma
 
 USER node
 

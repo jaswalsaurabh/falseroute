@@ -192,9 +192,12 @@ describe('error-classifier', () => {
     });
 
     it('classifies 401 / 403 / 404 as AUTH_OR_CONFIG with allowlisted reason', () => {
-      const err401 = Object.assign(new Error('API key not valid: dummy-key-12345'), {
-        status: 401,
-      });
+      const err401 = Object.assign(
+        new Error('Provider authentication failed (not-a-real test fixture)'),
+        {
+          status: 401,
+        },
+      );
       const classified401 = classifyProviderError(err401);
       expect(classified401.kind).toBe('AUTH_OR_CONFIG');
       expect(classified401.isRetriable).toBe(false);

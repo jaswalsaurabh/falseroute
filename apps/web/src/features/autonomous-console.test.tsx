@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import React from 'react';
 import { ScenarioInjector } from './simulator/ScenarioInjector.js';
 import { WorkflowTimeline } from './orchestration/WorkflowTimeline.js';
 import { ActiveResourcesPanel } from './active-responses/ActiveResourcesPanel.js';

@@ -165,6 +165,8 @@ This document defines the automated quality gates and activation schedule for Fa
 
 - Test and example passwords, access tokens, connection credentials, and similar values contain an approved synthetic marker such as `not-a-real`, `dummy`, or `example` and do not imitate a provider-issued secret.
 - `pnpm check:secrets` and `pnpm check:secrets:staged` continue to scan tests and examples; no broad test-directory exclusion is permitted.
+- Test fixtures must remain recognizable to both the repository scanner and Gitleaks: prefer neutral error wording plus an explicit synthetic marker, and avoid provider-shaped key prefixes, high-entropy values, or credential-bearing URLs even when the value is fake.
+- Use a same-line `gitleaks:allow` directive only for a narrowly reviewed fixture whose purpose is specifically to test credential-shaped input; document why it is synthetic and never use it to bypass a real or uncertain finding.
 - Any new scanner exception includes a permitted positive fixture and a blocked credential-shaped negative fixture. The scanner must report only location and category, never the matched value.
 
 ### 16. Abuse, Rate-Limit, and Overload Verification

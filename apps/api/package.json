@@ -24,6 +24,7 @@
     "express": "catalog:",
     "google-auth-library": "catalog:",
     "helmet": "catalog:",
+    "prisma": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

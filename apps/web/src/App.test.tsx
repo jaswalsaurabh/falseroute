@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import React from 'react';
 import { App } from './App.js';
 import { DecisionCard } from './features/events/DecisionCard.js';
 import { type IntrusionEvent, type DeceptionDecision } from '@false-route/contracts';

@@ -182,6 +182,9 @@ importers:
       helmet:
         specifier: 'catalog:'
         version: 8.3.0
+      prisma:
+        specifier: 'catalog:'
+        version: 7.9.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.2)
       zod:
         specifier: 'catalog:'
         version: 4.4.3

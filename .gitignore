@@ -71,6 +71,7 @@ mock-*.html
 *.tfbackend
 backend.private.hcl
 !*.tfvars.example
+.pnpm-store
 
 # Markdown is internal by default. Public documentation requires an explicit allowlist entry.
 *.md
