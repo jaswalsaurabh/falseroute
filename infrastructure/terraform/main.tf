@@ -76,33 +76,15 @@ module "cloud_sql" {
 }
 
 # -----------------------------------------------------------------------------
-# Operator Secret Generation
-# -----------------------------------------------------------------------------
-
-resource "random_password" "operator_access_token" {
-  length  = 32
-  special = false
-}
-
-resource "random_password" "operator_replay_token" {
-  length  = 32
-  special = false
-}
-
-# -----------------------------------------------------------------------------
-# Module: Secret Manager Containers & Secret Versions
+# Module: Secret Manager Containers
 # -----------------------------------------------------------------------------
 
 module "secrets" {
   source = "./modules/secrets"
 
-  project_id            = var.project_id
-  api_sa_email          = module.iam.api_sa_email
-  worker_sa_email       = module.iam.worker_sa_email
-  database_url          = "postgresql://${module.cloud_sql.database_user}:${module.cloud_sql.database_password}@${module.cloud_sql.private_ip_address}:5432/${module.cloud_sql.database_name}?schema=public"
-  operator_access_token = random_password.operator_access_token.result
-  operator_replay_token = random_password.operator_replay_token.result
-  gemini_api_key        = var.gemini_api_key
+  project_id      = var.project_id
+  api_sa_email    = module.iam.api_sa_email
+  worker_sa_email = module.iam.worker_sa_email
 
   depends_on = [module.project_services, module.cloud_sql]
 }

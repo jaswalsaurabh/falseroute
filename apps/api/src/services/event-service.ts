@@ -67,10 +67,24 @@ export class EventService {
           }
         : { usedDecoyCredential: false as const }),
     };
-    const event = await this.repository.createEvent(persistedInput, {
-      scenarioKind: input.scenarioKind,
-      evidence: input.evidence,
-    });
+    let event: Awaited<ReturnType<ApiRepository['createEvent']>>;
+    try {
+      event = await this.repository.createEvent(persistedInput, {
+        scenarioKind: input.scenarioKind,
+        evidence: input.evidence,
+      });
+    } catch (createError) {
+      // A client retry after an ambiguous publish must reuse the durable event
+      // instead of creating a second event with the same simulator ID.
+      let existing: Awaited<ReturnType<ApiRepository['getEventById']>>;
+      try {
+        existing = await this.repository.getEventById(input.id);
+      } catch {
+        throw createError;
+      }
+      if (!existing) throw createError;
+      event = existing.event;
+    }
     const envelope: IntrusionEventEnvelope = IntrusionEventEnvelopeSchema.parse({
       eventId: event.id,
       correlationId: event.correlationId,

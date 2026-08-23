@@ -210,13 +210,13 @@ export class PubSubPushHandler {
           executedActions: result.executedActions,
         },
       };
-    } catch (err) {
+    } catch (_err) {
       // Transient error: return 500 to request Pub/Sub backoff redelivery
       return {
         statusCode: 500,
         body: {
           error: 'TRANSIENT_FAILURE',
-          message: err instanceof Error ? err.message : String(err),
+          message: 'Event processing failed; delivery will be retried',
         },
       };
     }

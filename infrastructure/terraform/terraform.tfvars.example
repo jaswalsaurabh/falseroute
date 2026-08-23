@@ -21,7 +21,6 @@ web_image_tag              = "sha256:0000000000000000000000000000000000000000000
 billing_account_id         = "000000-000000-000000" # Replace with your billing account ID.
 
 # Autonomous AI Settings
-gemini_api_key             = "" # Set in secrets or export TF_VAR_gemini_api_key
 
 # Database safety settings
 enable_deletion_protection = false

@@ -37,6 +37,7 @@ describe('scheduled cleanup HTTP route', () => {
         PUBSUB_OIDC_AUDIENCE: audience,
         PUBSUB_OIDC_SERVICE_ACCOUNT: 'push@example-project.iam.gserviceaccount.com',
         CLEANUP_OIDC_SERVICE_ACCOUNT: cleanupIdentity,
+        OIDC_VERIFICATION_TIMEOUT_MS: '100',
       },
       db: { $disconnect: vi.fn().mockResolvedValue(undefined) } as unknown as DatabaseClient,
       repository,
@@ -98,6 +99,35 @@ describe('scheduled cleanup HTTP route', () => {
       });
       expect(unavailable.status).toBe(503);
       expect(await unavailable.json()).toMatchObject({ error: 'CLEANUP_UNAVAILABLE' });
+
+      vi.mocked(verifier.verifyToken).mockResolvedValueOnce({
+        valid: true,
+        audience,
+        email: cleanupIdentity,
+      });
+      vi.mocked(cleanupService.sweepExpiredLeases).mockResolvedValueOnce({
+        sweepOwnerToken: 'sweep-skipped',
+        status: 'SKIPPED',
+        cleanedDecoys: 0,
+        cleanedRoutes: 0,
+        cleanedQuarantines: 0,
+        discoveredOrphans: 0,
+        totalCleaned: 0,
+        failures: [],
+      });
+      const skipped = await fetch(`http://127.0.0.1:${port}/cleanup/leases`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer not-a-real-cleanup-token' },
+      });
+      expect(skipped.status).toBe(503);
+
+      vi.mocked(verifier.verifyToken).mockImplementationOnce(() => new Promise(() => {}));
+      const timedOut = await fetch(`http://127.0.0.1:${port}/cleanup/leases`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer not-a-real-cleanup-token' },
+      });
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({ error: 'OIDC_UNAVAILABLE' });
     } finally {
       await instance.stop('test-cleanup');
     }

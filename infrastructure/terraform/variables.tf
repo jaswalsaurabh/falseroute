@@ -91,13 +91,6 @@ variable "billing_account_id" {
   }
 }
 
-variable "gemini_api_key" {
-  type        = string
-  description = "Gemini API key for autonomous AI workflows in staging"
-  default     = ""
-  sensitive   = true
-}
-
 variable "enable_deletion_protection" {
   type        = bool
   description = "Enable deletion protection on Cloud SQL instance (recommended false for staging)"

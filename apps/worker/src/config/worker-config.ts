@@ -23,6 +23,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   PUBSUB_OIDC_AUDIENCE: z.string().url().optional(),
   PUBSUB_OIDC_SERVICE_ACCOUNT: z.string().email().optional(),
   CLEANUP_OIDC_SERVICE_ACCOUNT: z.string().email().optional(),
+  OIDC_VERIFICATION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(3000),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
   // Reserves time for deterministic policy evaluation and the fenced database transaction
   // after the complete Gemini operation deadline has elapsed.

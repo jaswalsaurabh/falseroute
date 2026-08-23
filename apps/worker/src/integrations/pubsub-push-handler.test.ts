@@ -131,6 +131,48 @@ describe('PubSubPushHandler', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('does not expose provider error details on transient processing failures', async () => {
+    const failingOrchestrator = {
+      processEventEnvelope: vi.fn().mockRejectedValue(new Error('postgres password leaked')),
+    } as unknown as AutonomousWorkflowOrchestrator;
+    const handler = new PubSubPushHandler(failingOrchestrator, verifier, mockRepo);
+    const response = await handler.handlePushRequest(`Bearer ${localSecret}`, {
+      message: {
+        data: Buffer.from(
+          JSON.stringify({
+            eventId: '11111111-1111-4111-8111-111111111111',
+            correlationId: 'corr-transient-1',
+            schemaVersion: '1.0.0',
+            source: 'PUB_SUB',
+            scenarioKind: 'ENV_FILE_PROBE',
+            occurredAt: '2026-08-22T10:00:00.000Z',
+            publishedAt: '2026-08-22T10:00:01.000Z',
+            sourceIp: '198.51.100.25',
+            evidence: {
+              scenarioKind: 'ENV_FILE_PROBE',
+              requestedPath: '/.env',
+              httpMethod: 'GET',
+              userAgent: 'not-a-real-scanner/1.0',
+              sourceIp: '198.51.100.25',
+              matchedString: '.env',
+              isPositiveMatch: true,
+            },
+            provenance: 'OBSERVED',
+          }),
+        ).toString('base64'),
+        messageId: 'msg-transient-1',
+        publishTime: '2026-08-22T10:00:01.000Z',
+      },
+      subscription: 'projects/dummy/subscriptions/worker-sub',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({
+      error: 'TRANSIENT_FAILURE',
+      message: 'Event processing failed; delivery will be retried',
+    });
+  });
+
   it('handles duplicate poison delivery idempotently', async () => {
     const handler = new PubSubPushHandler(mockOrchestrator, verifier, mockRepo);
     const rawBody = {

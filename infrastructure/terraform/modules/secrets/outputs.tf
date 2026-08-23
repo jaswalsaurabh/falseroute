@@ -19,6 +19,6 @@ output "worker_database_url_secret_id" {
 }
 
 output "worker_gemini_key_secret_id" {
-  value       = try(google_secret_manager_secret.worker_gemini_key[0].secret_id, null)
+  value       = google_secret_manager_secret.worker_gemini_key.secret_id
   description = "Secret ID for Worker Gemini API key"
 }

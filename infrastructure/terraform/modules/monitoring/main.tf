@@ -126,7 +126,10 @@ resource "google_monitoring_alert_policy" "cloud_sql_memory" {
 
 resource "google_billing_budget" "staging_budget" {
   billing_account = var.billing_account_id
-  display_name    = "FalseRoute Staging Conservative Monthly Guardrail ($10 USD)"
+  # Cloud Billing budgets support monthly/yearly recurring periods, not daily.
+  # Cloud Billing provides a monthly alert budget; the runtime spend budget
+  # remains responsible for enforcing the daily ceiling.
+  display_name = "FalseRoute Staging Monthly Budget ($300; $10/day planning equivalent)"
 
   budget_filter {
     projects        = var.project_number != "" ? ["projects/${var.project_number}"] : ["projects/${var.project_id}"]
@@ -136,7 +139,7 @@ resource "google_billing_budget" "staging_budget" {
   amount {
     specified_amount {
       currency_code = "USD"
-      units         = "10"
+      units         = "300"
     }
   }
 

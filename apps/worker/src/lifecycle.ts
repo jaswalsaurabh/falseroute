@@ -355,10 +355,26 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         }
 
         const verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
-        const authResult = await verifier.verifyToken(req.headers.authorization, {
-          expectedAudience: config.PUBSUB_OIDC_AUDIENCE!,
-          expectedServiceAccount: config.CLEANUP_OIDC_SERVICE_ACCOUNT!,
-        });
+        let authResult;
+        try {
+          authResult = await withTimeout(
+            verifier.verifyToken(req.headers.authorization, {
+              expectedAudience: config.PUBSUB_OIDC_AUDIENCE!,
+              expectedServiceAccount: config.CLEANUP_OIDC_SERVICE_ACCOUNT!,
+            }),
+            config.OIDC_VERIFICATION_TIMEOUT_MS,
+            'OIDC verification timeout exceeded',
+          );
+        } catch {
+          res.writeHead(503);
+          res.end(
+            JSON.stringify({
+              error: 'OIDC_UNAVAILABLE',
+              message: 'Identity verification unavailable; retry required',
+            }),
+          );
+          return;
+        }
         if (
           !authResult.valid ||
           authResult.audience !== config.PUBSUB_OIDC_AUDIENCE ||
@@ -371,7 +387,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
         try {
           const result = await cleanupService.sweepExpiredLeases();
-          res.writeHead(result.status === 'PARTIAL_FAILURE' ? 503 : 200);
+          res.writeHead(result.status === 'COMPLETED' ? 200 : 503);
           res.end(JSON.stringify(result));
         } catch {
           res.writeHead(503);

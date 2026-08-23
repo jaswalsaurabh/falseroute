@@ -86,6 +86,7 @@ function scanFiles(files: string[], mode: ScanMode): SecretFinding[] {
 }
 
 function getHistoricalBlobs(): { blobs: HistoricalBlob[]; bounded: boolean } {
+  const commitCount = Number((runGit(['rev-list', '--all', '--count'], 'utf8') as string).trim());
   const objectLines = (
     runGit(
       ['rev-list', '--objects', '--all', `--max-count=${HISTORY_MAX_COMMITS}`],
@@ -93,7 +94,7 @@ function getHistoricalBlobs(): { blobs: HistoricalBlob[]; bounded: boolean } {
     ) as string
   ).split('\n');
   const pathsByObject = new Map<string, string[]>();
-  let bounded = false;
+  let bounded = commitCount > HISTORY_MAX_COMMITS;
 
   for (const line of objectLines) {
     const separator = line.indexOf(' ');
@@ -150,7 +151,9 @@ function getHistoricalBlobs(): { blobs: HistoricalBlob[]; bounded: boolean } {
 }
 
 function scanHistoricalBlobs(): HistoryScanResult {
-  const { blobs, bounded } = getHistoricalBlobs();
+  const history = getHistoricalBlobs();
+  const { blobs } = history;
+  let bounded = history.bounded;
   if (blobs.length === 0) return { findings: [], blobs: 0, paths: 0, bytes: 0, bounded };
 
   const output = runGit(
@@ -166,15 +169,24 @@ function scanHistoricalBlobs(): HistoryScanResult {
 
   for (const blob of blobs) {
     const headerEnd = output.indexOf(10, offset);
-    if (headerEnd === -1) break;
+    if (headerEnd === -1) {
+      bounded = true;
+      break;
+    }
 
     const [oid, type, sizeText] = output.subarray(offset, headerEnd).toString('utf8').split(' ');
     offset = headerEnd + 1;
-    if (oid !== blob.oid || type !== 'blob' || !sizeText) continue;
+    if (oid !== blob.oid || type !== 'blob' || !sizeText) {
+      bounded = true;
+      break;
+    }
 
     const size = Number(sizeText);
     const contentEnd = offset + size;
-    if (!Number.isSafeInteger(size) || size < 0 || contentEnd > output.length) break;
+    if (!Number.isSafeInteger(size) || size < 0 || contentEnd > output.length) {
+      bounded = true;
+      break;
+    }
 
     const content = output.subarray(offset, contentEnd);
     offset = contentEnd + (output[contentEnd] === 10 ? 1 : 0);
@@ -242,8 +254,14 @@ function main(): void {
   }
 
   if (history) {
+    if (history.bounded) {
+      console.error(
+        `Secret history scan incomplete after ${history.blobs} unique historical blobs, ${history.bytes} bytes scanned; refusing to pass with configured bounds.`,
+      );
+      process.exit(1);
+    }
     console.log(
-      `Secret scan passed (${history.blobs} unique historical blobs, ${history.paths} historical paths, ${history.bytes} bytes scanned${history.bounded ? '; bounds applied' : ''}).`,
+      `Secret scan passed (${history.blobs} unique historical blobs, ${history.paths} historical paths, ${history.bytes} bytes scanned).`,
     );
     return;
   }
