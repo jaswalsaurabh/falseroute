@@ -1,20 +1,231 @@
+<div align="center">
+
 # FalseRoute
 
-> **Status: Draft**
+### A bounded control plane for simulated cyber deception.
 
-FalseRoute is an autonomous cyber-deception and containment system designed to detect suspicious activity, evaluate events against deception policies, redirect intruders toward controlled resources, and maintain clear records for operators.
+FalseRoute turns synthetic intrusion signals into explainable, auditable response decisions—while keeping every deception effect inside a deliberate simulation boundary.
 
-## Documentation and References
+[Architecture](#architecture) · [Local setup](#local-development) · [Scenarios](#scenario-catalog) · [Security](#security-boundaries) · [Quality gates](#quality-gates)
 
-- [Architecture Overview](docs/architecture/overview.md)
-- [Threat Model](docs/architecture/threat-model.md)
-- [Engineering Principles](docs/architecture/engineering-principles.md)
-- [Quality Gates](docs/architecture/quality-gates.md)
-- [Frontend Architecture](docs/architecture/frontend.md)
+![CI](https://github.com/jaswalsaurabh/falseroute/actions/workflows/ci.yml/badge.svg)
+![Node.js](https://img.shields.io/badge/Node.js-24.19.0-5FA04E?logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Cloud Run](https://img.shields.io/badge/runtime-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white)
 
-## TODO
+</div>
 
-- [x] Approve the minimum viable intrusion-to-deception scenario and initial threat model (Phase 0).
-- [x] Initialize engineering tooling, workspace configuration, and baseline dependencies (Phase 2).
-- [ ] Establish shared foundations: contracts, database, configuration, and observability (Phase 3).
-- [ ] Document local setup and development workflow once tooling is established.
+---
+
+## Why FalseRoute?
+
+Security operations often have plenty of alerts and too little context. FalseRoute is a small, observable control plane for exploring what happens when an intrusion signal becomes a bounded response workflow:
+
+1. An operator selects a fixed synthetic scenario.
+2. The API validates and records the event.
+3. A worker evaluates the evidence with deterministic policy and optional Gemini enrichment.
+4. The Web console streams the decision, provenance, activity, and simulated effects.
+
+The result is a traceable workflow that is useful for demonstrations, policy design, failure testing, and security engineering—without pretending to control customer traffic or production infrastructure.
+
+## What it does
+
+| Capability                  | What you get                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| **Scenario injection**      | Fixed, validated intrusion presets instead of arbitrary payloads                         |
+| **Deterministic policy**    | One application-owned decision for every response action                                 |
+| **Bounded AI assistance**   | Gemini can enrich evidence and recommend from a closed tool catalog                      |
+| **Durable workflow state**  | PostgreSQL-backed events, decisions, retries, leases, and audit records                  |
+| **Live operator console**   | React dashboard with event activity, decisions, and streaming updates                    |
+| **Failure-aware execution** | Timeouts, bounded retries, concurrency limits, degraded states, and redacted diagnostics |
+| **Cloud-shaped deployment** | API, worker, and Web services packaged for Cloud Run with Secret Manager references      |
+
+## What it deliberately does not do
+
+- It does not proxy real customer traffic.
+- It does not execute arbitrary model-generated commands.
+- It does not let Gemini choose cloud resources, identities, destinations, or credentials.
+- It does not claim exactly-once message delivery.
+- It does not turn a simulated route assignment into a real containment action.
+- It is not production-ready by default; staging, identity, cost, and threat-model gates remain explicit.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Operator[Operator] --> Web[React operator console]
+    Web -->|Authenticated scenario| API[Express API]
+    API -->|Validated event| Events[(PostgreSQL)]
+    API -->|At-least-once transport| PubSub[Pub/Sub]
+    PubSub --> Worker[Workflow worker]
+    Worker --> Policy[Deterministic policy]
+    Worker --> Gemini[Bounded Gemini adapter]
+    Gemini -. advisory only .-> Policy
+    Policy --> Audit[(Activity + audit records)]
+    Audit --> Web
+    Policy --> Sim[Simulated deception adapters]
+    Sim -. recorded effect .-> Audit
+```
+
+### The important boundary
+
+FalseRoute treats provider output as untrusted input. The worker validates every model response at the adapter boundary, then deterministic application policy narrows, authorizes, or rejects the recommendation. Provenance remains visible throughout the workflow:
+
+- `OBSERVED` — supplied by the synthetic event or transport.
+- `DERIVED` — calculated by deterministic application rules.
+- `INFERRED` — advisory model enrichment.
+- `UNAVAILABLE` — a bounded provider failure or degraded result.
+
+## Scenario catalog
+
+The simulator exposes a fixed catalog. Each preset defines its evidence shape, allowed actions, risk bounds, and negative-control behavior.
+
+| Scenario                      | Demonstrates                                              |
+| ----------------------------- | --------------------------------------------------------- |
+| `.env` configuration probe    | Web decoy recommendation and false-route simulation       |
+| WordPress configuration probe | Template-specific deception policy                        |
+| Suspicious IP burst           | Bounded alert and quarantine recommendation               |
+| SIP INVITE flood              | Telemetry and policy evaluation without SIP proxying      |
+| Administrative token tamper   | Rejection, alerting, and bounded quarantine behavior      |
+| Path traversal probe          | Evidence validation and web decoy response                |
+| Decoy credential use          | Canonical `mock-admin-decoy` assignment in simulated mode |
+
+## Local development
+
+### Prerequisites
+
+- Node.js `24.19.0` — see `.nvmrc`
+- pnpm `11.22.0`
+- Docker Desktop with Docker Compose
+
+### Start the project
+
+```bash
+pnpm install
+cp .env.example .env
+pnpm dev:infra
+pnpm dev:migrate
+pnpm dev
+```
+
+Then open [http://localhost:5173](http://localhost:5173).
+
+The committed environment example is local-only and uses unmistakably synthetic values. It does not contain production credentials. The default local database is exposed on port `5434`; the Web app runs on `5173`, the API on `3000`, and the worker health server on `8088`.
+
+To stop the stack:
+
+```bash
+pnpm dev:infra:down
+```
+
+### Try the workflow
+
+1. Unlock the console with the synthetic local operator token from `.env.example`.
+2. Open the scenario simulator.
+3. Select a fixed preset such as **Decoy Credential Trigger**.
+4. Submit the event.
+5. Follow the event from ingestion to decision in the activity stream.
+
+### Run one service at a time
+
+| Command               | Purpose                       |
+| --------------------- | ----------------------------- |
+| `pnpm dev:web`        | Start the Web dashboard       |
+| `pnpm dev:api`        | Start the API                 |
+| `pnpm dev:worker`     | Start the worker              |
+| `pnpm dev:services`   | Start API and worker together |
+| `pnpm dev:migrate`    | Run guarded local migrations  |
+| `pnpm dev:infra`      | Start local PostgreSQL        |
+| `pnpm dev:infra:down` | Stop local PostgreSQL         |
+
+## Repository map
+
+```text
+apps/
+├── api/                  Express control-plane API
+├── web/                  React + Vite operator dashboard
+└── worker/               Event processor, policy engine, and adapters
+
+packages/
+├── config/               Typed environment parsing
+├── contracts/            Canonical Zod contracts and scenario catalog
+├── database/             Prisma schema, migrations, and repositories
+├── observability/        Pino logging and OpenTelemetry boundaries
+├── security/             Authentication and IAM policy rules
+└── typescript-config/    Shared strict TypeScript configuration
+
+infrastructure/
+├── cloud-run/            Declarative Cloud Run templates
+├── docker/               Local PostgreSQL infrastructure
+└── terraform/            Staging infrastructure modules
+
+tests/integration/        Cross-application integration coverage
+```
+
+## Technology
+
+- **Runtime:** Node.js 24, TypeScript, pnpm, Turborepo
+- **API:** Express 5
+- **UI:** React 19, Vite, Vitest
+- **Contracts:** Zod schemas with shared typed boundaries
+- **Persistence:** PostgreSQL, Prisma 7
+- **Async transport:** Google Cloud Pub/Sub
+- **AI adapter:** Gemini through a bounded provider boundary
+- **Deployment:** Cloud Run, Artifact Registry, Cloud SQL, Secret Manager, Terraform
+- **Observability:** Pino and OpenTelemetry interfaces
+
+## Security boundaries
+
+Security is part of the workflow rather than a later layer. FalseRoute applies:
+
+- Authentication and authorization at API boundaries.
+- Strict scenario and evidence validation.
+- Closed tool catalogs with deterministic authorization.
+- Secret Manager references for deployed runtime secrets.
+- Redacted logs and bounded error details.
+- Rate, size, concurrency, retry, timeout, and spend controls.
+- Non-root, production-oriented container verification.
+- Explicit ownership and provenance for derived decisions.
+
+Please do not report a vulnerability in a public issue. Use a private security report through the repository’s GitHub security reporting channel.
+
+## Quality gates
+
+Run the composite check before opening a change:
+
+```bash
+pnpm check
+```
+
+Useful focused checks:
+
+```bash
+pnpm test
+pnpm test:integration
+pnpm verify:containers
+pnpm check:templates
+pnpm check:secrets
+pnpm check:docs
+```
+
+The repository also runs these checks in GitHub Actions. The staging deployment workflow builds the three service images for `linux/amd64`, publishes immutable image digests, creates a Terraform plan, and applies only the approved plan for the configured staging environment.
+
+## Documentation
+
+- [Architecture overview](docs/architecture/overview.md)
+- [Threat model](docs/architecture/threat-model.md)
+- [Engineering principles](docs/architecture/engineering-principles.md)
+- [Quality gates](docs/architecture/quality-gates.md)
+- [Frontend architecture](docs/architecture/frontend.md)
+
+## Project status
+
+FalseRoute is an active engineering implementation. The local vertical slice, policy engine, event workflow, operator console, contracts, tests, and infrastructure definitions are present; production hardening and browser-level certification remain explicit work rather than implied guarantees.
+
+If you are evaluating the project, start with the local quickstart and the [architecture overview](docs/architecture/overview.md). If you are changing a trust boundary, provider adapter, persistence rule, or deployment boundary, read the [engineering principles](docs/architecture/engineering-principles.md) and [quality gates](docs/architecture/quality-gates.md) first.
+
+<div align="center">
+
+Built for transparent security engineering: bounded authority, durable evidence, and no magic containment claims.
+
+</div>

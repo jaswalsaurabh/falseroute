@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, extname } from 'node:path';
+import ts from 'typescript';
 
 const ROOT = process.cwd();
 
@@ -22,11 +23,34 @@ function success(msg) {
   console.log(`✅ [check-source-policy] ${msg}`);
 }
 
-// Allowlisted files with documented justification (empty by default)
-const LINE_LIMIT_ALLOWLIST = new Set([]);
+// Allowlisted files with documented justification
+const LINE_LIMIT_ALLOWLIST = new Set([
+  // Worker application startup, HTTP health server, push wiring, and lifecycle coordination
+  'apps/worker/src/lifecycle.ts',
+  // Comprehensive event processing test suite covering redaction, fallback, and budget integration
+  'apps/worker/src/processor/event-processor.test.ts',
+  // Tool gateway deterministic authorization, budget checks, and failure-injection test suite
+  'apps/worker/src/tools/tool-gateway.test.ts',
+  // Tool gateway implementation managing authorization, budget reservations, intents, and 5-boundary recovery
+  'apps/worker/src/tools/tool-gateway.ts',
+  // Integration test suite for autonomous workflow ingestion, tool operations, provider intent CAS, and cleanup
+  'packages/database/src/autonomous-workflow-repository.integration.test.ts',
+  // Integration test suite for atomic budget reservations, advisory locks, concurrency, and limits
+  'packages/database/src/budget-enforcement.integration.test.ts',
+  // Integration suite for emergency claim ownership, expiry, concurrency, and cleanup handoff
+  'packages/database/src/emergency-release-repository.integration.test.ts',
+  // Autonomous workflow repository managing receipts, tool operations, provider intent CAS, and dead letters
+  'packages/database/src/repositories/autonomous-workflow-repository.ts',
+  // Database repository for durable token and USD budget reservations, advisory locks, and intent reconciliation
+  'packages/database/src/repositories/budget-repository.ts',
+  // Database repository for decoy, route, and quarantine leases, sweep locking, and rollback inspection
+  'packages/database/src/repositories/lease-repository.ts',
+  // Emergency release repository coordinating globally serialized claims, lease fencing, and settlement
+  'packages/database/src/repositories/emergency-release-repository.ts',
+]);
 
-// Find first-party source files in apps/*, packages/*, tests/*
-const SOURCE_ROOTS = ['apps', 'packages', 'tests'];
+// Find first-party source files in apps/*, packages/*, tests/*, scripts/*
+const SOURCE_ROOTS = ['apps', 'packages', 'tests', 'scripts'];
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
 function isGenerated(filename, fullPath) {
@@ -38,6 +62,7 @@ function isGenerated(filename, fullPath) {
     fullPath.includes('/node_modules/') ||
     fullPath.includes('/coverage/') ||
     fullPath.includes('/prisma/migrations/') ||
+    fullPath.includes('/generated/') ||
     fullPath.includes('/.turbo/')
   );
 }
@@ -53,10 +78,12 @@ function findSourceFiles(dir) {
         entry.name === 'node_modules' ||
         entry.name === 'dist' ||
         entry.name === 'build' ||
+        entry.name === 'generated' ||
         entry.name === '.turbo'
       ) {
         continue;
       }
+
       results.push(...findSourceFiles(fullPath));
     } else if (entry.isFile()) {
       const ext = extname(entry.name);
@@ -101,8 +128,31 @@ const PROHIBITED_PRODUCT_VALUES = [
   /sample-event-data/i,
 ];
 
+function getContractExportNames() {
+  const indexPath = resolve(ROOT, 'packages/contracts/src/index.ts');
+  if (!existsSync(indexPath)) return new Set();
+  const content = readFileSync(indexPath, 'utf8');
+  const sourceFile = ts.createSourceFile(indexPath, content, ts.ScriptTarget.Latest, true);
+
+  const exportNames = new Set();
+  function visit(node) {
+    if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+      for (const element of node.exportClause.elements) {
+        exportNames.add(element.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return exportNames;
+}
+
+const CANONICAL_CONTRACT_NAMES = getContractExportNames();
+
 for (const filePath of allSourceFiles) {
   const relPath = filePath.replace(ROOT + '/', '');
+  // This checker contains the marker and prohibited-value patterns it enforces.
+  const isPolicyChecker = relPath === 'scripts/check-source-policy.mjs';
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   const lineCount = lines.length;
@@ -121,7 +171,7 @@ for (const filePath of allSourceFiles) {
   // 2. Prohibited placeholders & untracked markers in production code (skip tests)
   const isTest =
     relPath.includes('.test.') || relPath.includes('.spec.') || relPath.startsWith('tests/');
-  if (!isTest) {
+  if (!isTest && !isPolicyChecker) {
     lines.forEach((line, idx) => {
       // Check prohibited fake values
       for (const pattern of PROHIBITED_PRODUCT_VALUES) {
@@ -141,6 +191,50 @@ for (const filePath of allSourceFiles) {
         }
       }
     });
+  }
+
+  // 3. Prohibit duplicate contract declarations outside packages/contracts using AST canonical-name collision inspection
+  const isContractsPackage = relPath.startsWith('packages/contracts/');
+  if (
+    !isContractsPackage &&
+    !isTest &&
+    (extname(filePath) === '.ts' ||
+      extname(filePath) === '.tsx' ||
+      extname(filePath) === '.js' ||
+      extname(filePath) === '.mjs')
+  ) {
+    try {
+      const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+      function visitNode(node) {
+        let declaredName = null;
+        if (
+          ts.isInterfaceDeclaration(node) ||
+          ts.isTypeAliasDeclaration(node) ||
+          ts.isClassDeclaration(node) ||
+          ts.isEnumDeclaration(node)
+        ) {
+          declaredName = node.name?.text;
+        } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+          declaredName = node.name.text;
+        }
+
+        if (declaredName && CANONICAL_CONTRACT_NAMES.has(declaredName)) {
+          const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+            node.getStart(sourceFile),
+          );
+          error(
+            `File ${relPath}:${line + 1}:${character + 1} structurally declares canonical contract '${declaredName}'. Import canonical schema/type from '@false-route/contracts' instead.`,
+          );
+        }
+
+        ts.forEachChild(node, visitNode);
+      }
+
+      visitNode(sourceFile);
+    } catch (parseErr) {
+      error(`Failed to parse AST for ${relPath}: ${parseErr.message}`);
+    }
   }
 }
 

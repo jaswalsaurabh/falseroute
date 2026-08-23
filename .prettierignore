@@ -7,3 +7,7 @@ test-results
 playwright-report
 blob-report
 pnpm-lock.yaml
+graphify-out
+generated
+src/generated
+scripts/git-hooks/pre-commit

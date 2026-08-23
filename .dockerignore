@@ -1,0 +1,49 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Dependency & build output
+node_modules
+dist
+build
+.turbo
+coverage
+
+# Environment & credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.keystore
+
+# Internal/private documentation
+docs/decisions
+docs/product
+AGENTS.md
+IMPLEMENTATION_PLAN.md
+BACKLOG.md
+
+# Testing, browser, & local database artifacts
+tests/e2e/test-results
+tests/e2e/playwright-report
+blob-report
+playwright/.cache
+graphify-out
+*.db
+*.sqlite
+*.sqlite-journal
+falseroute_postgres_data
+
+# IDE and OS
+.DS_Store
+.vscode
+.idea
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*

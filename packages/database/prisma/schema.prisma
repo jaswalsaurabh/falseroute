@@ -1,0 +1,462 @@
+// Prisma schema for FalseRoute persistence foundation.
+// Managed by Prisma 7.9.1 with PostgreSQL 18.4.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  ENRICHED
+  DECIDED
+  FAILED
+}
+
+enum ContainmentMode {
+  SIMULATED
+}
+
+enum EventType {
+  UNAUTHORIZED_ACCESS_ATTEMPT
+  CREDENTIAL_STUFFING
+  SUSPICIOUS_LOGIN
+}
+
+enum DeceptionAction {
+  ASSIGN_FALSE_ROUTE
+  ALLOW
+  ALERT_OPERATOR
+  OBSERVE
+}
+
+enum ProvenanceClassification {
+  OBSERVED
+  INFERRED
+  DERIVED
+  UNAVAILABLE
+  OPERATOR
+}
+
+model IntrusionEvent {
+  id                       String                   @id @default(uuid()) @db.Uuid
+  occurredAt               DateTime                 @map("occurred_at")
+  receivedAt               DateTime                 @map("received_at")
+  correlationId            String                   @map("correlation_id") @db.VarChar(64)
+  sourceIp                 String                   @map("source_ip") @db.Inet
+  targetAsset              String                   @map("target_asset") @db.VarChar(64)
+  eventType                EventType                @map("event_type")
+  failedLoginCount         Int                      @map("failed_login_count")
+  riskIndicators           String[]                 @map("risk_indicators")
+  containmentMode          ContainmentMode          @map("containment_mode")
+  usedDecoyCredential      Boolean                  @map("used_decoy_credential")
+  decoyIdentifier          String?                  @map("decoy_identifier") @db.VarChar(64)
+  scenarioKind             String?                  @map("scenario_kind") @db.VarChar(64)
+  evidence                 Json?                    @map("evidence") @db.JsonB
+  status                   ProcessingStatus         @map("status")
+  provenance               ProvenanceClassification @map("provenance")
+  processingClaimToken     String?                  @map("processing_claim_token") @db.Uuid
+  processingLeaseExpiresAt DateTime?                @map("processing_lease_expires_at")
+  processingAttemptCount   Int                      @default(0) @map("processing_attempt_count")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
+
+  decision          DeceptionDecision?
+  ingestionReceipts IngestionReceipt[]
+  deliveryAttempts  DeliveryAttempt[]
+  toolOperations    ToolOperationLedger[]
+  activityEvents    ActivityEventRecord[]
+  decoyLeases       DecoyDeploymentLease[]
+  falseRouteLeases  FalseRouteLease[]
+  quarantineLeases  QuarantineLease[]
+  providerIntents    ProviderIntentRecord[]
+  replayAttempts     ReplayAttempt[]
+  deadLetters        DeadLetterRecord[]
+  budgetReservations BudgetReservationRecord[]
+
+  @@index([occurredAt])
+  @@index([status])
+  @@index([correlationId])
+  @@index([status, processingLeaseExpiresAt])
+  @@map("intrusion_events")
+}
+
+model DeceptionDecision {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  eventId            String                   @unique @map("event_id") @db.Uuid
+  correlationId      String                   @map("correlation_id") @db.VarChar(64)
+  action             DeceptionAction          @map("action")
+  assignedFalseRoute String?                  @map("assigned_false_route") @db.VarChar(64)
+  matchedPolicy      String                   @map("matched_policy") @db.VarChar(64)
+  reason             String                   @map("reason") @db.VarChar(1000)
+  containmentMode    ContainmentMode          @map("containment_mode")
+  decisionProvenance ProvenanceClassification @map("decision_provenance")
+  decidedAt          DateTime                 @map("decided_at")
+  modelEnrichment    Json?                    @map("model_enrichment") @db.JsonB
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+
+  event           IntrusionEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  auditRecord     DecisionAuditRecord?
+  simulatedEffect SimulatedDeceptionEffect?
+
+  @@unique([id, action, correlationId, assignedFalseRoute, containmentMode], map: "uq_deception_decisions_integrity")
+  @@index([correlationId])
+  @@index([decidedAt])
+  @@map("deception_decisions")
+}
+
+model DecisionAuditRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  decisionId  String   @unique @map("decision_id") @db.Uuid
+  ruleVersion String   @map("rule_version") @db.VarChar(32)
+  evaluatedAt DateTime @map("evaluated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@map("decision_audit_records")
+}
+
+model SimulatedDeceptionEffect {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  decisionId         String                   @unique @map("decision_id") @db.Uuid
+  correlationId      String                   @map("correlation_id") @db.VarChar(64)
+  effectKind         DeceptionAction          @default(ASSIGN_FALSE_ROUTE) @map("effect_kind")
+  status             String                   @map("status") @db.VarChar(32)
+  containmentMode    ContainmentMode          @map("containment_mode")
+  assignedFalseRoute String                   @map("assigned_false_route") @db.VarChar(64)
+  provenance         ProvenanceClassification @map("provenance")
+  recordedAt         DateTime                 @map("recorded_at")
+  adapterVersion     String                   @map("adapter_version") @db.VarChar(32)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+
+  decision DeceptionDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([correlationId])
+  @@index([recordedAt])
+  @@map("simulated_deception_effects")
+}
+
+model IngestionReceipt {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  transportId String   @map("transport_id") @db.VarChar(128)
+  source      String   @map("source") @db.VarChar(32)
+  receivedAt  DateTime @map("received_at")
+  status      String   @map("status") @db.VarChar(32)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, transportId])
+  @@index([transportId])
+  @@index([receivedAt])
+  @@map("ingestion_receipts")
+}
+
+model DeliveryAttempt {
+  id            String   @id @default(uuid()) @db.Uuid
+  eventId       String   @map("event_id") @db.Uuid
+  transportId   String   @map("transport_id") @db.VarChar(128)
+  workerId      String   @map("worker_id") @db.VarChar(128)
+  attemptNumber Int      @map("attempt_number")
+  status        String   @map("status") @db.VarChar(32)
+  errorMessage  String?  @map("error_message") @db.VarChar(512)
+  attemptedAt   DateTime @map("attempted_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([transportId])
+  @@map("delivery_attempts")
+}
+
+model ReplayAttempt {
+  id                  String    @id @default(uuid()) @db.Uuid
+  deadLetterId        String    @map("dead_letter_id") @db.Uuid
+  originalEventId     String    @map("original_event_id") @db.Uuid
+  originalTransportId String    @map("original_transport_id") @db.VarChar(128)
+  newTransportId      String?   @map("new_transport_id") @db.VarChar(128)
+  requestedBy         String    @map("requested_by") @db.VarChar(128)
+  rationale           String    @map("rationale") @db.VarChar(512)
+  status              String    @default("CLAIMED") @db.VarChar(32)
+  failureReason       String?   @map("failure_reason") @db.VarChar(512)
+  claimedAt           DateTime  @default(now()) @map("claimed_at")
+  completedAt         DateTime? @map("completed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  deadLetter    DeadLetterRecord @relation(fields: [deadLetterId], references: [id], onDelete: Restrict)
+  originalEvent IntrusionEvent   @relation(fields: [originalEventId], references: [id], onDelete: Restrict)
+
+  @@unique([deadLetterId, status])
+  @@index([deadLetterId])
+  @@index([originalEventId])
+  @@map("replay_attempts")
+}
+
+model ToolOperationLedger {
+  id                 String   @id @default(uuid()) @db.Uuid
+  idempotencyKey     String   @unique @map("idempotency_key") @db.VarChar(128)
+  eventId            String   @map("event_id") @db.Uuid
+  toolName           String   @map("tool_name") @db.VarChar(64)
+  inputHash          String   @map("input_hash") @db.VarChar(64)
+  stage              String   @map("stage") @db.VarChar(32)
+  authorized         Boolean  @map("authorized")
+  policyReason       String   @map("policy_reason") @db.VarChar(500)
+  providerResourceId String?  @map("provider_resource_id") @db.VarChar(256)
+  observedState      String?  @map("observed_state") @db.VarChar(32)
+  details            Json?    @map("details") @db.JsonB
+  version            Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("tool_operation_ledger")
+}
+
+model ActivityEventRecord {
+  cursor        Int                      @id @default(autoincrement()) @map("cursor")
+  id            String                   @default(uuid()) @map("id") @db.Uuid
+  eventId       String                   @map("event_id") @db.Uuid
+  correlationId String                   @map("correlation_id") @db.VarChar(64)
+  stage         String                   @map("stage") @db.VarChar(32)
+  eventType     String                   @map("event_type") @db.VarChar(64)
+  summary       String                   @map("summary") @db.VarChar(500)
+  provenance    ProvenanceClassification @map("provenance")
+  payload       Json?                    @map("payload") @db.JsonB
+  occurredAt    DateTime                 @map("occurred_at")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([correlationId])
+  @@index([occurredAt])
+  @@map("activity_event_records")
+}
+
+model DecoyDeploymentLease {
+  id            String    @id @default(uuid()) @db.Uuid
+  eventId       String    @map("event_id") @db.Uuid
+  templateName  String    @map("template_name") @db.VarChar(64)
+  imageDigest   String    @map("image_digest") @db.VarChar(128)
+  desiredState  String    @map("desired_state") @db.VarChar(32)
+  observedState String    @map("observed_state") @db.VarChar(32)
+  serviceUrl    String?   @map("service_url") @db.VarChar(256)
+  healthStatus  String    @map("health_status") @db.VarChar(32)
+  leaseStatus   String    @map("lease_status") @db.VarChar(32)
+  expiresAt     DateTime  @map("expires_at")
+  cleanedUpAt   DateTime? @map("cleaned_up_at")
+  ownershipKey  String    @unique @map("ownership_key") @db.VarChar(256)
+  ownerId       String    @map("owner_id") @db.VarChar(128)
+  fencingToken  Int       @default(1) @map("fencing_token")
+  version       Int       @default(1)
+  cleanupAttempts Int     @default(0) @map("cleanup_attempts")
+  lastFailureReason String? @map("last_failure_reason") @db.VarChar(512)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([leaseStatus, expiresAt])
+  @@map("decoy_deployment_leases")
+}
+
+model FalseRouteLease {
+  id            String    @id @default(uuid()) @db.Uuid
+  eventId       String    @map("event_id") @db.Uuid
+  sourceIp      String    @map("source_ip") @db.Inet
+  assignedRoute String    @map("assigned_route") @db.VarChar(128)
+  desiredState  String    @map("desired_state") @db.VarChar(32)
+  observedState String    @map("observed_state") @db.VarChar(32)
+  leaseStatus   String    @map("lease_status") @db.VarChar(32)
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  ownershipKey  String    @unique @map("ownership_key") @db.VarChar(256)
+  ownerId       String    @map("owner_id") @db.VarChar(128)
+  fencingToken  Int       @default(1) @map("fencing_token")
+  version       Int       @default(1)
+  cleanupAttempts Int     @default(0) @map("cleanup_attempts")
+  lastFailureReason String? @map("last_failure_reason") @db.VarChar(512)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([sourceIp])
+  @@index([leaseStatus, expiresAt])
+  @@map("false_route_leases")
+}
+
+model QuarantineLease {
+  id            String    @id @default(uuid()) @db.Uuid
+  eventId       String    @map("event_id") @db.Uuid
+  sourceCidr    String    @map("source_cidr") @db.VarChar(64)
+  policyName    String    @map("policy_name") @db.VarChar(64)
+  rulePriority  Int       @map("rule_priority")
+  desiredState  String    @map("desired_state") @db.VarChar(32)
+  observedState String    @map("observed_state") @db.VarChar(32)
+  leaseStatus   String    @map("lease_status") @db.VarChar(32)
+  expiresAt     DateTime  @map("expires_at")
+  releasedAt    DateTime? @map("released_at")
+  ownershipKey  String    @unique @map("ownership_key") @db.VarChar(256)
+  ownerId       String    @map("owner_id") @db.VarChar(128)
+  fencingToken  Int       @default(1) @map("fencing_token")
+  version       Int       @default(1)
+  cleanupAttempts Int     @default(0) @map("cleanup_attempts")
+  lastFailureReason String? @map("last_failure_reason") @db.VarChar(512)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([sourceCidr])
+  @@index([leaseStatus, expiresAt])
+  @@map("quarantine_leases")
+}
+
+model ProviderIntentRecord {
+  id             String    @id @default(uuid()) @db.Uuid
+  idempotencyKey String    @unique @map("idempotency_key") @db.VarChar(128)
+  eventId        String    @map("event_id") @db.Uuid
+  operationType  String    @map("operation_type") @db.VarChar(64)
+  provider       String    @map("provider") @db.VarChar(32)
+  status         String    @map("status") @db.VarChar(32)
+  payload        Json?     @map("payload") @db.JsonB
+  result         Json?     @map("result") @db.JsonB
+  attemptCount   Int       @default(0) @map("attempt_count")
+  claimOwner     String?   @map("claim_owner") @db.VarChar(128)
+  claimToken     String?   @map("claim_token") @db.Uuid
+  claimExpiresAt DateTime? @map("claim_expires_at")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  event IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("provider_intent_records")
+}
+
+model DeadLetterRecord {
+  id                String   @id @default(uuid()) @db.Uuid
+  originalMessageId String   @map("original_message_id") @db.VarChar(128)
+  originalEventId   String?  @map("original_event_id") @db.Uuid
+  failureReason     String   @map("failure_reason") @db.VarChar(512)
+  retryCount        Int      @default(0) @map("retry_count")
+  payload           Json     @map("payload") @db.JsonB
+  replayStatus      String   @default("AVAILABLE") @map("replay_status") @db.VarChar(32)
+  quarantinedAt     DateTime @default(now()) @map("quarantined_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  originalEvent  IntrusionEvent? @relation(fields: [originalEventId], references: [id], onDelete: SetNull)
+  replayAttempts ReplayAttempt[]
+
+  @@unique([originalMessageId])
+  @@index([originalMessageId])
+  @@index([originalEventId])
+  @@index([replayStatus])
+  @@map("dead_letter_records")
+}
+
+enum BudgetCategory {
+  DAILY_USD
+  DAILY_GEMINI_TOKENS
+  HOURLY_TOOL_OPERATIONS
+}
+
+enum BudgetReservationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+  EXPIRED
+  RECONCILED
+}
+
+model BudgetReservationRecord {
+  id             String                  @id @default(uuid()) @db.Uuid
+  idempotencyKey String                  @unique @map("idempotency_key") @db.VarChar(128)
+  category       BudgetCategory          @map("category")
+  windowKey      String                  @map("window_key") @db.VarChar(64)
+  amountReserved Decimal                 @map("amount_reserved") @db.Decimal(12, 4)
+  amountConsumed Decimal?                @map("amount_consumed") @db.Decimal(12, 4)
+  status         BudgetReservationStatus @map("status")
+  ownerId        String                  @map("owner_id") @db.VarChar(128)
+  expiresAt      DateTime                @map("expires_at")
+  consumedAt     DateTime?               @map("consumed_at")
+  releasedAt     DateTime?               @map("released_at")
+  reconciledAt   DateTime?               @map("reconciled_at")
+  eventId        String?                 @map("event_id") @db.Uuid
+  version        Int                     @default(1)
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  /// Evidence about this reservation's own model attempt: DISPATCHED is written immediately
+  /// before the provider request, PRE_CALL_FAILED only when non-dispatch was verified.
+  /// NULL means no evidence, which reconciliation must treat as conservatively spent.
+  geminiAttemptOutcome String? @map("gemini_attempt_outcome") @db.VarChar(32)
+
+  event IntrusionEvent? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([category, windowKey, status])
+  @@index([status, expiresAt])
+  @@index([eventId])
+  @@map("budget_reservation_records")
+}
+
+model EmergencyReleaseRecord {
+  id             String    @id @default(uuid()) @db.Uuid
+  idempotencyKey String    @unique @map("idempotency_key") @db.VarChar(128)
+  principalId    String    @map("principal_id") @db.VarChar(128)
+  reason         String    @map("reason") @db.VarChar(500)
+  correlationId  String    @map("correlation_id") @db.VarChar(64)
+  status         String    @map("status") @db.VarChar(32)
+  requestedCount Int       @map("requested_count")
+  verifiedCount  Int       @default(0) @map("verified_count")
+  pendingCount   Int       @default(0) @map("pending_count")
+  failedCount    Int       @default(0) @map("failed_count")
+  details        Json?     @map("details") @db.JsonB
+  claimOwner     String?   @map("claim_owner") @db.VarChar(128)
+  claimExpiresAt DateTime? @map("claim_expires_at")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  completedAt    DateTime? @map("completed_at")
+
+  @@index([idempotencyKey])
+  @@index([principalId])
+  @@index([createdAt])
+  @@index([status, claimExpiresAt])
+  @@map("emergency_release_records")
+}
+
+model CleanupSweepRecord {
+  id                String    @id @default(uuid()) @db.Uuid
+  sweepOwnerToken   String    @unique @map("sweep_owner_token") @db.VarChar(128)
+  fencingToken      Int       @default(1) @map("fencing_token")
+  status            String    @map("status") @db.VarChar(32)
+  cleanedDecoys     Int       @default(0) @map("cleaned_decoys")
+  cleanedRoutes     Int       @default(0) @map("cleaned_routes")
+  cleanedQuarantines Int      @default(0) @map("cleaned_quarantines")
+  discoveredOrphans Int       @default(0) @map("discovered_orphans")
+  failures          Json?     @map("failures") @db.JsonB
+  expiresAt         DateTime  @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  completedAt       DateTime? @map("completed_at")
+
+  @@index([status, expiresAt])
+  @@map("cleanup_sweep_records")
+}

@@ -174,6 +174,9 @@ function checkWorkspaces(baseDir) {
           if (!manifest.scripts?.lint) {
             error(`Workspace ${relManifest} has src/ but is missing "lint" script`);
           }
+          if (!manifest.scripts?.test) {
+            error(`Workspace ${relManifest} has src/ but is missing "test" script`);
+          }
         }
 
         // Prohibit placeholder or fake scripts in all workspace manifests
