@@ -1,6 +1,8 @@
 import React from 'react';
+import { Activity, LockKeyhole, Radio, ShieldCheck } from 'lucide-react';
 import { Badge } from './Badge.js';
 import { Button } from './Button.js';
+import { IconBadge } from './IconBadge.js';
 
 export interface HeaderProps {
   readonly isUnlocked: boolean;
@@ -9,52 +11,31 @@ export interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ isUnlocked, onLock }) => {
   return (
-    <header
-      style={{
-        backgroundColor: 'var(--surface-header)',
-        borderBottom: '1px solid var(--border-subtle)',
-        padding: 'var(--space-unit-md) var(--space-unit-lg)',
-        marginBottom: 'var(--space-unit-lg)',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: '1280px',
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 'var(--space-unit-md)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-unit-md)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-unit-sm)' }}>
-            <span
-              style={{
-                fontSize: 'var(--text-size-xl)',
-                fontWeight: 800,
-                color: 'var(--text-main)',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              FALSE<span style={{ color: 'var(--focus-ring)' }}>ROUTE</span>
-            </span>
+    <header className="topbar">
+      <div className="brand-lockup">
+        <IconBadge tone="model">
+          <ShieldCheck size={20} aria-hidden="true" />
+        </IconBadge>
+        <div>
+          <div className="brand-name">
+            False<span>Route</span>
           </div>
-          <Badge variant="simulated">SIMULATED CONTAINMENT</Badge>
+          <div className="brand-subtitle">Autonomous response control room</div>
         </div>
-
-        {isUnlocked && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-unit-md)' }}>
-            <span style={{ fontSize: 'var(--text-size-xs)', color: 'var(--text-muted)' }}>
-              CONTROLLED DEMO OPERATOR
-            </span>
-            <Button variant="secondary" onClick={onLock}>
-              Lock Session
-            </Button>
-          </div>
-        )}
       </div>
+      {isUnlocked && (
+        <div className="topbar-actions">
+          <Badge variant="simulated">
+            <Radio size={14} aria-hidden="true" /> SIMULATED CONTAINMENT
+          </Badge>
+          <Badge variant="success">
+            <Activity size={14} aria-hidden="true" /> CONTROLLED DEMO
+          </Badge>
+          <Button variant="secondary" onClick={onLock} aria-label="Lock operator session">
+            <LockKeyhole size={15} aria-hidden="true" /> Lock session
+          </Button>
+        </div>
+      )}
     </header>
   );
 };

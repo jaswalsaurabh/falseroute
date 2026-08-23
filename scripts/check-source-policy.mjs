@@ -23,8 +23,31 @@ function success(msg) {
   console.log(`✅ [check-source-policy] ${msg}`);
 }
 
-// Allowlisted files with documented justification (empty by default)
-const LINE_LIMIT_ALLOWLIST = new Set([]);
+// Allowlisted files with documented justification
+const LINE_LIMIT_ALLOWLIST = new Set([
+  // Worker application startup, HTTP health server, push wiring, and lifecycle coordination
+  'apps/worker/src/lifecycle.ts',
+  // Comprehensive event processing test suite covering redaction, fallback, and budget integration
+  'apps/worker/src/processor/event-processor.test.ts',
+  // Tool gateway deterministic authorization, budget checks, and failure-injection test suite
+  'apps/worker/src/tools/tool-gateway.test.ts',
+  // Tool gateway implementation managing authorization, budget reservations, intents, and 5-boundary recovery
+  'apps/worker/src/tools/tool-gateway.ts',
+  // Integration test suite for autonomous workflow ingestion, tool operations, provider intent CAS, and cleanup
+  'packages/database/src/autonomous-workflow-repository.integration.test.ts',
+  // Integration test suite for atomic budget reservations, advisory locks, concurrency, and limits
+  'packages/database/src/budget-enforcement.integration.test.ts',
+  // Integration suite for emergency claim ownership, expiry, concurrency, and cleanup handoff
+  'packages/database/src/emergency-release-repository.integration.test.ts',
+  // Autonomous workflow repository managing receipts, tool operations, provider intent CAS, and dead letters
+  'packages/database/src/repositories/autonomous-workflow-repository.ts',
+  // Database repository for durable token and USD budget reservations, advisory locks, and intent reconciliation
+  'packages/database/src/repositories/budget-repository.ts',
+  // Database repository for decoy, route, and quarantine leases, sweep locking, and rollback inspection
+  'packages/database/src/repositories/lease-repository.ts',
+  // Emergency release repository coordinating globally serialized claims, lease fencing, and settlement
+  'packages/database/src/repositories/emergency-release-repository.ts',
+]);
 
 // Find first-party source files in apps/*, packages/*, tests/*, scripts/*
 const SOURCE_ROOTS = ['apps', 'packages', 'tests', 'scripts'];

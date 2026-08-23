@@ -36,6 +36,30 @@ describe('Web Dashboard Unit Tests', () => {
             }),
         });
       }
+      if (url.includes('/api/v1/activity?')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              events: [],
+              latestCursor: 0,
+              systemMode: 'LOCAL_FAKE',
+              totalCount: 0,
+            }),
+        });
+      }
+      if (url.includes('/api/v1/activity/stream')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () => Promise.resolve({ done: true, value: undefined }),
+            }),
+          },
+        });
+      }
       if (url.includes('/api/v1/intrusion-events')) {
         return Promise.resolve({
           ok: true,
@@ -61,7 +85,9 @@ describe('Web Dashboard Unit Tests', () => {
     fireEvent.click(unlockButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Intrusion Event Simulator')).toBeDefined();
+      expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
+      expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
+      expect(screen.getByText('3. Active Deception & Quarantine State')).toBeDefined();
       expect(screen.getByText('Intrusion Events Feed')).toBeDefined();
     });
 
@@ -224,6 +250,19 @@ describe('Web Dashboard Unit Tests', () => {
             }),
         });
       }
+      if (url.includes('/api/v1/activity?')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              events: [],
+              latestCursor: 0,
+              systemMode: 'LOCAL_FAKE',
+              totalCount: 0,
+            }),
+        });
+      }
       if (url.endsWith(`/api/v1/intrusion-events/${pendingEvent.id}`)) {
         return Promise.resolve({
           ok: true,
@@ -234,6 +273,17 @@ describe('Web Dashboard Unit Tests', () => {
               decision: eventStatus === 'PENDING' ? null : mockDecision,
               simulatedEffect: eventStatus === 'PENDING' ? null : mockSimulatedEffect,
             }),
+        });
+      }
+      if (url.includes('/api/v1/activity/stream')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () => Promise.resolve({ done: true, value: undefined }),
+            }),
+          },
         });
       }
       if (url.includes('/api/v1/intrusion-events')) {

@@ -8,7 +8,7 @@
     "lint": "oxlint --deny-warnings",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests --exclude 'src/**/*.integration.test.ts'",
-    "test:integration": "vitest run src/system.integration.test.ts"
+    "test:integration": "vitest run src/*.integration.test.ts"
   },
   "dependencies": {
     "@false-route/api": "workspace:*",

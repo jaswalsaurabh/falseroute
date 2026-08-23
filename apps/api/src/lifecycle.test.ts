@@ -3,6 +3,7 @@ import { type DatabaseClient } from '@false-route/database';
 import { type Logger, type TelemetryHandle } from '@false-route/observability';
 import { startApiServer } from './lifecycle.js';
 import { type ApiRepository } from './persistence/api-repository.js';
+import { type ActivityStreamService } from './services/activity-stream-service.js';
 
 const syntheticToken = 'not-a-real-test-token-123456';
 
@@ -417,5 +418,50 @@ describe('API Server Lifecycle', () => {
     expect(elapsed).toBeGreaterThanOrEqual(280);
     expect(elapsed).toBeLessThan(1400);
     expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes activity stream service and stops polling before disconnecting database during shutdown', async () => {
+    const mockDb = createMockDb();
+    const mockRepo = createMockRepository(true);
+    const mockLogger = createMockLogger();
+    const mockTelemetry = createMockTelemetry();
+
+    const mockStreamService = {
+      closeAll: vi.fn(),
+      getSnapshot: vi.fn().mockResolvedValue({
+        events: [],
+        latestCursor: 0,
+        totalCount: 0,
+        systemMode: 'LOCAL_FAKE',
+      }),
+      registerClient: vi.fn().mockResolvedValue(true),
+      broadcast: vi.fn(),
+      getActiveClientCount: vi.fn().mockReturnValue(0),
+      deepRedactSensitiveData: vi.fn((data) => data),
+    };
+
+    const instance = await startApiServer({
+      env: {
+        PORT: '0',
+        DATABASE_URL:
+          'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public',
+        OPERATOR_ACCESS_TOKEN: syntheticToken,
+        NODE_ENV: 'test',
+      },
+      db: mockDb,
+      repository: mockRepo,
+      logger: mockLogger,
+      telemetry: mockTelemetry,
+      streamService: mockStreamService as unknown as ActivityStreamService,
+      registerSignalHandlers: false,
+    });
+
+    await instance.stop('sse-shutdown-test');
+
+    expect(mockStreamService.closeAll).toHaveBeenCalledTimes(1);
+    expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
+    expect(mockStreamService.closeAll.mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(mockDb.$disconnect).mock.invocationCallOrder[0]!,
+    );
   });
 });

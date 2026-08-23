@@ -16,7 +16,7 @@
     "lint": "oxlint --deny-warnings",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --exclude 'src/**/*.integration.test.ts'",
-    "test:integration": "vitest run src/persistence.integration.test.ts",
+    "test:integration": "vitest run src/*.integration.test.ts",
     "prisma:format": "node ../../scripts/prisma-guard.ts format",
     "prisma:validate": "node ../../scripts/prisma-guard.ts validate",
     "prisma:generate": "node ../../scripts/prisma-guard.ts generate",

@@ -1,6 +1,7 @@
 import {
   type CreateIntrusionEventRequest,
   type CreateIntrusionEventResponse,
+  type CreateAutonomousScenarioRequest,
   type ListIntrusionEventsQuery,
   type ListIntrusionEventsResponse,
   type GetIntrusionEventResponse,
@@ -50,12 +51,41 @@ export class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (_networkErr) {
+      throw new ApiError(
+        'Unable to connect to FalseRoute API server. Please ensure the backend is running.',
+        'NETWORK_ERROR',
+      );
+    }
 
-    const rawData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const contentType =
+      (typeof response.headers?.get === 'function' ? response.headers.get('content-type') : '') ||
+      '';
+
+    let rawData: unknown = {};
+    let parseFailed = false;
+
+    try {
+      rawData = await response.json();
+    } catch {
+      parseFailed = true;
+    }
+
+    if (
+      parseFailed ||
+      (contentType.includes('text/html') &&
+        typeof rawData === 'object' &&
+        rawData !== null &&
+        Object.keys(rawData).length === 0)
+    ) {
+      throw new ApiError('FalseRoute API backend is unreachable.', 'BACKEND_UNREACHABLE');
+    }
 
     if (!response.ok) {
       const errorParsed = ApiErrorResponseSchema.safeParse(rawData);
@@ -70,12 +100,25 @@ export class ApiClient {
       throw new ApiError(`HTTP Error ${response.status}: ${response.statusText}`, 'HTTP_ERROR');
     }
 
-    return parser(rawData);
+    try {
+      return parser(rawData);
+    } catch (_parseErr) {
+      throw new ApiError('API returned an unexpected response structure.', 'INVALID_PAYLOAD');
+    }
   }
 
   async checkReadiness(): Promise<ReadinessCheckResponse> {
     return this.request('/api/v1/ready', { method: 'GET' }, (data) =>
       ReadinessCheckResponseSchema.parse(data),
+    );
+  }
+
+  async validateCredentials(): Promise<void> {
+    // 1. Verify API server & database readiness probe
+    await this.checkReadiness();
+    // 2. Verify operator token against authenticated endpoint
+    await this.request('/api/v1/intrusion-events?limit=1', { method: 'GET' }, (data) =>
+      ListIntrusionEventsResponseSchema.parse(data),
     );
   }
 
@@ -91,6 +134,19 @@ export class ApiClient {
       {
         method: 'POST',
         body: JSON.stringify(event),
+      },
+      (data) => CreateIntrusionEventResponseSchema.parse(data),
+    );
+  }
+
+  async createAutonomousScenario(
+    scenario: CreateAutonomousScenarioRequest,
+  ): Promise<CreateIntrusionEventResponse> {
+    return this.request(
+      '/api/v1/intrusion-events/scenarios',
+      {
+        method: 'POST',
+        body: JSON.stringify(scenario),
       },
       (data) => CreateIntrusionEventResponseSchema.parse(data),
     );

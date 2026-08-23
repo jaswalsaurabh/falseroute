@@ -264,11 +264,15 @@ export async function runContainerVerification(
 
     // Run Prisma migrations against the test database
     log('Deploying Prisma schema migrations to test database...');
-    const migrateResult = spawnSync('pnpm', ['db:migrate'], {
-      env: { ...process.env, DATABASE_URL: pgHostUrl },
-      shell: false,
-      stdio: 'pipe',
-    });
+    const migrateResult = spawnSync(
+      'pnpm',
+      ['--filter', '@false-route/database', 'migrate:deploy'],
+      {
+        env: { ...process.env, DATABASE_URL: pgHostUrl },
+        shell: false,
+        stdio: 'pipe',
+      },
+    );
 
     if (migrateResult.status !== 0) {
       logError(

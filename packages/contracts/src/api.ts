@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { UuidSchema, CorrelationIdSchema, IsoDateTimeSchema } from './primitives.js';
+import {
+  UuidSchema,
+  CorrelationIdSchema,
+  IsoDateTimeSchema,
+  IpAddressSchema,
+} from './primitives.js';
+import { ScenarioEvidenceSchema, ScenarioKindSchema } from './scenario.js';
 import {
   SimulatedIntrusionEventInputSchema,
   IntrusionEventSchema,
@@ -13,6 +19,36 @@ import {
 
 export const CreateIntrusionEventRequestSchema = SimulatedIntrusionEventInputSchema;
 export type CreateIntrusionEventRequest = z.infer<typeof CreateIntrusionEventRequestSchema>;
+
+/** Bounded simulator request for the autonomous event-transport path. */
+export const CreateAutonomousScenarioRequestSchema = z
+  .object({
+    id: UuidSchema,
+    correlationId: CorrelationIdSchema,
+    occurredAt: IsoDateTimeSchema,
+    scenarioKind: ScenarioKindSchema,
+    sourceIp: IpAddressSchema,
+    evidence: ScenarioEvidenceSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.evidence.scenarioKind !== value.scenarioKind) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['evidence', 'scenarioKind'],
+        message: 'Evidence scenarioKind must match the requested scenarioKind',
+      });
+    }
+    if (value.evidence.sourceIp !== value.sourceIp) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['evidence', 'sourceIp'],
+        message: 'Evidence sourceIp must match the requested sourceIp',
+      });
+    }
+  });
+
+export type CreateAutonomousScenarioRequest = z.infer<typeof CreateAutonomousScenarioRequestSchema>;
 
 export const CreateIntrusionEventResponseSchema = z
   .object({

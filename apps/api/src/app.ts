@@ -1,7 +1,12 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { type DatabaseClient } from '@false-route/database';
+import {
+  ActivityEventRepository,
+  AutonomousWorkflowRepository,
+  PrismaClient,
+  type DatabaseClient,
+} from '@false-route/database';
 import { type Logger } from '@false-route/observability';
 import { type ApiConfig } from './config/api-config.js';
 import { correlationMiddleware } from './middleware/correlation.js';
@@ -16,12 +21,30 @@ import { EventController } from './controllers/event-controller.js';
 import { HealthController } from './controllers/health-controller.js';
 import { createEventRouter } from './routes/event-routes.js';
 import { createHealthRouter } from './routes/health-routes.js';
+import { ActivityStreamService } from './services/activity-stream-service.js';
+import { createActivityRouter } from './routes/activity-routes.js';
+import { DeadLetterService } from './services/dead-letter-service.js';
+import { createDeadLetterRouter } from './routes/dead-letter-routes.js';
+import { EmergencyReleaseService } from './services/emergency-release-service.js';
+import { EmergencyReleaseController } from './controllers/emergency-release-controller.js';
+import { createEmergencyReleaseRouter } from './routes/emergency-release-routes.js';
+import {
+  InMemoryEventPublisher,
+  LocalHttpEventPublisher,
+  type EventPublisher,
+} from './integrations/event-publisher.js';
 
 export interface AppOptions {
   readonly config: ApiConfig;
   readonly db: DatabaseClient;
   readonly logger: Logger;
   readonly repository?: ApiRepository | undefined;
+  readonly activityRepo?: ActivityEventRepository | undefined;
+  readonly streamService?: ActivityStreamService | undefined;
+  readonly workflowRepo?: AutonomousWorkflowRepository | undefined;
+  readonly deadLetterService?: DeadLetterService | undefined;
+  readonly emergencyReleaseService?: EmergencyReleaseService | undefined;
+  readonly eventPublisher?: EventPublisher | undefined;
   readonly clock?: (() => number) | undefined;
   readonly isReady?: (() => boolean) | undefined;
 }
@@ -49,7 +72,12 @@ export function createApp(options: AppOptions): Express {
       origin: allowedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Correlation-Id',
+        'X-Replay-Authorization',
+      ],
       preflightContinue: true,
     }),
   );
@@ -83,9 +111,27 @@ export function createApp(options: AppOptions): Express {
 
   // Component Composition
   const repository = options.repository ?? new PrismaApiRepository(db);
-  const eventService = new EventService(repository);
+  const eventPublisher =
+    options.eventPublisher ??
+    (config.EVENT_PUBLISHER_MODE === 'LOCAL_HTTP' && config.LOCAL_WORKER_PUSH_TOKEN
+      ? new LocalHttpEventPublisher({
+          endpoint: config.LOCAL_WORKER_PUSH_URL ?? 'http://127.0.0.1:8088/pubsub/push',
+          sharedSecret: config.LOCAL_WORKER_PUSH_TOKEN,
+          timeoutMs: config.EVENT_PUBLISH_TIMEOUT_MS ?? 5000,
+        })
+      : new InMemoryEventPublisher());
+  if (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB' && !options.eventPublisher) {
+    throw new Error('LIVE_PUBSUB requires an explicitly injected production EventPublisher');
+  }
+  const eventService = new EventService(repository, eventPublisher);
   const eventController = new EventController(eventService);
   const healthController = new HealthController(repository, options.isReady);
+
+  const activityRepo = options.activityRepo ?? new ActivityEventRepository(db as PrismaClient);
+  const streamService = options.streamService ?? new ActivityStreamService(activityRepo);
+  const workflowRepo = options.workflowRepo ?? new AutonomousWorkflowRepository(db as PrismaClient);
+  const deadLetterService =
+    options.deadLetterService ?? new DeadLetterService(workflowRepo, eventPublisher);
 
   const authMiddleware = operatorAuthMiddleware({
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
@@ -123,6 +169,30 @@ export function createApp(options: AppOptions): Express {
     writeLimiter,
   });
   app.use('/api/v1/intrusion-events', authMiddleware, eventRouter);
+
+  const activityRouter = createActivityRouter({
+    streamService,
+  });
+  app.use('/api/v1/activity', authMiddleware, activityRouter);
+
+  const deadLetterRouter = createDeadLetterRouter({
+    deadLetterService,
+    replayToken: config.OPERATOR_REPLAY_TOKEN,
+  });
+  app.use('/api/v1/dead-letter', authMiddleware, deadLetterRouter);
+
+  // No simulated-provider adapter is wired by default: the simulated inventory lives in the
+  // Worker process, so the API cannot observe it and must never claim a provider effect it did
+  // not verify. Route and quarantine leases are left pending and immediately eligible for the
+  // Worker cleanup sweep, which owns that inventory.
+  const emergencyReleaseService =
+    options.emergencyReleaseService ?? new EmergencyReleaseService(workflowRepo, activityRepo);
+  const emergencyReleaseController = new EmergencyReleaseController(emergencyReleaseService);
+  const emergencyReleaseRouter = createEmergencyReleaseRouter({
+    controller: emergencyReleaseController,
+  });
+  app.use('/api/v1/operator/emergency-release', authMiddleware, emergencyReleaseRouter);
+  app.use('/api/v1/emergency-release', authMiddleware, emergencyReleaseRouter);
 
   // Unmatched Route Boundary
   app.use((req, _res, next) => {

@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type IntrusionEvent } from '@false-route/contracts';
 import { LiveGeminiAdapter } from './gemini-adapter.js';
+import { type GeminiAttemptGate } from '../services/gemini-budget-service.js';
+
+/** Gate that authorizes at most `maxAttempts` dispatches, mirroring the durable ceiling. */
+function createAttemptGate(maxAttempts: number): GeminiAttemptGate & { granted: number } {
+  const gate = {
+    granted: 0,
+    beginAttempt: async () => {
+      if (gate.granted >= maxAttempts) {
+        throw new Error('Gemini durable token budget ceiling exceeded: attempt limit reached');
+      }
+      gate.granted += 1;
+      return { attemptNumber: gate.granted, claimToken: `owner-not-a-real-${gate.granted}` };
+    },
+  };
+  return gate;
+}
 
 const mockEvent: IntrusionEvent = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -265,5 +281,83 @@ describe('LiveGeminiAdapter', () => {
     if ('status' in result) {
       expect(result.status).toBe('TIMEOUT');
     }
+  });
+
+  it('authorizes every internal retry through the attempt gate', async () => {
+    const adapter = new LiveGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-3.5-flash',
+      maxRetries: 2,
+      sleepFn: async () => {},
+    });
+
+    const generateContentMock = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('Service Unavailable'), { status: 503 }))
+      .mockResolvedValueOnce({
+        text: JSON.stringify({
+          recommendedAction: 'OBSERVE',
+          confidence: 0.4,
+          summary: 'Recovered on retry',
+          explanation: 'Second dispatch succeeded after a transient provider failure.',
+        }),
+      });
+
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const gate = createAttemptGate(2);
+    const result = await adapter.enrichEvent(mockEvent, undefined, gate);
+
+    expect(generateContentMock).toHaveBeenCalledTimes(2);
+    expect(gate.granted).toBe(2);
+    expect(result.provenance).toBe('INFERRED');
+  });
+
+  it('stops before a third dispatch when the attempt gate refuses authorization', async () => {
+    const adapter = new LiveGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-3.5-flash',
+      maxRetries: 2,
+      sleepFn: async () => {},
+    });
+
+    const generateContentMock = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('Service Unavailable'), { status: 503 }));
+
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const gate = createAttemptGate(2);
+    const result = await adapter.enrichEvent(mockEvent, undefined, gate);
+
+    // maxRetries=2 would allow 3 dispatches; the durable ceiling caps it at 2.
+    expect(generateContentMock).toHaveBeenCalledTimes(2);
+    expect(gate.granted).toBe(2);
+    expect(result.provenance).toBe('UNAVAILABLE');
+    if (result.provenance === 'UNAVAILABLE') {
+      expect(result.reason).toContain('Durable Gemini attempt budget exhausted');
+    }
+  });
+
+  it('makes no dispatch at all when the gate refuses the very first attempt', async () => {
+    const adapter = new LiveGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-3.5-flash',
+      sleepFn: async () => {},
+    });
+
+    const generateContentMock = vi.fn();
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const result = await adapter.enrichEvent(mockEvent, undefined, createAttemptGate(0));
+
+    expect(generateContentMock).not.toHaveBeenCalled();
+    expect(result.provenance).toBe('UNAVAILABLE');
   });
 });

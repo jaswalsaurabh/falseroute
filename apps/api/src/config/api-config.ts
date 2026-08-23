@@ -13,6 +13,11 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
   OPERATOR_ACCESS_TOKEN: z
     .string()
     .min(8, 'OPERATOR_ACCESS_TOKEN must be at least 8 characters long'),
+  OPERATOR_REPLAY_TOKEN: z.string().min(16).optional(),
+  EVENT_PUBLISHER_MODE: z.enum(['MEMORY', 'LOCAL_HTTP', 'LIVE_PUBSUB']).default('MEMORY'),
+  LOCAL_WORKER_PUSH_URL: z.string().url().default('http://127.0.0.1:8088/pubsub/push'),
+  LOCAL_WORKER_PUSH_TOKEN: z.string().min(16).optional(),
+  EVENT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
   CORS_ORIGINS: z
     .string()
     .default(
@@ -32,21 +37,57 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
    * deployment explicitly declares trusted proxy hops.
    */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
-}).refine(
-  (config) => {
-    return (
-      config.SHUTDOWN_DRAIN_TIMEOUT_MS +
-        config.SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS +
-        config.SHUTDOWN_TELEMETRY_TIMEOUT_MS <=
-      config.SHUTDOWN_TIMEOUT_MS
-    );
-  },
-  {
-    message:
-      'Sum of drain, database disconnect, and telemetry timeouts must not exceed total shutdown timeout',
-    path: ['SHUTDOWN_TIMEOUT_MS'],
-  },
-);
+})
+  .superRefine((config, ctx) => {
+    if (config.NODE_ENV === 'production' && config.EVENT_PUBLISHER_MODE === 'MEMORY') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['EVENT_PUBLISHER_MODE'],
+        message: 'Production must use an explicitly configured durable event publisher',
+      });
+    }
+    if (config.EVENT_PUBLISHER_MODE === 'LOCAL_HTTP') {
+      if (config.NODE_ENV === 'production') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['EVENT_PUBLISHER_MODE'],
+          message: 'LOCAL_HTTP event publishing is prohibited in production',
+        });
+      }
+      if (!config.LOCAL_WORKER_PUSH_TOKEN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['LOCAL_WORKER_PUSH_TOKEN'],
+          message: 'LOCAL_WORKER_PUSH_TOKEN is required for LOCAL_HTTP event publishing',
+        });
+      }
+    }
+    if (
+      config.OPERATOR_REPLAY_TOKEN !== undefined &&
+      config.OPERATOR_REPLAY_TOKEN === config.OPERATOR_ACCESS_TOKEN
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OPERATOR_REPLAY_TOKEN'],
+        message: 'OPERATOR_REPLAY_TOKEN must be distinct from OPERATOR_ACCESS_TOKEN',
+      });
+    }
+  })
+  .refine(
+    (config) => {
+      return (
+        config.SHUTDOWN_DRAIN_TIMEOUT_MS +
+          config.SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS +
+          config.SHUTDOWN_TELEMETRY_TIMEOUT_MS <=
+        config.SHUTDOWN_TIMEOUT_MS
+      );
+    },
+    {
+      message:
+        'Sum of drain, database disconnect, and telemetry timeouts must not exceed total shutdown timeout',
+      path: ['SHUTDOWN_TIMEOUT_MS'],
+    },
+  );
 
 type ParsedApiConfig = z.infer<typeof ApiConfigSchema>;
 
@@ -61,12 +102,22 @@ export type ApiConfig = Omit<
   | 'SHUTDOWN_DRAIN_TIMEOUT_MS'
   | 'SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS'
   | 'SHUTDOWN_TELEMETRY_TIMEOUT_MS'
+  | 'OPERATOR_REPLAY_TOKEN'
+  | 'EVENT_PUBLISHER_MODE'
+  | 'LOCAL_WORKER_PUSH_URL'
+  | 'LOCAL_WORKER_PUSH_TOKEN'
+  | 'EVENT_PUBLISH_TIMEOUT_MS'
 > & {
   TRUST_PROXY_HOPS?: number;
   SHUTDOWN_TIMEOUT_MS?: number;
   SHUTDOWN_DRAIN_TIMEOUT_MS?: number;
   SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS?: number;
   SHUTDOWN_TELEMETRY_TIMEOUT_MS?: number;
+  OPERATOR_REPLAY_TOKEN?: string | undefined;
+  EVENT_PUBLISHER_MODE?: 'MEMORY' | 'LOCAL_HTTP' | 'LIVE_PUBSUB';
+  LOCAL_WORKER_PUSH_URL?: string;
+  LOCAL_WORKER_PUSH_TOKEN?: string | undefined;
+  EVENT_PUBLISH_TIMEOUT_MS?: number;
 };
 
 export function parseApiConfig(env: Record<string, string | undefined>): Readonly<ApiConfig> {

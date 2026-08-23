@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react';
 import { Button } from './Button.js';
 
 export interface ModalProps {
@@ -60,7 +61,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             {title}
           </h2>
           <Button variant="secondary" onClick={onClose} aria-label="Close dialog">
-            ✕
+            <X size={18} aria-hidden="true" />
           </Button>
         </div>
         {children}

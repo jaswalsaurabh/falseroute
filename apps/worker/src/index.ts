@@ -40,6 +40,18 @@ export {
 } from './processor/event-processor.js';
 export { WorkerOrchestrator, type OrchestratorOptions } from './processor/worker-orchestrator.js';
 
+export {
+  AutonomousWorkflowOrchestrator,
+  type AutonomousWorkflowResult,
+} from './orchestration/autonomous-workflow.js';
+export { ToolGateway, type ToolGatewayOptions } from './tools/tool-gateway.js';
+export {
+  PubSubPushHandler,
+  LocalSharedSecretOidcTokenVerifier,
+  type OidcTokenVerifier,
+  type PushHandlerResponse,
+} from './integrations/pubsub-push-handler.js';
+
 export { startWorker, type WorkerInstance, type StartWorkerOptions } from './lifecycle.js';
 
 async function main() {

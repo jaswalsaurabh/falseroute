@@ -1,10 +1,13 @@
 import { type Logger } from '@false-route/observability';
 import { type EventProcessor, type ProcessResult } from './event-processor.js';
+import { type LeaseCleanupService } from '../cleanup/lease-cleanup.js';
 
 export interface OrchestratorOptions {
   readonly processor: EventProcessor;
   readonly logger: Logger;
   readonly pollIntervalMs?: number;
+  readonly cleanupService?: LeaseCleanupService | undefined;
+  readonly cleanupIntervalMs?: number | undefined;
 }
 
 /**
@@ -14,19 +17,27 @@ export class WorkerOrchestrator {
   private readonly processor: EventProcessor;
   private readonly logger: Logger;
   private readonly pollIntervalMs: number;
+  private readonly cleanupService?: LeaseCleanupService | undefined;
+  private readonly cleanupIntervalMs: number;
   private isRunning = false;
   private activeLoop: Promise<void> | null = null;
+  private lastCleanupTime = 0;
 
   constructor(options: OrchestratorOptions) {
     this.processor = options.processor;
     this.logger = options.logger;
     this.pollIntervalMs = options.pollIntervalMs ?? 500;
+    this.cleanupService = options.cleanupService;
+    this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10_000;
   }
 
   /**
    * Executes a single processing tick (claims and evaluates one event if available).
    */
   async tick(): Promise<ProcessResult> {
+    if (this.cleanupService) {
+      await this.cleanupService.sweepExpiredLeases().catch(() => {});
+    }
     return this.processor.processNextPending();
   }
 
@@ -55,6 +66,17 @@ export class WorkerOrchestrator {
     if (!this.isRunning) return;
     const stepPromise = (async () => {
       try {
+        const now = Date.now();
+        if (this.cleanupService && now - this.lastCleanupTime >= this.cleanupIntervalMs) {
+          this.lastCleanupTime = now;
+          await this.cleanupService.sweepExpiredLeases().catch((cleanupErr) => {
+            this.logger.warn(
+              { error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) },
+              'Error during scheduled lease cleanup sweep',
+            );
+          });
+        }
+
         const result = await this.processor.processNextPending();
         const nextDelay = result.processed ? 50 : this.pollIntervalMs;
         scheduleNext(nextDelay);

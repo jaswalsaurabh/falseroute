@@ -9,6 +9,10 @@ import {
 import { classifyProviderError, type ClassifiedProviderError } from './error-classifier.js';
 import { ConcurrencyLimiter } from './concurrency-limiter.js';
 import { RetryPolicy, type RetryPolicyOptions } from './retry-policy.js';
+import { type GeminiAttemptGate } from '../services/gemini-budget-service.js';
+
+/** Signals that the durable per-event attempt ceiling refused this dispatch. */
+class AttemptBudgetExhaustedError extends Error {}
 
 export interface GeminiAdapterOptions extends RetryPolicyOptions {
   readonly apiKey: string;
@@ -20,9 +24,14 @@ export interface GeminiAdapterOptions extends RetryPolicyOptions {
 }
 
 export interface GeminiEnrichmentAdapter {
+  /**
+   * `attemptGate` must authorize every real provider dispatch, including internal retries.
+   * An adapter that does not retry internally may ignore it.
+   */
   enrichEvent(
     event: IntrusionEvent,
     parentSignal?: AbortSignal,
+    attemptGate?: GeminiAttemptGate,
   ): Promise<ModelEnrichmentResult | DegradedModelResult>;
 }
 
@@ -63,6 +72,7 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
   async enrichEvent(
     event: IntrusionEvent,
     parentSignal?: AbortSignal,
+    attemptGate?: GeminiAttemptGate,
   ): Promise<ModelEnrichmentResult | DegradedModelResult> {
     const evaluatedAt = new Date().toISOString();
     const deadlineAt = Date.now() + this.operationDeadlineMs;
@@ -96,6 +106,7 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
           deadlineAt,
           operationController.signal,
           limiterSignal,
+          attemptGate,
         );
       }, operationController.signal);
     } catch (err) {
@@ -115,6 +126,7 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
     deadlineAt: number,
     operationSignal: AbortSignal,
     limiterSignal?: AbortSignal,
+    attemptGate?: GeminiAttemptGate,
   ): Promise<ModelEnrichmentResult | DegradedModelResult> {
     const minimizedInput = {
       eventType: event.eventType,
@@ -171,6 +183,19 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
       });
 
       try {
+        // Each real dispatch — retries included — needs its own durable reservation, so the
+        // retry loop stops here rather than making a call the budget has not accounted for.
+        if (attemptGate) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await attemptGate.beginAttempt();
+          } catch (gateErr) {
+            throw new AttemptBudgetExhaustedError(
+              gateErr instanceof Error ? gateErr.message : String(gateErr),
+            );
+          }
+        }
+
         const responsePromise = this.client.models.generateContent({
           model: this.modelName,
           contents: [
@@ -217,6 +242,19 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
           evaluatedAt,
         });
       } catch (err) {
+        if (err instanceof AttemptBudgetExhaustedError) {
+          return this.buildDegradedResult(
+            event.correlationId,
+            {
+              kind: 'TERMINAL',
+              isRetriable: false,
+              status: 'UNAVAILABLE',
+              sanitizedReason: 'Durable Gemini attempt budget exhausted before dispatch',
+            },
+            evaluatedAt,
+          );
+        }
+
         lastClassified = classifyProviderError(err);
 
         if (!lastClassified.isRetriable || attempt >= this.retryPolicy.maxRetries) {

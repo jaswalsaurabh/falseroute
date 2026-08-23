@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@false-route/contracts": "workspace:*",
+    "lucide-react": "1.33.0",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "sonner": "2.0.8",
     "zod": "catalog:"
   },
   "devDependencies": {

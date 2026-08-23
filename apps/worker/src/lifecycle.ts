@@ -1,6 +1,14 @@
 import http from 'node:http';
 import type { Socket } from 'node:net';
-import { createDatabaseClient, type DatabaseClient } from '@false-route/database';
+import { randomUUID } from 'node:crypto';
+import {
+  ActivityEventRepository,
+  AutonomousWorkflowRepository,
+  BudgetRepository,
+  PrismaClient,
+  createDatabaseClient,
+  type DatabaseClient,
+} from '@false-route/database';
 import {
   createLogger,
   createTelemetry,
@@ -17,6 +25,25 @@ import {
 } from './adapters/simulated-deception-agent.js';
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
+import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
+import {
+  type AutonomousGeminiAdapter,
+  LiveAutonomousGeminiAdapter,
+} from './adapters/autonomous-gemini-adapter.js';
+import { FakeAutonomousGeminiAdapter } from './adapters/fake-autonomous-gemini-adapter.js';
+import {
+  LocalSharedSecretOidcTokenVerifier,
+  PubSubPushHandler,
+  type OidcTokenVerifier,
+} from './integrations/pubsub-push-handler.js';
+import { LeaseCleanupService } from './cleanup/lease-cleanup.js';
+import { GeminiBudgetService } from './services/gemini-budget-service.js';
+import { ToolGateway } from './tools/tool-gateway.js';
+import {
+  FakeCloudRunAdapter,
+  FakeFalseRouteAdapter,
+  FakeCloudArmorAdapter,
+} from './tools/fake-cloud-adapters.js';
 
 export interface StartWorkerOptions {
   readonly config?: WorkerConfig | undefined;
@@ -24,9 +51,16 @@ export interface StartWorkerOptions {
   readonly db?: DatabaseClient | undefined;
   readonly repository?: WorkerRepository | undefined;
   readonly geminiAdapter?: GeminiEnrichmentAdapter | undefined;
+  readonly autonomousGeminiAdapter?: AutonomousGeminiAdapter | undefined;
   readonly simulatedAgent?: SimulatedDeceptionAgent | undefined;
   readonly logger?: Logger | undefined;
   readonly telemetry?: TelemetryHandle | undefined;
+  readonly autonomousOrchestrator?: AutonomousWorkflowOrchestrator | undefined;
+  readonly autonomousWorkflowRepository?: AutonomousWorkflowRepository | undefined;
+  readonly activityEventRepository?: ActivityEventRepository | undefined;
+  readonly leaseCleanupService?: LeaseCleanupService | undefined;
+  readonly pushHandler?: PubSubPushHandler | undefined;
+  readonly oidcTokenVerifier?: OidcTokenVerifier | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
   readonly onShutdownComplete?: ((exitCode: number) => void) | undefined;
 }
@@ -39,13 +73,27 @@ export interface WorkerInstance {
   readonly telemetry: TelemetryHandle;
   readonly logger: Logger;
   readonly healthServer: http.Server | null;
+  readonly pushHandler: PubSubPushHandler | null;
+  readonly cleanupService: LeaseCleanupService | null;
   readonly isReady: () => boolean;
   readonly stop: (reason?: string) => Promise<void>;
 }
 
-/**
- * Helper to run a task with an explicit timeout.
- */
+async function readBoundedJsonBody(
+  req: http.IncomingMessage,
+  maxBytes = 64 * 1024,
+): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let receivedBytes = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    receivedBytes += buffer.length;
+    if (receivedBytes > maxBytes) throw new Error('REQUEST_BODY_TOO_LARGE');
+    chunks.push(buffer);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+}
+
 async function withTimeout<T>(
   task: Promise<T>,
   timeoutMs: number,
@@ -53,11 +101,8 @@ async function withTimeout<T>(
 ): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
   });
-
   try {
     return await Promise.race([task, timeoutPromise]);
   } finally {
@@ -95,6 +140,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
   let db: DatabaseClient | null = null;
   let orchestrator: WorkerOrchestrator | null = null;
+  let pushHandler: PubSubPushHandler | null = null;
   let healthServer: http.Server | null = null;
   const trackedSockets = new Set<Socket>();
 
@@ -120,13 +166,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       geminiAdapter = options.geminiAdapter;
     } else if (config.GEMINI_API_KEY) {
       logger.info(
-        {
-          model: config.GEMINI_MODEL,
-          requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
-          operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
-          maxRetries: config.GEMINI_MAX_RETRIES,
-          maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
-        },
+        { model: config.GEMINI_MODEL, maxConcurrency: config.GEMINI_MAX_CONCURRENCY },
         'Initializing Live Gemini adapter with bounded failure isolation',
       );
       geminiAdapter = new LiveGeminiAdapter({
@@ -144,26 +184,131 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     }
 
     const simulatedAgent = options.simulatedAgent ?? new DeterministicSimulatedDeceptionAdapter();
+    const budgetRepo = new BudgetRepository(db as PrismaClient);
+    const budgetService = new GeminiBudgetService({ budgetRepo });
+
+    const sharedCloudRunAdapter = new FakeCloudRunAdapter();
+    const sharedFalseRouteAdapter = new FakeFalseRouteAdapter();
+    const sharedCloudArmorAdapter = new FakeCloudArmorAdapter();
 
     const processor = new EventProcessor({
       repository,
       geminiAdapter,
       simulatedAgent,
       logger,
+      budgetService,
     });
+
+    let cleanupService: LeaseCleanupService | null = null;
+
+    if (config.AUTONOMOUS_PUSH_MODE !== 'DISABLED') {
+      const workflowRepo =
+        options.autonomousWorkflowRepository ??
+        new AutonomousWorkflowRepository(db as PrismaClient);
+      const activityRepo =
+        options.activityEventRepository ?? new ActivityEventRepository(db as PrismaClient);
+
+      cleanupService =
+        options.leaseCleanupService ??
+        new LeaseCleanupService(workflowRepo, activityRepo, {
+          cloudRunAdapter: sharedCloudRunAdapter,
+          falseRouteAdapter: sharedFalseRouteAdapter,
+          cloudArmorAdapter: sharedCloudArmorAdapter,
+        });
+
+      const autoGeminiAdapter =
+        options.autonomousGeminiAdapter ??
+        (config.GEMINI_API_KEY
+          ? new LiveAutonomousGeminiAdapter({
+              apiKey: config.GEMINI_API_KEY,
+              modelName: config.GEMINI_MODEL,
+              requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
+              operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
+              maxRetries: config.GEMINI_MAX_RETRIES,
+              maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
+              maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+            })
+          : new FakeAutonomousGeminiAdapter('unavailable'));
+
+      const workerProcessId = `worker-${randomUUID()}`;
+      const toolGateway = new ToolGateway(workflowRepo, activityRepo, {
+        cloudRunAdapter: sharedCloudRunAdapter,
+        falseRouteAdapter: sharedFalseRouteAdapter,
+        cloudArmorAdapter: sharedCloudArmorAdapter,
+        workerId: workerProcessId,
+      });
+
+      const autonomousOrchestrator =
+        options.autonomousOrchestrator ??
+        new AutonomousWorkflowOrchestrator(
+          workflowRepo,
+          activityRepo,
+          toolGateway,
+          autoGeminiAdapter,
+          budgetService,
+          workerProcessId,
+        );
+
+      let verifier: OidcTokenVerifier;
+      if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
+        verifier = new LocalSharedSecretOidcTokenVerifier(config.AUTONOMOUS_LOCAL_PUSH_TOKEN!);
+      } else {
+        if (!options.oidcTokenVerifier) {
+          throw new Error('OIDC push mode requires an injected production token verifier');
+        }
+        verifier = options.oidcTokenVerifier;
+      }
+
+      pushHandler =
+        options.pushHandler ??
+        new PubSubPushHandler(autonomousOrchestrator, verifier, workflowRepo, {
+          ...(config.PUBSUB_OIDC_AUDIENCE ? { expectedAudience: config.PUBSUB_OIDC_AUDIENCE } : {}),
+          ...(config.PUBSUB_OIDC_SERVICE_ACCOUNT
+            ? { expectedServiceAccount: config.PUBSUB_OIDC_SERVICE_ACCOUNT }
+            : {}),
+        });
+    }
 
     orchestrator = new WorkerOrchestrator({
       processor,
       logger,
       pollIntervalMs: config.WORKER_POLL_INTERVAL_MS,
+      cleanupService: cleanupService ?? undefined,
     });
-
-    orchestrator.start();
 
     // 2. Start Cloud Run-compatible HTTP health server
     healthServer = http.createServer(async (req, res) => {
       const urlPath = (req.url || '/').split('?')[0] || '/';
       res.setHeader('Content-Type', 'application/json');
+
+      if (urlPath === '/pubsub/push') {
+        if (req.method !== 'POST') {
+          res.writeHead(405);
+          res.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' }));
+          return;
+        }
+        if (!pushHandler) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: 'NOT_FOUND', message: 'Push intake is disabled' }));
+          return;
+        }
+        try {
+          const body = await readBoundedJsonBody(req);
+          const result = await pushHandler.handlePushRequest(req.headers.authorization, body);
+          res.writeHead(result.statusCode);
+          res.end(JSON.stringify(result.body));
+        } catch (err) {
+          const tooLarge = err instanceof Error && err.message === 'REQUEST_BODY_TOO_LARGE';
+          res.writeHead(tooLarge ? 413 : 400);
+          res.end(
+            JSON.stringify({
+              error: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'INVALID_JSON',
+              message: tooLarge ? 'Push payload exceeds 64KB' : 'Push payload must be valid JSON',
+            }),
+          );
+        }
+        return;
+      }
 
       if (req.method !== 'GET') {
         res.writeHead(405);
@@ -228,6 +373,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       socket.once('close', () => trackedSockets.delete(socket));
     });
 
+    orchestrator.start();
     isReadyState = true;
     logger.info(
       { port: config.PORT, env: config.NODE_ENV },
@@ -338,6 +484,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       telemetry,
       logger,
       healthServer,
+      pushHandler,
+      cleanupService,
       isReady,
       stop,
     };
@@ -371,25 +519,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     const errorType = startupErr instanceof Error ? startupErr.constructor.name : 'UnknownError';
     logger.error({ errorType }, 'Fatal worker startup error; aborting startup');
 
-    if (healthServer) {
-      try {
-        healthServer.close();
-      } catch {
-        // Suppress secondary health server close errors
-      }
-    }
-    if (db) {
-      try {
-        await db.$disconnect();
-      } catch {
-        // Suppress secondary disconnect errors
-      }
-    }
-    try {
-      await telemetry.shutdown();
-    } catch {
-      // Suppress secondary telemetry errors
-    }
+    if (orchestrator) await orchestrator.stop().catch(() => {});
+    if (healthServer) healthServer.close();
+    if (db) await db.$disconnect().catch(() => {});
+    await telemetry.shutdown().catch(() => {});
 
     throw startupErr;
   }
