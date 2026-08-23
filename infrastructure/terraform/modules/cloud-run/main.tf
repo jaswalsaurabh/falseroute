@@ -7,6 +7,7 @@ resource "google_cloud_run_v2_service" "api" {
   name     = "falseroute-api"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  deletion_protection = false
 
   template {
     service_account                  = var.api_sa_email
@@ -45,10 +46,6 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "LOG_LEVEL"
         value = "info"
-      }
-      env {
-        name  = "PORT"
-        value = "3000"
       }
       env {
         name  = "EVENT_PUBLISHER_MODE"
@@ -132,6 +129,7 @@ resource "google_cloud_run_v2_service" "worker" {
   location         = var.region
   ingress          = "INGRESS_TRAFFIC_INTERNAL_ONLY"
   custom_audiences = [var.worker_oidc_audience]
+  deletion_protection = false
 
   template {
     service_account = var.worker_sa_email
@@ -169,10 +167,6 @@ resource "google_cloud_run_v2_service" "worker" {
       env {
         name  = "LOG_LEVEL"
         value = "info"
-      }
-      env {
-        name  = "PORT"
-        value = "8080"
       }
       env {
         name  = "AUTONOMOUS_PUSH_MODE"
@@ -265,6 +259,7 @@ resource "google_cloud_run_v2_service" "web" {
   name     = "falseroute-web"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  deletion_protection = false
 
   template {
     service_account                  = var.web_sa_email
@@ -285,7 +280,7 @@ resource "google_cloud_run_v2_service" "web" {
 
       resources {
         limits = {
-          cpu    = "500m"
+          cpu    = "1000m"
           memory = "256Mi"
         }
         cpu_idle = true
@@ -294,10 +289,6 @@ resource "google_cloud_run_v2_service" "web" {
       env {
         name  = "NODE_ENV"
         value = "production"
-      }
-      env {
-        name  = "PORT"
-        value = "8080"
       }
 
       liveness_probe {

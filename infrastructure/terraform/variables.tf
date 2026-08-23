@@ -105,6 +105,6 @@ variable "enable_cloudflare_dns" {
 
 variable "cloudflare_zone_id" {
   type        = string
-  description = "Cloudflare Zone ID for easyvouch.in domain"
+  description = "Cloudflare Zone ID for the staging example domain"
   default     = ""
 }

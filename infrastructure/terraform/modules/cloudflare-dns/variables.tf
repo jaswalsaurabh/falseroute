@@ -6,7 +6,7 @@ variable "enable_record" {
 
 variable "cloudflare_zone_id" {
   type        = string
-  description = "Cloudflare Zone ID for easyvouch.in"
+  description = "Cloudflare Zone ID for the staging example domain"
   default     = ""
 }
 

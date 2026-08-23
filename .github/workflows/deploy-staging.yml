@@ -1,0 +1,249 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}
+  TERRAFORM_DIR: infrastructure/terraform
+
+jobs:
+  build-images:
+    name: Build and publish amd64 images
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit_sha: ${{ steps.revision.outputs.commit_sha }}
+
+    steps:
+      - name: Select deployment revision
+        id: revision
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "commit_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "commit_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.revision.outputs.commit_sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish images
+        run: |
+          set -euo pipefail
+          for component in api worker web; do
+            docker buildx build \
+              --platform linux/amd64 \
+              --provenance=false \
+              --file "apps/${component}/Dockerfile" \
+              --tag "${REGISTRY}/falseroute-${component}:${GITHUB_SHA}" \
+              --metadata-file "/tmp/${component}-metadata.json" \
+              --push .
+          done
+
+      - name: Export immutable image digests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output = {}
+          for component in ("api", "worker", "web"):
+              metadata = json.loads(Path(f"/tmp/{component}-metadata.json").read_text())
+              digest = metadata["containerimage.digest"]
+              if not digest.startswith("sha256:"):
+                  raise SystemExit(f"Unexpected digest for {component}: {digest}")
+              output[f"{component}_image_tag"] = digest
+
+          Path("image-digests.json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
+          cat image-digests.json
+
+      - name: Upload image digests
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digests-${{ steps.revision.outputs.commit_sha }}
+          path: image-digests.json
+          retention-days: 3
+
+  terraform-plan:
+    name: Plan staging infrastructure
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-images.outputs.commit_sha }}
+
+      - name: Download image digests
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digests-${{ needs.build-images.outputs.commit_sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Write deployment variables
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+          TECHNICAL_OWNER: ${{ vars.TECHNICAL_OWNER }}
+          SECURITY_APPROVER: ${{ vars.SECURITY_APPROVER }}
+          INCIDENT_CONTACT_EMAIL: ${{ vars.INCIDENT_CONTACT_EMAIL }}
+          ADR_0005_ACCEPTED: ${{ vars.ADR_0005_ACCEPTED }}
+          BILLING_ACCOUNT_ID: ${{ vars.BILLING_ACCOUNT_ID }}
+          ENABLE_DELETION_PROTECTION: ${{ vars.ENABLE_DELETION_PROTECTION }}
+          ENABLE_CLOUDFLARE_DNS: ${{ vars.ENABLE_CLOUDFLARE_DNS }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          values = {
+              "project_id": os.environ["GCP_PROJECT_ID"],
+              "project_number": os.environ["GCP_PROJECT_NUMBER"],
+              "region": os.environ["GCP_REGION"],
+              "environment": "staging",
+              "domain_name": os.environ["DOMAIN_NAME"],
+              "technical_owner": os.environ["TECHNICAL_OWNER"],
+              "security_approver": os.environ["SECURITY_APPROVER"],
+              "incident_contact_email": os.environ["INCIDENT_CONTACT_EMAIL"],
+              "adr_0005_accepted": os.environ["ADR_0005_ACCEPTED"].lower() == "true",
+              "billing_account_id": os.environ["BILLING_ACCOUNT_ID"],
+              "enable_deletion_protection": os.environ["ENABLE_DELETION_PROTECTION"].lower() == "true",
+              "enable_cloudflare_dns": os.environ["ENABLE_CLOUDFLARE_DNS"].lower() == "true",
+              "cloudflare_zone_id": os.environ["CLOUDFLARE_ZONE_ID"],
+          }
+          values.update(json.loads(Path("image-digests.json").read_text()))
+          Path("infrastructure/terraform/deployment.auto.tfvars.json").write_text(
+              json.dumps(values, indent=2) + "\n"
+          )
+          PY
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: Check Terraform formatting
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Validate Terraform
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform validate
+
+      - name: Create Terraform plan
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform plan -input=false -out=staging.tfplan
+
+      - name: Upload approved-plan input
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-plan-${{ needs.build-images.outputs.commit_sha }}
+          path: |
+            infrastructure/terraform/staging.tfplan
+            infrastructure/terraform/deployment.auto.tfvars.json
+          retention-days: 3
+
+  terraform-apply:
+    name: Apply approved staging plan
+    needs: [build-images, terraform-plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-images.outputs.commit_sha }}
+
+      - name: Download approved plan
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-plan-${{ needs.build-images.outputs.commit_sha }}
+          path: infrastructure/terraform
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ vars.TF_STATE_PREFIX }}"
+
+      - name: Apply approved Terraform plan
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform apply -input=false -auto-approve staging.tfplan

@@ -3,7 +3,7 @@ locals {
     app         = "falseroute"
     environment = var.environment
     managed_by  = "terraform"
-    owner       = "saurabh-jaswal"
+    owner       = "falseroute-staging"
   }
 
   artifact_repository_id = "falseroute"
