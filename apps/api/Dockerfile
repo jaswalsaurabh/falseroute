@@ -47,6 +47,7 @@ COPY --from=builder --chown=node:node /app/pruned ./
 # migration job. Keep the reviewed schema and migrations outside the service
 # startup path; the job invokes Prisma explicitly before a revision rollout.
 COPY --from=builder --chown=node:node /app/packages/database/prisma /app/prisma
+COPY --from=builder --chown=node:node /app/packages/database/prisma.config.ts /app/prisma.config.ts
 
 USER node
 
