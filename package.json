@@ -18,6 +18,7 @@
     "dev:infra": "docker compose -f infrastructure/docker/compose.yml up -d postgres",
     "dev:infra:down": "docker compose -f infrastructure/docker/compose.yml down",
     "dev:migrate": "node scripts/dev-supervisor.ts --migrate",
+    "staging:migrate": "bash scripts/run-staging-migrations.sh",
     "db:reset:local": "node scripts/dev-db-reset.ts",
     "build": "turbo run build",
     "test": "turbo run test && pnpm test:scripts",

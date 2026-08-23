@@ -26,6 +26,10 @@ RUN pnpm --filter @false-route/api... build
 
 # Prune for production deployment
 RUN pnpm --filter @false-route/api --prod --legacy deploy /app/pruned
+# The immutable API image is also used by the decoupled migration job. Fail the
+# image build here rather than allowing a deployment whose migration entrypoint
+# cannot start.
+RUN test -f /app/pruned/node_modules/prisma/build/index.js
 
 # Stage 2: Production Runtime
 FROM node:24.19.0-bookworm-slim AS runner
