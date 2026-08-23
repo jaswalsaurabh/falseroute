@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntrusionEventEnvelope } from '@false-route/contracts';
-import { LocalHttpEventPublisher } from './event-publisher.js';
+import { GooglePubSubEventPublisher, LocalHttpEventPublisher } from './event-publisher.js';
 
 const envelope: IntrusionEventEnvelope = {
   eventId: '11111111-1111-4111-8111-111111111111',
@@ -65,5 +65,43 @@ describe('LocalHttpEventPublisher', () => {
     });
 
     await expect(publisher.publish(envelope)).rejects.toThrow('HTTP 503');
+  });
+});
+
+describe('GooglePubSubEventPublisher', () => {
+  it('publishes the encoded envelope and returns the provider message ID', async () => {
+    const client = {
+      request: vi.fn().mockResolvedValue({ data: { messageIds: ['message-123'] } }),
+    };
+    const publisher = new GooglePubSubEventPublisher({
+      projectId: 'falseroute-staging-123',
+      topicId: 'falseroute-events',
+      client,
+    });
+
+    await expect(publisher.publish(envelope)).resolves.toEqual({ transportId: 'message-123' });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://pubsub.googleapis.com/v1/projects/falseroute-staging-123/topics/falseroute-events:publish',
+        method: 'POST',
+        timeout: 5000,
+      }),
+    );
+    const request = client.request.mock.calls[0]![0] as {
+      data: { messages: { data: string }[] };
+    };
+    expect(
+      JSON.parse(Buffer.from(request.data.messages[0]!.data, 'base64').toString('utf8')),
+    ).toEqual(envelope);
+  });
+
+  it('fails closed when Pub/Sub omits the message ID', async () => {
+    const publisher = new GooglePubSubEventPublisher({
+      projectId: 'falseroute-staging-123',
+      topicId: 'falseroute-events',
+      client: { request: vi.fn().mockResolvedValue({ data: {} }) },
+    });
+
+    await expect(publisher.publish(envelope)).rejects.toThrow('did not contain a message ID');
   });
 });

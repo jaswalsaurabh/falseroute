@@ -1,0 +1,147 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}
+
+jobs:
+  build-images:
+    name: Build and publish amd64 images
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit_sha: ${{ steps.revision.outputs.commit_sha }}
+
+    steps:
+      - name: Select deployment revision
+        id: revision
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "commit_sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "commit_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.revision.outputs.commit_sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_APPLICATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_IMAGE_PUBLISHER_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish images
+        run: |
+          set -euo pipefail
+          for component in api worker web; do
+            docker buildx build \
+              --platform linux/amd64 \
+              --provenance=false \
+              --file "apps/${component}/Dockerfile" \
+              --tag "${REGISTRY}/falseroute-${component}:${GITHUB_SHA}" \
+              --metadata-file "/tmp/${component}-metadata.json" \
+              --push .
+          done
+
+      - name: Export immutable image digests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          output = {}
+          for component in ("api", "worker", "web"):
+              metadata = json.loads(Path(f"/tmp/{component}-metadata.json").read_text())
+              digest = metadata["containerimage.digest"]
+              if not digest.startswith("sha256:"):
+                  raise SystemExit(f"Unexpected digest for {component}: {digest}")
+              output[f"{component}_image_digest"] = digest
+
+          Path("image-digests.json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
+          cat image-digests.json
+
+      - name: Upload image digests
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digests-${{ steps.revision.outputs.commit_sha }}
+          path: image-digests.json
+          retention-days: 3
+
+  deploy-application:
+    name: Deploy existing Cloud Run services
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digests-${{ needs.build-images.outputs.commit_sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_APPLICATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_APPLICATION_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy API, worker, and web revisions
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+          api_digest="$(python3 -c 'import json; print(json.load(open("image-digests.json"))["api_image_digest"])')"
+          worker_digest="$(python3 -c 'import json; print(json.load(open("image-digests.json"))["worker_image_digest"])')"
+          web_digest="$(python3 -c 'import json; print(json.load(open("image-digests.json"))["web_image_digest"])')"
+          gcloud run services update falseroute-api \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --platform=managed \
+            --image="$REGISTRY/falseroute-api@$api_digest" --quiet
+          gcloud run services update falseroute-worker \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --platform=managed \
+            --image="$REGISTRY/falseroute-worker@$worker_digest" --quiet
+          gcloud run services update falseroute-web \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --platform=managed \
+            --image="$REGISTRY/falseroute-web@$web_digest" --quiet

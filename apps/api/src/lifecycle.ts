@@ -17,6 +17,7 @@ import { parseApiConfig, type ApiConfig } from './config/api-config.js';
 import { createApp } from './app.js';
 import type { ApiRepository } from './persistence/api-repository.js';
 import { ActivityStreamService } from './services/activity-stream-service.js';
+import { GooglePubSubEventPublisher, type EventPublisher } from './integrations/event-publisher.js';
 
 export interface StartApiServerOptions {
   readonly config?: ApiConfig | undefined;
@@ -27,6 +28,7 @@ export interface StartApiServerOptions {
   readonly repository?: ApiRepository | undefined;
   readonly activityRepo?: ActivityEventRepository | undefined;
   readonly streamService?: ActivityStreamService | undefined;
+  readonly eventPublisher?: EventPublisher | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
   readonly onShutdownComplete?: ((exitCode: number) => void) | undefined;
 }
@@ -105,6 +107,16 @@ export async function startApiServer(
     const activityRepo = options.activityRepo ?? new ActivityEventRepository(db as PrismaClient);
     streamService = options.streamService ?? new ActivityStreamService(activityRepo);
 
+    const eventPublisher =
+      options.eventPublisher ??
+      (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB'
+        ? new GooglePubSubEventPublisher({
+            projectId: config.PUBSUB_PROJECT_ID!,
+            topicId: config.PUBSUB_TOPIC_ID ?? 'falseroute-events',
+            timeoutMs: config.EVENT_PUBLISH_TIMEOUT_MS ?? 5000,
+          })
+        : undefined);
+
     const app = createApp({
       config,
       db,
@@ -112,6 +124,7 @@ export async function startApiServer(
       activityRepo,
       streamService,
       ...(options.repository !== undefined ? { repository: options.repository } : {}),
+      ...(eventPublisher !== undefined ? { eventPublisher } : {}),
       isReady,
     });
 

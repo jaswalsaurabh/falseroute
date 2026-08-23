@@ -61,6 +61,17 @@ tmp/
 *.tmp
 mock-*.html
 
+# Terraform local cache, state, and plan files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+*.tfbackend
+backend.private.hcl
+!*.tfvars.example
+
 # Markdown is internal by default. Public documentation requires an explicit allowlist entry.
 *.md
 !/README.md

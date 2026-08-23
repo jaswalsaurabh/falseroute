@@ -4,6 +4,12 @@ export { createApp, type AppOptions } from './app.js';
 export { parseApiConfig, type ApiConfig } from './config/api-config.js';
 export { PrismaApiRepository, type ApiRepository } from './persistence/api-repository.js';
 export { EventService } from './services/event-service.js';
+export {
+  GooglePubSubEventPublisher,
+  LocalHttpEventPublisher,
+  InMemoryEventPublisher,
+  type EventPublisher,
+} from './integrations/event-publisher.js';
 export { EventController } from './controllers/event-controller.js';
 export { HealthController } from './controllers/health-controller.js';
 export { startApiServer, type ApiServerInstance, type StartApiServerOptions } from './lifecycle.js';

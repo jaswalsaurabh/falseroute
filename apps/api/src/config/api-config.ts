@@ -15,6 +15,8 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
     .min(8, 'OPERATOR_ACCESS_TOKEN must be at least 8 characters long'),
   OPERATOR_REPLAY_TOKEN: z.string().min(16).optional(),
   EVENT_PUBLISHER_MODE: z.enum(['MEMORY', 'LOCAL_HTTP', 'LIVE_PUBSUB']).default('MEMORY'),
+  PUBSUB_PROJECT_ID: z.string().min(6).optional(),
+  PUBSUB_TOPIC_ID: z.string().min(3).default('falseroute-events'),
   LOCAL_WORKER_PUSH_URL: z.string().url().default('http://127.0.0.1:8088/pubsub/push'),
   LOCAL_WORKER_PUSH_TOKEN: z.string().min(16).optional(),
   EVENT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
@@ -62,6 +64,13 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
         });
       }
     }
+    if (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB' && !config.PUBSUB_PROJECT_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBSUB_PROJECT_ID'],
+        message: 'PUBSUB_PROJECT_ID is required for live Pub/Sub publishing',
+      });
+    }
     if (
       config.OPERATOR_REPLAY_TOKEN !== undefined &&
       config.OPERATOR_REPLAY_TOKEN === config.OPERATOR_ACCESS_TOKEN
@@ -104,6 +113,8 @@ export type ApiConfig = Omit<
   | 'SHUTDOWN_TELEMETRY_TIMEOUT_MS'
   | 'OPERATOR_REPLAY_TOKEN'
   | 'EVENT_PUBLISHER_MODE'
+  | 'PUBSUB_PROJECT_ID'
+  | 'PUBSUB_TOPIC_ID'
   | 'LOCAL_WORKER_PUSH_URL'
   | 'LOCAL_WORKER_PUSH_TOKEN'
   | 'EVENT_PUBLISH_TIMEOUT_MS'
@@ -115,6 +126,8 @@ export type ApiConfig = Omit<
   SHUTDOWN_TELEMETRY_TIMEOUT_MS?: number;
   OPERATOR_REPLAY_TOKEN?: string | undefined;
   EVENT_PUBLISHER_MODE?: 'MEMORY' | 'LOCAL_HTTP' | 'LIVE_PUBSUB';
+  PUBSUB_PROJECT_ID?: string | undefined;
+  PUBSUB_TOPIC_ID?: string;
   LOCAL_WORKER_PUSH_URL?: string;
   LOCAL_WORKER_PUSH_TOKEN?: string | undefined;
   EVENT_PUBLISH_TIMEOUT_MS?: number;

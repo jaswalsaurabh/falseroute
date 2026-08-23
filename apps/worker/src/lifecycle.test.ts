@@ -141,6 +141,9 @@ describe('Worker Lifecycle & Health Server', () => {
       handlePushRequest: vi
         .fn()
         .mockResolvedValue({ statusCode: 200, body: { status: 'COMPLETED' } }),
+      handleDeadLetterRequest: vi
+        .fn()
+        .mockResolvedValue({ statusCode: 200, body: { status: 'QUARANTINED' } }),
     } as unknown as PubSubPushHandler;
 
     const instance = await startTestWorker({
@@ -166,6 +169,20 @@ describe('Worker Lifecycle & Health Server', () => {
       expect(pushHandler.handlePushRequest).toHaveBeenCalledWith(
         'Bearer not-a-real-local-push-token',
         { message: 'test' },
+      );
+
+      const deadLetterResponse = await fetch(`http://127.0.0.1:${port}/pubsub/dead-letter`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer not-a-real-local-push-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: 'dead-letter-test' }),
+      });
+      expect(deadLetterResponse.status).toBe(200);
+      expect(pushHandler.handleDeadLetterRequest).toHaveBeenCalledWith(
+        'Bearer not-a-real-local-push-token',
+        { message: 'dead-letter-test' },
       );
     } finally {
       await instance.stop('test-cleanup');

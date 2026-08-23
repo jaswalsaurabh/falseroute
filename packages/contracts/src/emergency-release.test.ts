@@ -10,7 +10,7 @@ describe('Emergency Release Contracts', () => {
       idempotencyKey: 'em-rel-12345',
       reason: 'Operator requested complete incident rollback',
       confirmed: true,
-      requestedBy: 'operator-saurabh',
+      requestedBy: 'operator-test',
     };
     const parsed = EmergencyReleaseRequestSchema.parse(valid);
     expect(parsed.idempotencyKey).toBe('em-rel-12345');

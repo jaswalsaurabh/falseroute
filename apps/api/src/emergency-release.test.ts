@@ -163,7 +163,7 @@ describe('Emergency Release Endpoint', () => {
         idempotencyKey: 'em-rel-test-key-01',
         reason: 'Operator requested emergency rollback of active demonstration',
         confirmed: true,
-        requestedBy: 'operator-saurabh',
+        requestedBy: 'operator-test',
       });
 
     expect(response.status).toBe(200);

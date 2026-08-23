@@ -1,0 +1,31 @@
+# Example Terraform Variables for FalseRoute Staging
+# Copy this file to terraform.tfvars or staging.tfvars (gitignored) and customize as needed.
+
+project_id                 = "falseroute-staging-example"
+region                     = "us-central1"
+environment                = "staging"
+domain_name                = "staging-falseroute.example.com"
+technical_owner            = "Example Owner"
+security_approver          = "Example Approver"
+incident_contact_email     = "alerts@example.com"
+
+# ADR-0005 Human Acceptance Gate (Must be true to apply live staging mutations)
+adr_0005_accepted          = false
+
+# Replace these example values with the resolved Artifact Registry image digests.
+api_image_tag              = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+worker_image_tag           = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+web_image_tag              = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Billing and Safety Settings (ADR-0005 $10/day spend ceiling)
+billing_account_id         = "000000-000000-000000" # Replace with your billing account ID.
+
+# Autonomous AI Settings
+
+# Database safety settings
+enable_deletion_protection = false
+
+# Cloudflare DNS Settings
+enable_cloudflare_dns      = true
+cloudflare_zone_id         = "example-cloudflare-zone-id"
+# Export CLOUDFLARE_API_TOKEN in the shell before plan/apply.

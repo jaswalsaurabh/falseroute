@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { LocalSharedSecretOidcTokenVerifier, PubSubPushHandler } from './pubsub-push-handler.js';
+import {
+  GoogleOidcTokenVerifier,
+  LocalSharedSecretOidcTokenVerifier,
+  PubSubPushHandler,
+} from './pubsub-push-handler.js';
 import { type AutonomousWorkflowOrchestrator } from '../orchestration/autonomous-workflow.js';
 import { type AutonomousWorkflowRepository } from '@false-route/database';
 
@@ -127,6 +131,48 @@ describe('PubSubPushHandler', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('does not expose provider error details on transient processing failures', async () => {
+    const failingOrchestrator = {
+      processEventEnvelope: vi.fn().mockRejectedValue(new Error('postgres password leaked')),
+    } as unknown as AutonomousWorkflowOrchestrator;
+    const handler = new PubSubPushHandler(failingOrchestrator, verifier, mockRepo);
+    const response = await handler.handlePushRequest(`Bearer ${localSecret}`, {
+      message: {
+        data: Buffer.from(
+          JSON.stringify({
+            eventId: '11111111-1111-4111-8111-111111111111',
+            correlationId: 'corr-transient-1',
+            schemaVersion: '1.0.0',
+            source: 'PUB_SUB',
+            scenarioKind: 'ENV_FILE_PROBE',
+            occurredAt: '2026-08-22T10:00:00.000Z',
+            publishedAt: '2026-08-22T10:00:01.000Z',
+            sourceIp: '198.51.100.25',
+            evidence: {
+              scenarioKind: 'ENV_FILE_PROBE',
+              requestedPath: '/.env',
+              httpMethod: 'GET',
+              userAgent: 'not-a-real-scanner/1.0',
+              sourceIp: '198.51.100.25',
+              matchedString: '.env',
+              isPositiveMatch: true,
+            },
+            provenance: 'OBSERVED',
+          }),
+        ).toString('base64'),
+        messageId: 'msg-transient-1',
+        publishTime: '2026-08-22T10:00:01.000Z',
+      },
+      subscription: 'projects/dummy/subscriptions/worker-sub',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({
+      error: 'TRANSIENT_FAILURE',
+      message: 'Event processing failed; delivery will be retried',
+    });
+  });
+
   it('handles duplicate poison delivery idempotently', async () => {
     const handler = new PubSubPushHandler(mockOrchestrator, verifier, mockRepo);
     const rawBody = {
@@ -159,5 +205,148 @@ describe('PubSubPushHandler', () => {
 
     expect(res.statusCode).toBe(503);
     expect(res.body['error']).toBe('QUARANTINE_UNAVAILABLE');
+  });
+
+  it('durably records broker dead letters for operator replay', async () => {
+    const handler = new PubSubPushHandler(mockOrchestrator, verifier, mockRepo);
+    const event = {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-dlq-1',
+      schemaVersion: '1.0.0',
+      source: 'PUB_SUB',
+      scenarioKind: 'ENV_FILE_PROBE',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      publishedAt: '2026-08-22T10:00:01.000Z',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'ENV_FILE_PROBE',
+        requestedPath: '/.env',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-scanner/1.0',
+        sourceIp: '198.51.100.25',
+        matchedString: '.env',
+        isPositiveMatch: true,
+      },
+      provenance: 'OBSERVED',
+    };
+    const request = {
+      message: {
+        data: Buffer.from(JSON.stringify(event)).toString('base64'),
+        messageId: 'broker-dlq-message-1',
+        publishTime: '2026-08-22T10:05:00.000Z',
+        attributes: { CloudPubSubDeadLetterSourceDeliveryCount: '5' },
+      },
+      subscription: 'projects/dummy/subscriptions/events-dlq-sub',
+    };
+
+    const response = await handler.handleDeadLetterRequest(`Bearer ${localSecret}`, request);
+
+    expect(response.statusCode).toBe(200);
+    expect(mockRepo.recordDeadLetter).toHaveBeenCalledWith({
+      originalMessageId: 'broker-dlq-message-1',
+      originalEventId: event.eventId,
+      failureReason: 'Pub/Sub delivery attempts exhausted',
+      payload: event,
+      retryCount: 5,
+    });
+    expect(mockOrchestrator.processEventEnvelope).not.toHaveBeenCalled();
+  });
+
+  it('requests broker dead-letter redelivery when durable storage is unavailable', async () => {
+    const unavailableRepo = {
+      recordDeadLetter: vi.fn().mockRejectedValue(new Error('database unavailable')),
+    } as unknown as AutonomousWorkflowRepository;
+    const handler = new PubSubPushHandler(mockOrchestrator, verifier, unavailableRepo);
+    const event = {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-dlq-2',
+      schemaVersion: '1.0.0',
+      source: 'PUB_SUB',
+      scenarioKind: 'ENV_FILE_PROBE',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      publishedAt: '2026-08-22T10:00:01.000Z',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'ENV_FILE_PROBE',
+        requestedPath: '/.env',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-scanner/1.0',
+        sourceIp: '198.51.100.25',
+        matchedString: '.env',
+        isPositiveMatch: true,
+      },
+      provenance: 'OBSERVED',
+    };
+
+    const response = await handler.handleDeadLetterRequest(`Bearer ${localSecret}`, {
+      message: {
+        data: Buffer.from(JSON.stringify(event)).toString('base64'),
+        messageId: 'broker-dlq-message-2',
+        publishTime: '2026-08-22T10:05:00.000Z',
+      },
+      subscription: 'projects/dummy/subscriptions/events-dlq-sub',
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body['error']).toBe('QUARANTINE_UNAVAILABLE');
+  });
+
+  it('durably records invalid broker dead letters for inspection', async () => {
+    const handler = new PubSubPushHandler(mockOrchestrator, verifier, mockRepo);
+    const response = await handler.handleDeadLetterRequest(`Bearer ${localSecret}`, {
+      message: {
+        data: Buffer.from('not-json').toString('base64'),
+        messageId: 'broker-dlq-poison-1',
+        publishTime: '2026-08-22T10:05:00.000Z',
+        attributes: { CloudPubSubDeadLetterSourceDeliveryCount: '5' },
+      },
+      subscription: 'projects/dummy/subscriptions/events-dlq-sub',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockRepo.recordDeadLetter).toHaveBeenCalledWith({
+      originalMessageId: 'broker-dlq-poison-1',
+      failureReason: 'Pub/Sub delivery attempts exhausted; payload is not valid JSON',
+      payload: { rawData: Buffer.from('not-json').toString('base64') },
+      retryCount: 5,
+    });
+  });
+});
+
+describe('GoogleOidcTokenVerifier', () => {
+  it('returns verified audience and service-account claims', async () => {
+    const client = {
+      verifyIdToken: vi.fn().mockResolvedValue({
+        getPayload: () => ({
+          aud: 'https://staging.example.com/worker',
+          email: 'push@example-project.iam.gserviceaccount.com',
+        }),
+      }),
+    };
+    const verifier = new GoogleOidcTokenVerifier(client);
+
+    await expect(
+      verifier.verifyToken('Bearer not-a-real-signed-token', {
+        expectedAudience: 'https://staging.example.com/worker',
+      }),
+    ).resolves.toEqual({
+      valid: true,
+      audience: 'https://staging.example.com/worker',
+      email: 'push@example-project.iam.gserviceaccount.com',
+    });
+    expect(client.verifyIdToken).toHaveBeenCalledWith({
+      idToken: 'not-a-real-signed-token',
+      audience: 'https://staging.example.com/worker',
+    });
+  });
+
+  it('fails closed for missing or unverifiable tokens', async () => {
+    const client = { verifyIdToken: vi.fn().mockRejectedValue(new Error('invalid token')) };
+    const verifier = new GoogleOidcTokenVerifier(client);
+
+    await expect(verifier.verifyToken(undefined, {})).resolves.toEqual({ valid: false });
+    await expect(verifier.verifyToken('Bearer not-a-real-invalid-token', {})).resolves.toEqual({
+      valid: false,
+    });
   });
 });
