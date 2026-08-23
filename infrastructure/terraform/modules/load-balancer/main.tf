@@ -45,7 +45,6 @@ resource "google_compute_backend_service" "api_backend" {
   name            = "falseroute-api-backend"
   protocol        = "HTTP"
   port_name       = "http"
-  timeout_sec     = 60
   enable_cdn      = false
   security_policy = var.cloud_armor_policy_id
 
@@ -64,7 +63,6 @@ resource "google_compute_backend_service" "web_backend" {
   name            = "falseroute-web-backend"
   protocol        = "HTTP"
   port_name       = "http"
-  timeout_sec     = 30
   enable_cdn      = false
   security_policy = var.cloud_armor_policy_id
 
@@ -125,7 +123,7 @@ resource "google_compute_global_forwarding_rule" "https" {
   ip_address            = google_compute_global_address.lb_ip.address
   target                = google_compute_target_https_proxy.proxy.id
   port_range            = "443"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
+  load_balancing_scheme = "EXTERNAL"
 }
 
 # -----------------------------------------------------------------------------

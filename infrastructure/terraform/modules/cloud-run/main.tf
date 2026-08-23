@@ -3,10 +3,10 @@
 # -----------------------------------------------------------------------------
 
 resource "google_cloud_run_v2_service" "api" {
-  project  = var.project_id
-  name     = "falseroute-api"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  project             = var.project_id
+  name                = "falseroute-api"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
   deletion_protection = false
 
   template {
@@ -124,11 +124,11 @@ resource "google_cloud_run_v2_service" "api" {
 # -----------------------------------------------------------------------------
 
 resource "google_cloud_run_v2_service" "worker" {
-  project          = var.project_id
-  name             = "falseroute-worker"
-  location         = var.region
-  ingress          = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-  custom_audiences = [var.worker_oidc_audience]
+  project             = var.project_id
+  name                = "falseroute-worker"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  custom_audiences    = [var.worker_oidc_audience]
   deletion_protection = false
 
   template {
@@ -255,10 +255,10 @@ resource "google_cloud_run_v2_service" "worker" {
 # -----------------------------------------------------------------------------
 
 resource "google_cloud_run_v2_service" "web" {
-  project  = var.project_id
-  name     = "falseroute-web"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  project             = var.project_id
+  name                = "falseroute-web"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
   deletion_protection = false
 
   template {

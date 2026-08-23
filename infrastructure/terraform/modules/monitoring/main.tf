@@ -1,4 +1,12 @@
 # -----------------------------------------------------------------------------
+# Project lookup
+# -----------------------------------------------------------------------------
+
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+# -----------------------------------------------------------------------------
 # Notification Channel (Email)
 # -----------------------------------------------------------------------------
 
@@ -59,7 +67,7 @@ resource "google_monitoring_alert_policy" "cloud_run_readiness" {
 
       aggregations {
         alignment_period     = "60s"
-        per_series_aligner   = "ALIGN_RATE"
+        per_series_aligner   = "ALIGN_MAX"
         cross_series_reducer = "REDUCE_SUM"
       }
     }
@@ -126,20 +134,22 @@ resource "google_monitoring_alert_policy" "cloud_sql_memory" {
 
 resource "google_billing_budget" "staging_budget" {
   billing_account = var.billing_account_id
+  ownership_scope = "BILLING_ACCOUNT"
   # Cloud Billing budgets support monthly/yearly recurring periods, not daily.
   # Cloud Billing provides a monthly alert budget; the runtime spend budget
   # remains responsible for enforcing the daily ceiling.
-  display_name = "FalseRoute Staging Monthly Budget ($300; $10/day planning equivalent)"
+  display_name = "FalseRoute staging alert"
 
   budget_filter {
-    projects        = var.project_number != "" ? ["projects/${var.project_number}"] : ["projects/${var.project_id}"]
-    calendar_period = "MONTH"
+    projects               = ["projects/${data.google_project.current.number}"]
+    credit_types_treatment = "EXCLUDE_ALL_CREDITS"
+    calendar_period        = "MONTH"
   }
 
   amount {
     specified_amount {
-      currency_code = "USD"
-      units         = "300"
+      currency_code = "INR"
+      units         = "15000"
     }
   }
 
@@ -158,10 +168,4 @@ resource "google_billing_budget" "staging_budget" {
     spend_basis       = "CURRENT_SPEND"
   }
 
-  all_updates_rule {
-    monitoring_notification_channels = [
-      google_monitoring_notification_channel.email.id
-    ]
-    disable_default_iam_recipients = false
-  }
 }
