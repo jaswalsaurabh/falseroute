@@ -20,9 +20,9 @@ COPY tests/integration/package.json ./tests/integration/package.json
 # Install dependencies with frozen lockfile
 RUN pnpm install --frozen-lockfile
 
-# Generate Prisma client and build Worker dependencies
-RUN pnpm --filter @false-route/database build
-RUN pnpm --filter @false-route/worker build
+# Build the worker and every workspace dependency first. The recursive filter
+# ensures each package emits its dist declarations before TypeScript resolves it.
+RUN pnpm --filter @false-route/worker... build
 
 # Prune for production deployment
 RUN pnpm --filter @false-route/worker --prod --legacy deploy /app/pruned

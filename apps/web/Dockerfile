@@ -24,9 +24,8 @@ COPY tests/integration/package.json ./tests/integration/package.json
 # Install dependencies with frozen lockfile
 RUN pnpm install --frozen-lockfile
 
-# Build contracts and Web application
-RUN pnpm --filter @false-route/contracts build
-RUN pnpm --filter @false-route/web build
+# Build the web application and every workspace dependency first.
+RUN pnpm --filter @false-route/web... build
 
 # Stage 2: Production Static Server Runtime
 FROM node:24.19.0-bookworm-slim AS runner

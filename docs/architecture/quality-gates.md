@@ -7,35 +7,36 @@ This document defines the automated quality gates and activation schedule for Fa
 
 ## Quality Gate Matrix
 
-| Quality Gate                           | Enforcement Command                                    | Current Status  | Activation Phase / Condition                    | Blocks Acceptance   |
-| -------------------------------------- | ------------------------------------------------------ | --------------- | ----------------------------------------------- | ------------------- |
-| **Code Formatting**                    | `pnpm format:check`                                    | **Active**      | Phase 2 (All files)                             | Yes                 |
-| **Linting & Code Quality**             | `pnpm lint`                                            | **Active**      | Phase 2 (JS/TS/MJS)                             | Yes                 |
-| **Type Integrity**                     | `pnpm typecheck`                                       | **Active**      | Phase 2 (TypeScript 6 strict mode)              | Yes                 |
-| **Public Documentation Boundary**      | `pnpm check:docs`                                      | **Active**      | Phase 2 (Allowlist, links, Git ignore policy)   | Yes                 |
-| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                              | **Active**      | Phase 2 (Exact versions, no pre-release)        | Yes                 |
-| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                             | **Active**      | Phase 2 base; active on all first-party source  | Yes                 |
-| **Design Token Guardrails**            | `pnpm check:design-tokens`                             | **Active**      | Phase 2 base; evaluates 3-tier token hierarchy  | Yes                 |
-| **Pre-Commit Staged Guard**            | `pnpm precommit:check`                                 | **Active**      | Phase 2 (Husky 9 & lint-staged 17 hook)         | Yes                 |
-| **Secret & Credential Commit Guard**   | `pnpm check:secrets`                                   | **Active**      | Full tree in CI; staged files before commit     | Yes                 |
-| **Composite Quality Gate**             | `pnpm check`                                           | **Active**      | Root automated gate                             | Yes                 |
-| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`            | **Active**      | Phase 3A (Zod contracts creation)               | Yes                 |
-| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`               | **Active**      | Phase 3A (Environment schemas creation)         | Yes                 |
-| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                              | **Active**      | All foundation packages & apps                  | Yes                 |
-| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma:validate`  | **Active**      | Phase 3B (Database package creation)            | Yes                 |
-| **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**      | PostgreSQL integration tests                    | Yes                 |
-| **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**      | Secret and credential redaction                 | Yes                 |
-| **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**      | Operator token verification                     | Yes                 |
-| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                | Yes                 |
-| **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism       | Yes                 |
-| **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests           | Yes                 |
-| **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation             | Yes                 |
-| **Container Security & Verification**  | `pnpm verify:containers`                               | **Active**      | Non-root, read-only FS, probe verification      | Yes                 |
-| **Cloud Run Template Validation**      | `pnpm check:templates`                                 | **Active**      | Knative schema, zero-secret, single-instance    | Yes                 |
-| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy) | No                  |
-| **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary     | Yes                 |
-| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls  | Yes                 |
-| **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added    | Yes when applicable |
+| Quality Gate                           | Enforcement Command                                    | Current Status  | Activation Phase / Condition                        | Blocks Acceptance   |
+| -------------------------------------- | ------------------------------------------------------ | --------------- | --------------------------------------------------- | ------------------- |
+| **Code Formatting**                    | `pnpm format:check`                                    | **Active**      | Phase 2 (All files)                                 | Yes                 |
+| **Linting & Code Quality**             | `pnpm lint`                                            | **Active**      | Phase 2 (JS/TS/MJS)                                 | Yes                 |
+| **Type Integrity**                     | `pnpm typecheck`                                       | **Active**      | Phase 2 (TypeScript 6 strict mode)                  | Yes                 |
+| **Public Documentation Boundary**      | `pnpm check:docs`                                      | **Active**      | Phase 2 (Allowlist, links, Git ignore policy)       | Yes                 |
+| **Dependency & Catalog Policy**        | `pnpm check:dependencies`                              | **Active**      | Phase 2 (Exact versions, no pre-release)            | Yes                 |
+| **Source Review Bands & Placeholders** | `pnpm check:source-policy`                             | **Active**      | Phase 2 base; active on all first-party source      | Yes                 |
+| **Design Token Guardrails**            | `pnpm check:design-tokens`                             | **Active**      | Phase 2 base; evaluates 3-tier token hierarchy      | Yes                 |
+| **Pre-Commit Staged Guard**            | `pnpm precommit:check`                                 | **Active**      | Phase 2 (Husky 9 & lint-staged 17 hook)             | Yes                 |
+| **Secret & Credential Commit Guard**   | `pnpm check:secrets`                                   | **Active**      | Full tree in CI; staged files before commit         | Yes                 |
+| **Independent GitHub Secret Scan**     | `.github/workflows/secret-scan.yml`                    | **Active**      | Gitleaks on PRs, pushes, schedules, and manual runs | Yes                 |
+| **Composite Quality Gate**             | `pnpm check`                                           | **Active**      | Root automated gate                                 | Yes                 |
+| **Contract Schema Verification**       | `pnpm --filter @false-route/contracts test`            | **Active**      | Phase 3A (Zod contracts creation)                   | Yes                 |
+| **Typed Configuration Validation**     | `pnpm --filter @false-route/config test`               | **Active**      | Phase 3A (Environment schemas creation)             | Yes                 |
+| **Foundation Builds & Unit Tests**     | `pnpm build && pnpm test`                              | **Active**      | All foundation packages & apps                      | Yes                 |
+| **Prisma Schema & Migrations**         | `pnpm --filter @false-route/database prisma:validate`  | **Active**      | Phase 3B (Database package creation)                | Yes                 |
+| **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**      | PostgreSQL integration tests                        | Yes                 |
+| **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**      | Secret and credential redaction                     | Yes                 |
+| **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**      | Operator token verification                         | Yes                 |
+| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                    | Yes                 |
+| **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism           | Yes                 |
+| **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests               | Yes                 |
+| **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation                 | Yes                 |
+| **Container Security & Verification**  | `pnpm verify:containers`                               | **Active**      | Non-root, read-only FS, probe verification          | Yes                 |
+| **Cloud Run Template Validation**      | `pnpm check:templates`                                 | **Active**      | Knative schema, zero-secret, single-instance        | Yes                 |
+| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy)     | No                  |
+| **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary         | Yes                 |
+| **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls      | Yes                 |
+| **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added        | Yes when applicable |
 
 ---
 
@@ -128,6 +129,14 @@ This document defines the automated quality gates and activation schedule for Fa
   - Scans test files and examples; explicit `dummy`, `not-a-real`, `example`, and equivalent placeholder markers remain permitted.
   - Reports only location and finding category, never the matched credential value.
   - Runs against staged content through the installed Git hook and against the repository tree in CI.
+
+### 10a. Independent GitHub Secret Scan
+
+- **Workflow:** `.github/workflows/secret-scan.yml`
+- **Tool:** Gitleaks Action v3, pinned to the signed `v3.0.0` release commit.
+- **Coverage:** Pull requests, pushes to `main`, daily scheduled scans, and manual dispatches.
+- **Rules:** Checks complete Git history with `fetch-depth: 0`; uses only read access to repository contents; PR comments are disabled so the scanner cannot write back to pull requests.
+- **Boundary:** This is an independent detector, not a replacement for `pnpm check:secrets`, which owns FalseRoute-specific forbidden-file rules, synthetic fixture handling, and bounded historical scanning.
 
 ### 11. Contract Schema Verification
 
