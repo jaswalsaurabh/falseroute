@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import {
   type IntrusionEventEnvelope,
+  type AutonomousModelAnalysisResult,
+  type AutonomousDegradedModelResult,
   IntrusionEventEnvelopeSchema,
+  AutonomousDegradedModelResultSchema,
   validateScenarioEvidence,
 } from '@false-route/contracts';
 import {
@@ -11,6 +15,7 @@ import { ToolGateway } from '../tools/tool-gateway.js';
 import { type AutonomousGeminiAdapter } from '../adapters/autonomous-gemini-adapter.js';
 import { FakeAutonomousGeminiAdapter } from '../adapters/fake-autonomous-gemini-adapter.js';
 import { evaluateAutonomousPolicy } from '../domain/autonomous-policy.js';
+import { GeminiBudgetService } from '../services/gemini-budget-service.js';
 
 export interface AutonomousWorkflowResult {
   readonly status: 'COMPLETED' | 'DUPLICATE' | 'FAILED';
@@ -23,15 +28,22 @@ export interface AutonomousWorkflowResult {
 export class AutonomousWorkflowOrchestrator {
   private readonly toolGateway: ToolGateway;
   private readonly geminiAdapter: AutonomousGeminiAdapter;
+  private readonly budgetService: GeminiBudgetService;
+  private readonly workerId: string;
 
   constructor(
     private readonly workflowRepo: AutonomousWorkflowRepository,
     private readonly activityRepo: ActivityEventRepository,
     toolGateway?: ToolGateway,
     geminiAdapter?: AutonomousGeminiAdapter,
+    budgetService?: GeminiBudgetService,
+    workerId?: string,
   ) {
-    this.toolGateway = toolGateway ?? new ToolGateway(workflowRepo, activityRepo);
+    this.workerId = workerId ?? `worker-${randomUUID()}`;
+    this.toolGateway =
+      toolGateway ?? new ToolGateway(workflowRepo, activityRepo, { workerId: this.workerId });
     this.geminiAdapter = geminiAdapter ?? new FakeAutonomousGeminiAdapter('unavailable');
+    this.budgetService = budgetService ?? new GeminiBudgetService({ budgetRepo: workflowRepo });
   }
 
   async processEventEnvelope(
@@ -95,8 +107,24 @@ export class AutonomousWorkflowOrchestrator {
       payload: { scenarioKind, sourceIp },
     });
 
-    // 4. Bounded Gemini analysis
-    const modelResult = await this.geminiAdapter.analyzeEnvelope(validatedEnvelope);
+    // 4. Bounded Gemini analysis with atomic durable token budget reservation
+    let modelResult: AutonomousModelAnalysisResult | AutonomousDegradedModelResult;
+    try {
+      modelResult = await this.budgetService.executeWithBudget({
+        eventId,
+        execute: () => this.geminiAdapter.analyzeEnvelope(validatedEnvelope),
+      });
+    } catch (budgetErr) {
+      const reason = budgetErr instanceof Error ? budgetErr.message : String(budgetErr);
+      modelResult = AutonomousDegradedModelResultSchema.parse({
+        status: 'UNAVAILABLE',
+        correlationId: validatedEnvelope.correlationId,
+        modelIdentifier: 'gemini-budget-service',
+        evaluatedAt: new Date().toISOString(),
+        reason: `Durable Gemini token budget guard: ${reason}`,
+        provenance: 'UNAVAILABLE',
+      });
+    }
 
     if (modelResult.status === 'SUCCESS') {
       await this.activityRepo.recordActivityEvent({
@@ -252,7 +280,7 @@ export class AutonomousWorkflowOrchestrator {
       await this.workflowRepo.recordDeliveryAttempt({
         eventId,
         transportId,
-        workerId: 'worker-autonomous-01',
+        workerId: this.workerId,
         attemptNumber: 1,
         status: 'TERMINAL_FAILURE',
       });
@@ -282,7 +310,7 @@ export class AutonomousWorkflowOrchestrator {
     await this.workflowRepo.recordDeliveryAttempt({
       eventId,
       transportId,
-      workerId: 'worker-autonomous-01',
+      workerId: this.workerId,
       attemptNumber: 1,
       status: 'SUCCESS',
     });

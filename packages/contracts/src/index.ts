@@ -219,3 +219,26 @@ export {
   ReplayDeadLetterResponseSchema,
   type ReplayDeadLetterResponse,
 } from './event-transport.js';
+
+export {
+  BudgetCategorySchema,
+  type BudgetCategory,
+  BudgetReservationStatusSchema,
+  type BudgetReservationStatus,
+  GeminiAttemptOutcomeSchema,
+  type GeminiAttemptOutcome,
+  BUDGET_LIMITS,
+  GeminiUsageMetadataSchema,
+  type GeminiUsageMetadata,
+  BudgetReservationSchema,
+  type BudgetReservation,
+  BudgetStatusSchema,
+  type BudgetStatus,
+} from './budget.js';
+
+export {
+  EmergencyReleaseRequestSchema,
+  type EmergencyReleaseRequest,
+  EmergencyReleaseResponseSchema,
+  type EmergencyReleaseResponse,
+} from './emergency-release.js';

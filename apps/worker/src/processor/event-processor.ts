@@ -16,12 +16,14 @@ import { type GeminiEnrichmentAdapter } from '../adapters/gemini-adapter.js';
 import { type SimulatedDeceptionAgent } from '../adapters/simulated-deception-agent.js';
 import { classifyProviderError } from '../adapters/error-classifier.js';
 import { evaluateDeceptionPolicy } from '../domain/policy-engine.js';
+import { type GeminiBudgetService } from '../services/gemini-budget-service.js';
 
 export interface EventProcessorOptions {
   readonly repository: WorkerRepository;
   readonly geminiAdapter: GeminiEnrichmentAdapter;
   readonly simulatedAgent: SimulatedDeceptionAgent;
   readonly logger: Logger;
+  readonly budgetService?: GeminiBudgetService | undefined;
 }
 
 export interface ProcessResult {
@@ -39,12 +41,14 @@ export class EventProcessor {
   private readonly geminiAdapter: GeminiEnrichmentAdapter;
   private readonly simulatedAgent: SimulatedDeceptionAgent;
   private readonly logger: Logger;
+  private readonly budgetService?: GeminiBudgetService | undefined;
 
   constructor(options: EventProcessorOptions) {
     this.repository = options.repository;
     this.geminiAdapter = options.geminiAdapter;
     this.simulatedAgent = options.simulatedAgent;
     this.logger = options.logger;
+    this.budgetService = options.budgetService;
   }
 
   async processEvent(event: IntrusionEvent, claimToken: string): Promise<DeceptionDecision> {
@@ -55,10 +59,17 @@ export class EventProcessor {
 
     eventLogger.info({ eventType: event.eventType }, 'Beginning worker processing for event');
 
-    // 1. Optional bounded model enrichment
+    // 1. Optional bounded model enrichment with durable token budget guard
     let enrichment: ModelEnrichmentResult | DegradedModelResult;
     try {
-      enrichment = await this.geminiAdapter.enrichEvent(event);
+      if (this.budgetService) {
+        enrichment = await this.budgetService.executeWithBudget({
+          eventId: event.id,
+          execute: (attemptGate) => this.geminiAdapter.enrichEvent(event, undefined, attemptGate),
+        });
+      } else {
+        enrichment = await this.geminiAdapter.enrichEvent(event);
+      }
       if (enrichment.correlationId !== event.correlationId) {
         eventLogger.warn(
           'Model enrichment returned mismatched correlationId; degrading gracefully',

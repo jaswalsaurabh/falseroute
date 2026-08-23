@@ -16,6 +16,7 @@ import {
   type WorkerRepository,
   type ClaimReleaseOutcome,
 } from '../persistence/worker-repository.js';
+import { type GeminiBudgetService } from '../services/gemini-budget-service.js';
 
 const mockDecoyEvent: IntrusionEvent = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -462,5 +463,54 @@ describe('EventProcessor', () => {
 
     expect(combinedLogs).toContain('corr-proc-001');
     expect(combinedLogs).toContain(mockDecoyEvent.id);
+  });
+
+  it('routes Gemini model calls through GeminiBudgetService when configured', async () => {
+    const { logger } = createCapturingLogger();
+    const { repository, claimedEvents } = createMockRepository();
+    claimedEvents.push(mockNonDecoyEvent);
+
+    const mockEnrichmentAdapter = {
+      enrichEvent: vi.fn().mockResolvedValue({
+        reasoningSummary: 'Enriched reasoning summary',
+        confidenceScore: 0.95,
+        riskLevel: 'HIGH',
+        observedIndicators: ['SUSPICIOUS_USER_AGENT'],
+        suggestedStrategy: 'DIVERT_TO_HONEYPOT',
+        fallbackStrategy: 'ASSIGN_FALSE_ROUTE',
+        usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 60 },
+      }),
+    };
+
+    const attemptGate = {
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNumber: 1, claimToken: 'owner-not-a-real' }),
+    };
+    const mockBudgetService = {
+      executeWithBudget: vi.fn().mockImplementation(async (params) => {
+        return params.execute(attemptGate);
+      }),
+    } as unknown as GeminiBudgetService;
+
+    const processor = new EventProcessor({
+      repository,
+      geminiAdapter: mockEnrichmentAdapter,
+      simulatedAgent: defaultAgent,
+      logger,
+      budgetService: mockBudgetService,
+    });
+
+    const result = await processor.processNextPending();
+    expect(result.processed).toBe(true);
+    expect(mockBudgetService.executeWithBudget).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: mockNonDecoyEvent.id,
+      }),
+    );
+    // The durable attempt gate must reach the adapter so internal retries stay accounted for.
+    expect(mockEnrichmentAdapter.enrichEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      attemptGate,
+    );
   });
 });

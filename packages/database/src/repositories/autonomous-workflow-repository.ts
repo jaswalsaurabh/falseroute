@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { PrismaClient, Prisma } from '../generated/client/client.js';
+import { Prisma } from '../generated/client/client.js';
+import type { PrismaClient } from '../generated/client/client.js';
 import { LeaseRepository } from './lease-repository.js';
 
 export interface IngestionReceiptResult {
@@ -41,7 +42,41 @@ export interface ProviderIntentClaim {
     readonly provider: string;
     readonly status: string;
     readonly result: unknown;
+    readonly version?: number;
+    readonly claimOwner?: string | null;
+    readonly claimExpiresAt?: Date | null;
   };
+}
+
+export interface ProviderIntentSnapshot {
+  readonly idempotencyKey: string;
+  readonly eventId: string;
+  readonly operationType: string;
+  readonly provider: string;
+  readonly status: string;
+  readonly result: unknown;
+  readonly version: number;
+  readonly claimOwner: string | null;
+  readonly claimExpiresAt: Date | null;
+}
+
+export interface ToolBudgetReservationSnapshot {
+  readonly idempotencyKey: string;
+  readonly status: string;
+  readonly ownerId: string;
+  readonly version: number;
+  readonly amountReserved: number;
+  readonly expiresAt: Date;
+  readonly eventId: string | null;
+}
+
+/**
+ * Outcome of the narrow ambiguity-settlement transition. `settled: false` is never an error the
+ * caller may ignore: it means the durable reservation is still owned by someone else's live claim.
+ */
+export interface AmbiguousReservationSettlement {
+  readonly settled: boolean;
+  readonly reason: string;
 }
 
 export interface DeadLetterRecordItem {
@@ -193,15 +228,21 @@ export class AutonomousWorkflowRepository extends LeaseRepository {
   async updateToolOperationStage(params: {
     idempotencyKey: string;
     stage: string;
-    expectedPriorStage?: string;
+    expectedPriorStage?: string | readonly string[];
     providerResourceId?: string;
     observedState?: string;
     details?: Record<string, unknown>;
   }) {
+    const stageFilter = Array.isArray(params.expectedPriorStage)
+      ? { in: [...params.expectedPriorStage] }
+      : typeof params.expectedPriorStage === 'string'
+        ? params.expectedPriorStage
+        : undefined;
+
     const updated = await this.prisma.toolOperationLedger.updateMany({
       where: {
         idempotencyKey: params.idempotencyKey,
-        ...(params.expectedPriorStage && { stage: params.expectedPriorStage }),
+        ...(stageFilter !== undefined && { stage: stageFilter }),
       },
       data: {
         stage: params.stage,
@@ -292,15 +333,75 @@ export class AutonomousWorkflowRepository extends LeaseRepository {
 
   async updateProviderIntentStatus(params: {
     idempotencyKey: string;
-    claimToken: string;
+    claimToken?: string | undefined;
+    reconciliationClaim?:
+      | {
+          expectedStatus: 'PENDING' | 'CLAIMED';
+          expectedVersion?: number | undefined;
+          expectedOwner?: string | undefined;
+          requireExpired?: boolean | undefined;
+          asOf?: Date | undefined;
+        }
+      | undefined;
     status: 'EXECUTED' | 'FAILED';
-    result?: Record<string, unknown>;
+    result?: Record<string, unknown> | undefined;
   }) {
+    if (!params.claimToken && !params.reconciliationClaim) {
+      throw new Error(
+        'updateProviderIntentStatus requires either a claimToken or an explicit reconciliationClaim',
+      );
+    }
+
+    if (
+      params.claimToken !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.claimToken)
+    ) {
+      throw new Error('Provider-intent claim was lost');
+    }
+
+    // A matching worker id is not proof of claim ownership: two concurrent requests in one process
+    // share it. Taking over a CLAIMED intent therefore always requires either the actual claim
+    // token or a claim that has already expired.
+    if (
+      params.claimToken === undefined &&
+      params.reconciliationClaim!.expectedStatus === 'CLAIMED' &&
+      params.reconciliationClaim!.requireExpired !== true
+    ) {
+      throw new Error(
+        'Provider-intent claim was lost: reconciling a CLAIMED intent requires the original claim token or an expired claim',
+      );
+    }
+
+    if (
+      params.claimToken === undefined &&
+      params.reconciliationClaim!.expectedVersion === undefined
+    ) {
+      throw new Error(
+        'Provider-intent claim was lost: reconciliation requires an expected version fence',
+      );
+    }
+
     const updated = await this.prisma.providerIntentRecord.updateMany({
       where: {
         idempotencyKey: params.idempotencyKey,
-        status: 'CLAIMED',
-        claimToken: params.claimToken,
+        ...(params.claimToken !== undefined
+          ? { status: 'CLAIMED', claimToken: params.claimToken }
+          : {
+              status: params.reconciliationClaim!.expectedStatus,
+              ...(params.reconciliationClaim!.expectedVersion !== undefined
+                ? { version: params.reconciliationClaim!.expectedVersion }
+                : {}),
+              ...(params.reconciliationClaim!.expectedOwner !== undefined
+                ? { claimOwner: params.reconciliationClaim!.expectedOwner }
+                : {}),
+              ...(params.reconciliationClaim!.requireExpired
+                ? {
+                    claimExpiresAt: {
+                      lte: params.reconciliationClaim!.asOf ?? new Date(),
+                    },
+                  }
+                : {}),
+            }),
       },
       data: {
         status: params.status,
@@ -314,6 +415,134 @@ export class AutonomousWorkflowRepository extends LeaseRepository {
     if (updated.count !== 1) throw new Error('Provider-intent claim was lost');
     return this.prisma.providerIntentRecord.findUniqueOrThrow({
       where: { idempotencyKey: params.idempotencyKey },
+    });
+  }
+
+  async getProviderIntent(idempotencyKey: string): Promise<ProviderIntentSnapshot | null> {
+    return this.prisma.providerIntentRecord.findUnique({ where: { idempotencyKey } });
+  }
+
+  async getToolBudgetReservation(
+    idempotencyKey: string,
+  ): Promise<ToolBudgetReservationSnapshot | null> {
+    const row = await this.prisma.budgetReservationRecord.findUnique({
+      where: { idempotencyKey },
+    });
+    if (!row) return null;
+    return {
+      idempotencyKey: row.idempotencyKey,
+      status: row.status,
+      ownerId: row.ownerId,
+      version: row.version,
+      amountReserved: row.amountReserved.toNumber(),
+      expiresAt: row.expiresAt,
+      eventId: row.eventId,
+    };
+  }
+
+  /**
+   * Settles a budget reservation left behind by an earlier, possibly dead, owner of an ambiguous
+   * tool operation.
+   *
+   * This is the ONLY transition allowed to move a reservation whose `ownerId` is no longer the
+   * calling process. `consumeBudget` and `releaseBudget` keep their strict stale-owner guards; this
+   * path is deliberately separate and narrower. Every one of the following must hold:
+   *
+   * - the reservation exists under the given idempotency key and is still `RESERVED`;
+   * - the caller fenced on the reservation's observed owner and version (read-then-CAS);
+   * - the reservation, provider intent, and tool ledger keys name the exact same operation;
+   * - the provider intent belongs to the same event and operation type as the tool ledger and
+   *   durably records the outcome being settled (`EXECUTED` for `RECONCILE`, `FAILED` for
+   *   `RELEASE`);
+   * - the tool operation ledger row is still non-terminal, i.e. genuinely ambiguous.
+   *
+   * `RECONCILE` retains the full reserved amount as committed spend; it never refunds.
+   */
+  async settleAmbiguousToolReservation(params: {
+    reservationKey: string;
+    toolOperationKey: string;
+    providerIntentKey: string;
+    expectedOwnerId: string;
+    expectedVersion: number;
+    settlement: 'RECONCILE' | 'RELEASE';
+    asOf?: Date | undefined;
+  }): Promise<AmbiguousReservationSettlement> {
+    const asOf = params.asOf ?? new Date();
+
+    if (
+      params.providerIntentKey !== params.toolOperationKey ||
+      (params.reservationKey !== `budget:tool:${params.toolOperationKey}` &&
+        params.reservationKey !== `budget:usd:${params.toolOperationKey}`)
+    ) {
+      return { settled: false, reason: 'PROVIDER_INTENT_IDENTITY_MISMATCH' };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const reservation = await tx.budgetReservationRecord.findUnique({
+        where: { idempotencyKey: params.reservationKey },
+      });
+      if (!reservation) {
+        return { settled: false, reason: 'RESERVATION_NOT_FOUND' };
+      }
+      if (reservation.status === 'CONSUMED' || reservation.status === 'RECONCILED') {
+        return { settled: true, reason: 'ALREADY_SETTLED' };
+      }
+      if (reservation.status !== 'RESERVED') {
+        return { settled: false, reason: `RESERVATION_STATUS_${reservation.status}` };
+      }
+      if (reservation.ownerId !== params.expectedOwnerId) {
+        return { settled: false, reason: 'STALE_RESERVATION_OWNER' };
+      }
+      if (reservation.version !== params.expectedVersion) {
+        return { settled: false, reason: 'STALE_RESERVATION_VERSION' };
+      }
+
+      const intent = await tx.providerIntentRecord.findUnique({
+        where: { idempotencyKey: params.providerIntentKey },
+      });
+      const requiredIntentStatus = params.settlement === 'RECONCILE' ? 'EXECUTED' : 'FAILED';
+      if (!intent || intent.status !== requiredIntentStatus) {
+        return { settled: false, reason: `PROVIDER_INTENT_NOT_${requiredIntentStatus}` };
+      }
+
+      const operation = await tx.toolOperationLedger.findUnique({
+        where: { idempotencyKey: params.toolOperationKey },
+      });
+      if (!operation) {
+        return { settled: false, reason: 'TOOL_OPERATION_NOT_FOUND' };
+      }
+      if (operation.stage !== 'AUTHORIZED' && operation.stage !== 'FAILED') {
+        return { settled: false, reason: `TOOL_OPERATION_NOT_AMBIGUOUS_${operation.stage}` };
+      }
+      if (
+        operation.eventId !== intent.eventId ||
+        operation.toolName !== intent.operationType ||
+        (reservation.eventId !== null && reservation.eventId !== intent.eventId)
+      ) {
+        return { settled: false, reason: 'PROVIDER_INTENT_IDENTITY_MISMATCH' };
+      }
+
+      const updated = await tx.budgetReservationRecord.updateMany({
+        where: {
+          idempotencyKey: params.reservationKey,
+          ownerId: params.expectedOwnerId,
+          status: 'RESERVED',
+          version: params.expectedVersion,
+        },
+        data:
+          params.settlement === 'RECONCILE'
+            ? {
+                status: 'RECONCILED',
+                amountConsumed: new Prisma.Decimal(reservation.amountReserved),
+                reconciledAt: asOf,
+                version: { increment: 1 },
+              }
+            : { status: 'RELEASED', releasedAt: asOf, version: { increment: 1 } },
+      });
+      if (updated.count !== 1) {
+        return { settled: false, reason: 'CONCURRENT_MODIFICATION' };
+      }
+      return { settled: true, reason: params.settlement };
     });
   }
 

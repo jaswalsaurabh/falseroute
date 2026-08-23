@@ -45,6 +45,43 @@ function createMockRepos() {
     createDecoyLease: vi.fn().mockResolvedValue({}),
     createFalseRouteLease: vi.fn().mockResolvedValue({}),
     createQuarantineLease: vi.fn().mockResolvedValue({}),
+    reserveBudget: vi.fn().mockResolvedValue({
+      granted: true,
+      isDuplicate: false,
+      reservation: { id: 'res-1', status: 'RESERVED' },
+    }),
+    acquireEventAttemptSlot: vi
+      .fn()
+      .mockImplementation(
+        (params: { idempotencyKeyPrefix: string; amountReserved: number; ownerId: string }) =>
+          Promise.resolve({
+            granted: true,
+            isDuplicate: false,
+            attemptNumber: 1,
+            reservation: {
+              id: 'res-1',
+              idempotencyKey: `${params.idempotencyKeyPrefix}:attempt-1`,
+              status: 'RESERVED',
+              ownerId: params.ownerId,
+              amountReserved: params.amountReserved,
+              version: 1,
+            },
+          }),
+      ),
+    recordGeminiAttemptOutcome: vi.fn().mockResolvedValue(undefined),
+    consumeBudget: vi.fn().mockResolvedValue({}),
+    releaseBudget: vi.fn().mockResolvedValue({}),
+    countEventReservations: vi.fn().mockResolvedValue(0),
+    getBudgetStatus: vi.fn().mockResolvedValue({
+      category: 'DAILY_GEMINI_TOKENS',
+      windowKey: '2026-08-23',
+      limit: 100_000,
+      totalConsumed: 0,
+      totalActiveReserved: 0,
+      totalCommitted: 0,
+      remainingAvailable: 100_000,
+      isExceeded: false,
+    }),
     recordDeliveryAttempt: vi.fn().mockImplementation((attempt: { status: string }) => {
       deliveryAttempts.push(attempt);
       return Promise.resolve({});

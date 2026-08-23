@@ -1,8 +1,10 @@
 import http from 'node:http';
 import type { Socket } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import {
   ActivityEventRepository,
   AutonomousWorkflowRepository,
+  BudgetRepository,
   PrismaClient,
   createDatabaseClient,
   type DatabaseClient,
@@ -34,6 +36,14 @@ import {
   PubSubPushHandler,
   type OidcTokenVerifier,
 } from './integrations/pubsub-push-handler.js';
+import { LeaseCleanupService } from './cleanup/lease-cleanup.js';
+import { GeminiBudgetService } from './services/gemini-budget-service.js';
+import { ToolGateway } from './tools/tool-gateway.js';
+import {
+  FakeCloudRunAdapter,
+  FakeFalseRouteAdapter,
+  FakeCloudArmorAdapter,
+} from './tools/fake-cloud-adapters.js';
 
 export interface StartWorkerOptions {
   readonly config?: WorkerConfig | undefined;
@@ -48,6 +58,7 @@ export interface StartWorkerOptions {
   readonly autonomousOrchestrator?: AutonomousWorkflowOrchestrator | undefined;
   readonly autonomousWorkflowRepository?: AutonomousWorkflowRepository | undefined;
   readonly activityEventRepository?: ActivityEventRepository | undefined;
+  readonly leaseCleanupService?: LeaseCleanupService | undefined;
   readonly pushHandler?: PubSubPushHandler | undefined;
   readonly oidcTokenVerifier?: OidcTokenVerifier | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
@@ -63,6 +74,7 @@ export interface WorkerInstance {
   readonly logger: Logger;
   readonly healthServer: http.Server | null;
   readonly pushHandler: PubSubPushHandler | null;
+  readonly cleanupService: LeaseCleanupService | null;
   readonly isReady: () => boolean;
   readonly stop: (reason?: string) => Promise<void>;
 }
@@ -172,19 +184,22 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     }
 
     const simulatedAgent = options.simulatedAgent ?? new DeterministicSimulatedDeceptionAdapter();
+    const budgetRepo = new BudgetRepository(db as PrismaClient);
+    const budgetService = new GeminiBudgetService({ budgetRepo });
+
+    const sharedCloudRunAdapter = new FakeCloudRunAdapter();
+    const sharedFalseRouteAdapter = new FakeFalseRouteAdapter();
+    const sharedCloudArmorAdapter = new FakeCloudArmorAdapter();
 
     const processor = new EventProcessor({
       repository,
       geminiAdapter,
       simulatedAgent,
       logger,
+      budgetService,
     });
 
-    orchestrator = new WorkerOrchestrator({
-      processor,
-      logger,
-      pollIntervalMs: config.WORKER_POLL_INTERVAL_MS,
-    });
+    let cleanupService: LeaseCleanupService | null = null;
 
     if (config.AUTONOMOUS_PUSH_MODE !== 'DISABLED') {
       const workflowRepo =
@@ -192,6 +207,15 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         new AutonomousWorkflowRepository(db as PrismaClient);
       const activityRepo =
         options.activityEventRepository ?? new ActivityEventRepository(db as PrismaClient);
+
+      cleanupService =
+        options.leaseCleanupService ??
+        new LeaseCleanupService(workflowRepo, activityRepo, {
+          cloudRunAdapter: sharedCloudRunAdapter,
+          falseRouteAdapter: sharedFalseRouteAdapter,
+          cloudArmorAdapter: sharedCloudArmorAdapter,
+        });
+
       const autoGeminiAdapter =
         options.autonomousGeminiAdapter ??
         (config.GEMINI_API_KEY
@@ -205,13 +229,24 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
               maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
             })
           : new FakeAutonomousGeminiAdapter('unavailable'));
+
+      const workerProcessId = `worker-${randomUUID()}`;
+      const toolGateway = new ToolGateway(workflowRepo, activityRepo, {
+        cloudRunAdapter: sharedCloudRunAdapter,
+        falseRouteAdapter: sharedFalseRouteAdapter,
+        cloudArmorAdapter: sharedCloudArmorAdapter,
+        workerId: workerProcessId,
+      });
+
       const autonomousOrchestrator =
         options.autonomousOrchestrator ??
         new AutonomousWorkflowOrchestrator(
           workflowRepo,
           activityRepo,
-          undefined,
+          toolGateway,
           autoGeminiAdapter,
+          budgetService,
+          workerProcessId,
         );
 
       let verifier: OidcTokenVerifier;
@@ -233,6 +268,13 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
             : {}),
         });
     }
+
+    orchestrator = new WorkerOrchestrator({
+      processor,
+      logger,
+      pollIntervalMs: config.WORKER_POLL_INTERVAL_MS,
+      cleanupService: cleanupService ?? undefined,
+    });
 
     // 2. Start Cloud Run-compatible HTTP health server
     healthServer = http.createServer(async (req, res) => {
@@ -443,6 +485,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       logger,
       healthServer,
       pushHandler,
+      cleanupService,
       isReady,
       stop,
     };

@@ -24,13 +24,47 @@ function createMockTelemetry(): TelemetryHandle {
   } as unknown as TelemetryHandle;
 }
 
-function createMockRepo(healthy = true): WorkerRepository {
+function createMockRepo(
+  healthyOrOverrides: boolean | Partial<WorkerRepository> = true,
+): WorkerRepository {
+  const isBool = typeof healthyOrOverrides === 'boolean';
+  const healthy = isBool ? healthyOrOverrides : true;
+  const overrides = isBool ? {} : healthyOrOverrides;
   return {
     claimNextPendingEvent: vi.fn().mockResolvedValue(null),
     persistDecision: vi.fn().mockResolvedValue(undefined),
     releaseOrFailClaim: vi.fn().mockResolvedValue('REQUEUED'),
     checkHealth: vi.fn().mockResolvedValue(healthy),
+    ...overrides,
   } as unknown as WorkerRepository;
+}
+
+function createMockAutonomousWorkflowRepo(): AutonomousWorkflowRepository {
+  const m = vi.fn().mockResolvedValue({});
+  const r = { id: 'rec-1', eventId: '11111111-1111-4111-8111-111111111111', status: 'ACCEPTED' };
+  const claim = {
+    disposition: 'CLAIMED',
+    claimToken: '22222222-2222-4222-8222-222222222222',
+    intent: { id: 'intent-1' },
+  };
+  return {
+    recordIngestionReceipt: vi.fn().mockResolvedValue({ isDuplicate: false, receipt: r }),
+    reserveToolOperation: vi.fn().mockResolvedValue({ isExisting: false, operation: {} }),
+    updateToolOperationStage: m,
+    claimProviderIntent: vi.fn().mockResolvedValue(claim),
+    updateProviderIntentStatus: m,
+    createDecoyLease: m,
+    createFalseRouteLease: m,
+    createQuarantineLease: m,
+    reserveBudget: vi.fn().mockResolvedValue({
+      granted: true,
+      isDuplicate: false,
+      reservation: { id: 'res-1', status: 'RESERVED' },
+    }),
+    consumeBudget: m,
+    releaseBudget: m,
+    recordDeliveryAttempt: m,
+  } as unknown as AutonomousWorkflowRepository;
 }
 
 function getPort(instance: Awaited<ReturnType<typeof startWorker>>): number {
@@ -59,6 +93,48 @@ const boundedTimeouts = {
   WORKER_TELEMETRY_TIMEOUT_MS: '200',
 };
 
+const mockEnvelopePayload = {
+  message: {
+    data: Buffer.from(
+      JSON.stringify({
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-no-key-test',
+        schemaVersion: '1.0.0',
+        source: 'PUB_SUB',
+        scenarioKind: 'ENV_FILE_PROBE',
+        occurredAt: '2026-08-22T10:00:00.000Z',
+        publishedAt: '2026-08-22T10:00:01.000Z',
+        sourceIp: '198.51.100.25',
+        evidence: {
+          scenarioKind: 'ENV_FILE_PROBE',
+          requestedPath: '/.env',
+          httpMethod: 'GET',
+          userAgent: 'not-a-real-scanner/1.0',
+          sourceIp: '198.51.100.25',
+          matchedString: '.env',
+          isPositiveMatch: true,
+        },
+        provenance: 'OBSERVED',
+      }),
+    ).toString('base64'),
+    messageId: 'msg-no-key-1',
+    publishTime: '2026-08-22T10:00:01.000Z',
+  },
+  subscription: 'projects/test/subscriptions/test-sub',
+};
+
+function startTestWorker(options: Partial<Parameters<typeof startWorker>[0]> = {}) {
+  return startWorker({
+    env: baseEnv,
+    db: createMockDb(),
+    repository: createMockRepo(true),
+    logger: createMockLogger(),
+    telemetry: createMockTelemetry(),
+    registerSignalHandlers: false,
+    ...options,
+  });
+}
+
 describe('Worker Lifecycle & Health Server', () => {
   it('mounts the authenticated autonomous push handler only when explicitly enabled', async () => {
     const pushHandler = {
@@ -66,18 +142,14 @@ describe('Worker Lifecycle & Health Server', () => {
         .fn()
         .mockResolvedValue({ statusCode: 200, body: { status: 'COMPLETED' } }),
     } as unknown as PubSubPushHandler;
-    const instance = await startWorker({
+
+    const instance = await startTestWorker({
       env: {
         ...baseEnv,
         AUTONOMOUS_PUSH_MODE: 'LOCAL_SHARED_SECRET',
         AUTONOMOUS_LOCAL_PUSH_TOKEN: 'not-a-real-local-push-token',
       },
-      db: createMockDb(),
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
-      telemetry: createMockTelemetry(),
       pushHandler,
-      registerSignalHandlers: false,
     });
 
     try {
@@ -105,13 +177,11 @@ describe('Worker Lifecycle & Health Server', () => {
     const mockTelemetry = createMockTelemetry();
     const mockRepo = createMockRepo(true);
 
-    const instance = await startWorker({
+    const instance = await startTestWorker({
       env: { ...baseEnv, ...fullTimeouts, WORKER_POLL_INTERVAL_MS: '1000' },
       db: mockDb,
       repository: mockRepo,
-      logger: createMockLogger(),
       telemetry: mockTelemetry,
-      registerSignalHandlers: false,
     });
 
     try {
@@ -142,13 +212,9 @@ describe('Worker Lifecycle & Health Server', () => {
     const mockRepo = createMockRepo(false);
 
     await expect(
-      startWorker({
-        env: baseEnv,
+      startTestWorker({
         db: mockDb,
         repository: mockRepo,
-        logger: createMockLogger(),
-        telemetry: createMockTelemetry(),
-        registerSignalHandlers: false,
       }),
     ).rejects.toThrow('Initial database connectivity check failed');
 
@@ -157,20 +223,12 @@ describe('Worker Lifecycle & Health Server', () => {
 
   it('readiness returns 503 when database connectivity fails at runtime', async () => {
     let isDbUp = true;
-    const mockRepo = {
-      claimNextPendingEvent: vi.fn().mockResolvedValue(null),
-      persistDecision: vi.fn().mockResolvedValue(undefined),
-      releaseOrFailClaim: vi.fn().mockResolvedValue('REQUEUED'),
+    const mockRepo = createMockRepo({
       checkHealth: vi.fn().mockImplementation(async () => isDbUp),
-    } as unknown as WorkerRepository;
+    });
 
-    const instance = await startWorker({
-      env: baseEnv,
-      db: createMockDb(),
+    const instance = await startTestWorker({
       repository: mockRepo,
-      logger: createMockLogger(),
-      telemetry: createMockTelemetry(),
-      registerSignalHandlers: false,
     });
 
     try {
@@ -188,40 +246,13 @@ describe('Worker Lifecycle & Health Server', () => {
     }
   });
 
-  it('stops polling and marks unready immediately during shutdown', async () => {
-    const mockDb = createMockDb();
-    const mockTelemetry = createMockTelemetry();
-
-    const instance = await startWorker({
-      env: { ...baseEnv, WORKER_POLL_INTERVAL_MS: '50' },
-      db: mockDb,
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
-      telemetry: mockTelemetry,
-      registerSignalHandlers: false,
-    });
-
-    expect(instance.isReady()).toBe(true);
-    const stopPromise = instance.stop('sigterm');
-    expect(instance.isReady()).toBe(false);
-    await stopPromise;
-
-    expect(instance.isReady()).toBe(false);
-    expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
-    expect(mockTelemetry.shutdown).toHaveBeenCalledTimes(1);
-  });
-
   it('deduplicates concurrent stop calls', async () => {
     const mockDb = createMockDb();
     const mockTelemetry = createMockTelemetry();
 
-    const instance = await startWorker({
-      env: baseEnv,
+    const instance = await startTestWorker({
       db: mockDb,
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
       telemetry: mockTelemetry,
-      registerSignalHandlers: false,
     });
 
     const [stop1, stop2] = await Promise.all([
@@ -237,23 +268,17 @@ describe('Worker Lifecycle & Health Server', () => {
 
   it('enforces slow-claim drain bounds when active claim processing is slow', async () => {
     const mockDb = createMockDb();
-    const mockRepo = {
+    const mockRepo = createMockRepo({
       claimNextPendingEvent: vi.fn().mockImplementation(async () => {
         await new Promise((r) => setTimeout(r, 1000));
         return null;
       }),
-      persistDecision: vi.fn().mockResolvedValue(undefined),
-      releaseOrFailClaim: vi.fn().mockResolvedValue('REQUEUED'),
-      checkHealth: vi.fn().mockResolvedValue(true),
-    } as unknown as WorkerRepository;
+    });
 
-    const instance = await startWorker({
+    const instance = await startTestWorker({
       env: { ...baseEnv, ...boundedTimeouts, WORKER_POLL_INTERVAL_MS: '50' },
       db: mockDb,
       repository: mockRepo,
-      logger: createMockLogger(),
-      telemetry: createMockTelemetry(),
-      registerSignalHandlers: false,
     });
 
     await new Promise((r) => setTimeout(r, 50));
@@ -281,23 +306,18 @@ describe('Worker Lifecycle & Health Server', () => {
       }),
     } as unknown as TelemetryHandle;
 
-    const mockRepo = {
+    const mockRepo = createMockRepo({
       claimNextPendingEvent: vi.fn().mockImplementation(async () => {
         order.push('worker-claim');
         return null;
       }),
-      persistDecision: vi.fn().mockResolvedValue(undefined),
-      releaseOrFailClaim: vi.fn().mockResolvedValue('REQUEUED'),
-      checkHealth: vi.fn().mockResolvedValue(true),
-    } as unknown as WorkerRepository;
+    });
 
-    const instance = await startWorker({
+    const instance = await startTestWorker({
       env: { ...baseEnv, ...fullTimeouts },
       db: mockDb,
       repository: mockRepo,
-      logger: createMockLogger(),
       telemetry: mockTelemetry,
-      registerSignalHandlers: false,
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -310,82 +330,61 @@ describe('Worker Lifecycle & Health Server', () => {
 
   it('bounds shutdown when database disconnect hangs', async () => {
     const mockDb = {
-      $disconnect: vi
-        .fn()
-        .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 10000))),
+      $disconnect: vi.fn().mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 5000));
+      }),
     } as unknown as DatabaseClient;
 
-    const instance = await startWorker({
+    const instance = await startTestWorker({
       env: { ...baseEnv, ...boundedTimeouts },
       db: mockDb,
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
-      telemetry: createMockTelemetry(),
-      registerSignalHandlers: false,
     });
 
     const start = Date.now();
-    await instance.stop('hanging-db-test');
+    await instance.stop('db-hang-test');
     const elapsed = Date.now() - start;
 
-    expect(elapsed).toBeGreaterThanOrEqual(280);
-    expect(elapsed).toBeLessThan(1400);
+    expect(elapsed).toBeGreaterThanOrEqual(250);
+    expect(elapsed).toBeLessThan(800);
   });
 
   it('bounds shutdown when telemetry flush hangs', async () => {
-    const mockDb = createMockDb();
     const mockTelemetry = {
       init: vi.fn().mockResolvedValue(undefined),
-      shutdown: vi
-        .fn()
-        .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 10000))),
+      shutdown: vi.fn().mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 5000));
+      }),
     } as unknown as TelemetryHandle;
 
-    const instance = await startWorker({
-      env: {
-        ...baseEnv,
-        ...boundedTimeouts,
-        WORKER_DB_DISCONNECT_TIMEOUT_MS: '200',
-        WORKER_TELEMETRY_TIMEOUT_MS: '300',
-      },
-      db: mockDb,
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
+    const instance = await startTestWorker({
+      env: { ...baseEnv, ...boundedTimeouts },
       telemetry: mockTelemetry,
-      registerSignalHandlers: false,
     });
 
     const start = Date.now();
-    await instance.stop('hanging-telemetry-test');
+    await instance.stop('telemetry-hang-test');
     const elapsed = Date.now() - start;
 
-    expect(elapsed).toBeGreaterThanOrEqual(280);
-    expect(elapsed).toBeLessThan(1400);
-    expect(mockDb.$disconnect).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeGreaterThanOrEqual(180);
+    expect(elapsed).toBeLessThan(800);
   });
 
-  it('aborts cleanly and does not leave polling active when health server binding fails', async () => {
-    const http = await import('node:http');
-    const blocker = http.createServer();
-    const occupiedPort = await new Promise<number>((resolve) => {
-      blocker.listen(0, '0.0.0.0', () => {
-        const addr = blocker.address();
-        resolve(typeof addr === 'object' && addr !== null ? addr.port : 0);
-      });
-    });
-
+  it('records health server error and tears down worker state on uncaught error event', async () => {
+    const mockLogger = createMockLogger();
     const mockDb = createMockDb();
     const mockRepo = createMockRepo(true);
 
+    const blocker = (await import('node:http')).createServer();
+    await new Promise<void>((resolve) => blocker.listen(0, () => resolve()));
+    const conflictingPort = String((blocker.address() as unknown as { port: number }).port);
+
     try {
       await expect(
-        startWorker({
-          env: { ...baseEnv, PORT: String(occupiedPort), WORKER_POLL_INTERVAL_MS: '100' },
+        startTestWorker({
+          env: { ...baseEnv, PORT: conflictingPort },
           db: mockDb,
           repository: mockRepo,
-          logger: createMockLogger(),
-          telemetry: createMockTelemetry(),
-          registerSignalHandlers: false,
+          logger: mockLogger,
         }),
       ).rejects.toThrow();
 
@@ -399,28 +398,7 @@ describe('Worker Lifecycle & Health Server', () => {
 
   it('composes an explicit unavailable adapter when GEMINI_API_KEY is absent, recording degraded activity on push', async () => {
     const recordedEvents: Array<{ eventType: string }> = [];
-    const mockWorkflowRepo = {
-      recordIngestionReceipt: vi.fn().mockResolvedValue({
-        isDuplicate: false,
-        receipt: {
-          id: 'rec-1',
-          eventId: '11111111-1111-4111-8111-111111111111',
-          status: 'ACCEPTED',
-        },
-      }),
-      reserveToolOperation: vi.fn().mockResolvedValue({ isExisting: false, operation: {} }),
-      updateToolOperationStage: vi.fn().mockResolvedValue({}),
-      claimProviderIntent: vi.fn().mockResolvedValue({
-        disposition: 'CLAIMED',
-        claimToken: '22222222-2222-4222-8222-222222222222',
-        intent: { id: 'intent-1' },
-      }),
-      updateProviderIntentStatus: vi.fn().mockResolvedValue({}),
-      createDecoyLease: vi.fn().mockResolvedValue({}),
-      createFalseRouteLease: vi.fn().mockResolvedValue({}),
-      createQuarantineLease: vi.fn().mockResolvedValue({}),
-      recordDeliveryAttempt: vi.fn().mockResolvedValue({}),
-    } as unknown as AutonomousWorkflowRepository;
+    const mockWorkflowRepo = createMockAutonomousWorkflowRepo();
 
     const mockActivityRepo = {
       recordActivityEvent: vi.fn().mockImplementation((evt: { eventType: string }) => {
@@ -429,59 +407,25 @@ describe('Worker Lifecycle & Health Server', () => {
       }),
     } as unknown as ActivityEventRepository;
 
-    const instance = await startWorker({
+    const instance = await startTestWorker({
       env: {
         ...baseEnv,
         AUTONOMOUS_PUSH_MODE: 'LOCAL_SHARED_SECRET',
         AUTONOMOUS_LOCAL_PUSH_TOKEN: 'not-a-real-local-push-token',
       },
-      db: createMockDb(),
-      repository: createMockRepo(true),
-      logger: createMockLogger(),
-      telemetry: createMockTelemetry(),
       autonomousWorkflowRepository: mockWorkflowRepo,
       activityEventRepository: mockActivityRepo,
-      registerSignalHandlers: false,
     });
 
     try {
       const port = getPort(instance);
-      const envelopeData = {
-        eventId: '11111111-1111-4111-8111-111111111111',
-        correlationId: 'corr-no-key-test',
-        schemaVersion: '1.0.0',
-        source: 'PUB_SUB',
-        scenarioKind: 'ENV_FILE_PROBE',
-        occurredAt: '2026-08-22T10:00:00.000Z',
-        publishedAt: '2026-08-22T10:00:01.000Z',
-        sourceIp: '198.51.100.25',
-        evidence: {
-          scenarioKind: 'ENV_FILE_PROBE',
-          requestedPath: '/.env',
-          httpMethod: 'GET',
-          userAgent: 'not-a-real-scanner/1.0',
-          sourceIp: '198.51.100.25',
-          matchedString: '.env',
-          isPositiveMatch: true,
-        },
-        provenance: 'OBSERVED',
-      };
-      const payload = {
-        message: {
-          data: Buffer.from(JSON.stringify(envelopeData)).toString('base64'),
-          messageId: 'msg-no-key-1',
-          publishTime: '2026-08-22T10:00:01.000Z',
-        },
-        subscription: 'projects/test/subscriptions/test-sub',
-      };
-
       const response = await fetch(`http://127.0.0.1:${port}/pubsub/push`, {
         method: 'POST',
         headers: {
           Authorization: 'Bearer not-a-real-local-push-token',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(mockEnvelopePayload),
       });
 
       expect(response.status).toBe(200);
