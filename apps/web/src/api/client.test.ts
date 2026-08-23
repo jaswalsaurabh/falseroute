@@ -35,17 +35,14 @@ describe('ApiClient', () => {
         });
       }
 
-      if (url.includes('/api/v1/intrusion-events')) {
+      if (url.endsWith('/api/v1/operator/session')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           headers: { get: () => 'application/json' },
           json: () =>
             Promise.resolve({
-              events: [],
-              total: 0,
-              limit: 50,
-              offset: 0,
+              authenticated: true,
             }),
         });
       }
@@ -60,13 +57,13 @@ describe('ApiClient', () => {
     expect(readiness.status).toBe('ready');
     expect(readiness.database).toBe('connected');
 
-    // Verify credential validation (which checks readiness probe then authenticated endpoint)
+    // Verify credential validation (which checks readiness probe then operator session endpoint)
     await expect(client.validateCredentials()).resolves.toBeUndefined();
 
     // Verify headers included Bearer token
-    const eventListCall = fetchCalls.find((call) => call.url.includes('/api/v1/intrusion-events'));
-    expect(eventListCall).toBeDefined();
-    expect(eventListCall?.headers.Authorization).toBe(`Bearer ${syntheticToken}`);
+    const sessionCall = fetchCalls.find((call) => call.url.endsWith('/api/v1/operator/session'));
+    expect(sessionCall).toBeDefined();
+    expect(sessionCall?.headers.Authorization).toBe(`Bearer ${syntheticToken}`);
   });
 
   it('returns UNAUTHORIZED ApiError when operator token is invalid', async () => {
@@ -85,7 +82,7 @@ describe('ApiClient', () => {
         });
       }
 
-      if (url.includes('/api/v1/intrusion-events')) {
+      if (url.endsWith('/api/v1/operator/session')) {
         return Promise.resolve({
           ok: false,
           status: 401,

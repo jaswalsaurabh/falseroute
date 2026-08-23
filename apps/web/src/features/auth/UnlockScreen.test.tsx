@@ -55,17 +55,14 @@ describe('UnlockScreen', () => {
         });
       }
 
-      if (url.includes('/api/v1/intrusion-events')) {
+      if (url.endsWith('/api/v1/operator/session')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           headers: { get: () => 'application/json' },
           json: () =>
             Promise.resolve({
-              events: [],
-              total: 0,
-              limit: 50,
-              offset: 0,
+              authenticated: true,
             }),
         });
       }
@@ -105,7 +102,7 @@ describe('UnlockScreen', () => {
         });
       }
 
-      if (url.includes('/api/v1/intrusion-events')) {
+      if (url.endsWith('/api/v1/operator/session')) {
         return Promise.resolve({
           ok: false,
           status: 401,

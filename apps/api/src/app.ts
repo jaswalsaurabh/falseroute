@@ -27,6 +27,7 @@ import { DeadLetterService } from './services/dead-letter-service.js';
 import { createDeadLetterRouter } from './routes/dead-letter-routes.js';
 import { EmergencyReleaseService } from './services/emergency-release-service.js';
 import { EmergencyReleaseController } from './controllers/emergency-release-controller.js';
+import { OperatorController } from './controllers/operator-controller.js';
 import { createEmergencyReleaseRouter } from './routes/emergency-release-routes.js';
 import {
   InMemoryEventPublisher,
@@ -137,6 +138,7 @@ export function createApp(options: AppOptions): Express {
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
     ...(clock !== undefined ? { clock } : {}),
   });
+  const operatorController = new OperatorController();
 
   // Stricter request-class budgets (process-local, see config/rate-limits.ts)
   const readLimiter = createRateLimiter({
@@ -162,6 +164,11 @@ export function createApp(options: AppOptions): Express {
     healthLimiter,
   });
   app.use('/api/v1', healthRouter);
+
+  // Keep authentication verification independent from event-store reads. This
+  // is important during a staged schema rollout: a valid operator must not be
+  // reported as unauthenticated because an unrelated list query failed.
+  app.get('/api/v1/operator/session', authMiddleware, operatorController.session);
 
   const eventRouter = createEventRouter({
     controller: eventController,

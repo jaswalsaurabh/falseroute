@@ -60,6 +60,16 @@ describe('Web Dashboard Unit Tests', () => {
           },
         });
       }
+      if (url.endsWith('/api/v1/operator/session')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              authenticated: true,
+            }),
+        });
+      }
       if (url.includes('/api/v1/intrusion-events')) {
         return Promise.resolve({
           ok: true,
@@ -284,6 +294,16 @@ describe('Web Dashboard Unit Tests', () => {
               read: () => Promise.resolve({ done: true, value: undefined }),
             }),
           },
+        });
+      }
+      if (url.endsWith('/api/v1/operator/session')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              authenticated: true,
+            }),
         });
       }
       if (url.includes('/api/v1/intrusion-events')) {

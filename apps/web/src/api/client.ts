@@ -116,10 +116,18 @@ export class ApiClient {
   async validateCredentials(): Promise<void> {
     // 1. Verify API server & database readiness probe
     await this.checkReadiness();
-    // 2. Verify operator token against authenticated endpoint
-    await this.request('/api/v1/intrusion-events?limit=1', { method: 'GET' }, (data) =>
-      ListIntrusionEventsResponseSchema.parse(data),
-    );
+    // 2. Verify the operator token without depending on event-store reads.
+    await this.request('/api/v1/operator/session', { method: 'GET' }, (data) => {
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        !('authenticated' in data) ||
+        data.authenticated !== true
+      ) {
+        throw new Error('Invalid operator session response');
+      }
+      return undefined;
+    });
   }
 
   async checkLiveness(): Promise<HealthCheckResponse> {

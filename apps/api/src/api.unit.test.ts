@@ -141,6 +141,21 @@ describe('Express API Unit Tests', () => {
     expect(parsed.error).toBe('UNAUTHORIZED');
   });
 
+  it('returns an authenticated operator session without reading event storage', async () => {
+    const res = await request(app).get('/api/v1/operator/session').set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.authenticated).toBe(true);
+    expect(res.body.correlationId).toBeDefined();
+  });
+
+  it('rejects an unauthenticated operator session request', async () => {
+    const res = await request(app).get('/api/v1/operator/session');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHORIZED');
+  });
+
   it('accepts valid intrusion event creation when authenticated', async () => {
     const {
       status: _status,
