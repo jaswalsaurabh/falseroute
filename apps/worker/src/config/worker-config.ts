@@ -22,6 +22,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   AUTONOMOUS_LOCAL_PUSH_TOKEN: z.string().min(16).optional(),
   PUBSUB_OIDC_AUDIENCE: z.string().url().optional(),
   PUBSUB_OIDC_SERVICE_ACCOUNT: z.string().email().optional(),
+  CLEANUP_OIDC_SERVICE_ACCOUNT: z.string().email().optional(),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).max(60000).default(500),
   // Reserves time for deterministic policy evaluation and the fenced database transaction
   // after the complete Gemini operation deadline has elapsed.
@@ -62,6 +63,13 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
         code: z.ZodIssueCode.custom,
         path: ['AUTONOMOUS_PUSH_MODE'],
         message: 'OIDC push mode requires expected audience and service-account identity',
+      });
+    }
+    if (config.AUTONOMOUS_PUSH_MODE === 'OIDC' && !config.CLEANUP_OIDC_SERVICE_ACCOUNT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CLEANUP_OIDC_SERVICE_ACCOUNT'],
+        message: 'OIDC push mode requires the cleanup service-account identity',
       });
     }
   })

@@ -99,6 +99,7 @@ describe('worker configuration claim lease safety margin', () => {
       AUTONOMOUS_PUSH_MODE: 'OIDC',
       PUBSUB_OIDC_AUDIENCE: 'https://worker.example.com/pubsub/push',
       PUBSUB_OIDC_SERVICE_ACCOUNT: 'pubsub-invoker@example-project.iam.gserviceaccount.com',
+      CLEANUP_OIDC_SERVICE_ACCOUNT: 'cleanup@example-project.iam.gserviceaccount.com',
     });
     expect(config.AUTONOMOUS_PUSH_MODE).toBe('OIDC');
   });

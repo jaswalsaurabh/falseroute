@@ -11,6 +11,7 @@ const checks = [
   { name: 'Design Token Guardrails', script: 'scripts/check-design-tokens.mjs' },
   { name: 'Cloud Run Deployment Templates', script: 'scripts/validate-cloud-run-templates.ts' },
   { name: 'Secret & Credential Policy', script: 'scripts/check-secrets.ts --all' },
+  { name: 'Public Infrastructure Configuration', script: 'scripts/public-config-check.ts --all' },
 ];
 
 let failed = false;

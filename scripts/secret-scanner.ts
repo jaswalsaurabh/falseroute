@@ -33,33 +33,36 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
 
 const CREDENTIAL_URL = /\b[a-z][a-z0-9+.-]*:\/\/([^\s/:]+):([^\s/@]+)@([^\s/:]+)/i;
 
+const EMAIL_ADDRESS =
+  /\b([A-Z0-9.!#$%&'*+/=?^_`{|}~-]+)@([A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)*|localhost)\b/i;
+
+const PERSONAL_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'aol.com',
+  'gmail.com',
+  'googlemail.com',
+  'hotmail.com',
+  'icloud.com',
+  'live.com',
+  'me.com',
+  'msn.com',
+  'outlook.com',
+  'proton.me',
+  'protonmail.com',
+  'yahoo.com',
+]);
+
+const SYNTHETIC_EMAIL_DOMAINS: readonly string[] = ['example.com', 'example.net', 'example.org'];
+
 const GENERIC_SECRET =
   /(?:api[_-]?(?:key|secret)|client[_-]?secret|access[_-]?(?:key|token)|auth(?:entication)?[_-]?(?:key|token)|authorization|jwt[_-]?secret|operator[_-]?token|private[_-]?key|security[_-]?key|secret[_-]?key|password|passwd)\s*[:=]\s*(?:"([^"]{12,})"|'([^']{12,})'|`([^`]{12,})`|([A-Za-z0-9_./+=-]{16,}))/i;
 
-const PLACEHOLDER_MARKERS = [
-  'change-me',
-  'changeme',
-  'dummy',
-  'example',
-  'placeholder',
-  'process.env',
-  'import.meta.env',
-  'fake',
-  'fictional',
-  'demo',
-  'local-only',
-  'not-a-real',
-  'redacted',
-  'replace-me',
-  'test-secret',
-  'test-',
-  'test_',
-  'your-',
-  'your_',
-  '${',
-  'config.',
-  'this.',
-];
+const SYNTHETIC_MARKER =
+  /^(?:change[-_]?me|changeme|dummy|example|fake|fictional|placeholder|demo|local[-_]only|not[-_]a[-_]real|redacted|replace[-_]me|test|your)(?:$|[-_.])/i;
+
+const COMPOUND_SYNTHETIC_MARKER =
+  /(?:^|[-_])(?:integration|system|autonomous|local|smoke)[-_]test(?:$|[-_.])/i;
+
+const PLACEHOLDER_EXPRESSIONS = ['process.env', 'import.meta.env', '${'] as const;
 
 const EXACT_PLACEHOLDERS = new Set([
   'falseroute',
@@ -72,18 +75,54 @@ const EXACT_PLACEHOLDERS = new Set([
 ]);
 
 function isPlaceholder(value: string): boolean {
-  const normalized = value.toLowerCase();
+  const normalized = value
+    .trim()
+    .replace(/^bearer\s+/i, '')
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase();
   return (
     EXACT_PLACEHOLDERS.has(normalized) ||
-    PLACEHOLDER_MARKERS.some((placeholder) => normalized.includes(placeholder)) ||
+    SYNTHETIC_MARKER.test(normalized) ||
+    COMPOUND_SYNTHETIC_MARKER.test(normalized) ||
+    PLACEHOLDER_EXPRESSIONS.some((expression) => normalized.includes(expression)) ||
     /^x+$/i.test(value)
+  );
+}
+
+function isSyntheticEmail(localPart: string, domain: string): boolean {
+  const normalizedDomain = domain.toLowerCase();
+  return (
+    normalizedDomain === 'localhost' ||
+    normalizedDomain.endsWith('.invalid') ||
+    SYNTHETIC_EMAIL_DOMAINS.some(
+      (syntheticDomain) =>
+        normalizedDomain === syntheticDomain || normalizedDomain.endsWith(`.${syntheticDomain}`),
+    ) ||
+    isPlaceholder(localPart)
+  );
+}
+
+function isSymbolicReference(value: string): boolean {
+  return /^(?:process\.env|import\.meta\.env|config|this|var|local|random_password|module)\.[A-Za-z_][A-Za-z0-9_.-]*$/.test(
+    value,
   );
 }
 
 export function isForbiddenSecretFile(file: string): boolean {
   const fileBasename = basename(file).toLowerCase();
   if (fileBasename.startsWith('.env') && fileBasename.endsWith('.example')) return false;
+  if (fileBasename.endsWith('.tfvars.example')) return false;
   if (fileBasename === '.env' || fileBasename.startsWith('.env.')) return true;
+  if (
+    fileBasename.endsWith('.tfvars') ||
+    fileBasename.endsWith('.tfvars.json') ||
+    fileBasename.endsWith('.tfstate') ||
+    fileBasename.includes('.tfstate.') ||
+    fileBasename.endsWith('.tfplan') ||
+    fileBasename === 'tfplan'
+  ) {
+    return true;
+  }
 
   return /(?:^id_(?:rsa|dsa|ecdsa|ed25519)$|\.(?:key|pem|p12|pfx|jks|keystore))$/i.test(
     fileBasename,
@@ -103,7 +142,22 @@ function findLineReason(line: string): string | undefined {
 
   const genericSecret = line.match(GENERIC_SECRET);
   const value = genericSecret?.slice(1).find((candidate) => candidate !== undefined);
-  if (value && !isPlaceholder(value)) return 'probable hard-coded credential';
+  const isUnquotedSymbolicReference =
+    genericSecret?.[4] !== undefined && value !== undefined && isSymbolicReference(value);
+  const isInterpolation = value !== undefined && /^\$\{[A-Za-z_][A-Za-z0-9_.-]*\}$/.test(value);
+  if (value && !isPlaceholder(value) && !isUnquotedSymbolicReference && !isInterpolation) {
+    return 'probable hard-coded credential';
+  }
+
+  const emailAddress = line.match(EMAIL_ADDRESS);
+  const [, localPart = '', domain = ''] = emailAddress ?? [];
+  if (
+    emailAddress &&
+    PERSONAL_EMAIL_DOMAINS.has(domain.toLowerCase()) &&
+    !isSyntheticEmail(localPart, domain)
+  ) {
+    return 'personal email address';
+  }
 
   return undefined;
 }

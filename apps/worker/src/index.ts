@@ -48,6 +48,7 @@ export { ToolGateway, type ToolGatewayOptions } from './tools/tool-gateway.js';
 export {
   PubSubPushHandler,
   LocalSharedSecretOidcTokenVerifier,
+  GoogleOidcTokenVerifier,
   type OidcTokenVerifier,
   type PushHandlerResponse,
 } from './integrations/pubsub-push-handler.js';

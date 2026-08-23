@@ -20,6 +20,7 @@
     "@false-route/database": "workspace:*",
     "@false-route/observability": "workspace:*",
     "@google/genai": "catalog:",
+    "google-auth-library": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

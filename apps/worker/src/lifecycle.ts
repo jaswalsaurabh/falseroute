@@ -33,6 +33,7 @@ import {
 import { FakeAutonomousGeminiAdapter } from './adapters/fake-autonomous-gemini-adapter.js';
 import {
   LocalSharedSecretOidcTokenVerifier,
+  GoogleOidcTokenVerifier,
   PubSubPushHandler,
   type OidcTokenVerifier,
 } from './integrations/pubsub-push-handler.js';
@@ -253,10 +254,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
         verifier = new LocalSharedSecretOidcTokenVerifier(config.AUTONOMOUS_LOCAL_PUSH_TOKEN!);
       } else {
-        if (!options.oidcTokenVerifier) {
-          throw new Error('OIDC push mode requires an injected production token verifier');
-        }
-        verifier = options.oidcTokenVerifier;
+        verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
       }
 
       pushHandler =
@@ -304,6 +302,83 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
             JSON.stringify({
               error: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'INVALID_JSON',
               message: tooLarge ? 'Push payload exceeds 64KB' : 'Push payload must be valid JSON',
+            }),
+          );
+        }
+        return;
+      }
+
+      if (urlPath === '/pubsub/dead-letter') {
+        if (req.method !== 'POST') {
+          res.writeHead(405);
+          res.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' }));
+          return;
+        }
+        if (!pushHandler) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: 'NOT_FOUND', message: 'Push intake is disabled' }));
+          return;
+        }
+        try {
+          const body = await readBoundedJsonBody(req);
+          const result = await pushHandler.handleDeadLetterRequest(req.headers.authorization, body);
+          res.writeHead(result.statusCode);
+          res.end(JSON.stringify(result.body));
+        } catch (err) {
+          const tooLarge = err instanceof Error && err.message === 'REQUEST_BODY_TOO_LARGE';
+          res.writeHead(tooLarge ? 413 : 400);
+          res.end(
+            JSON.stringify({
+              error: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'INVALID_JSON',
+              message: tooLarge ? 'Push payload exceeds 64KB' : 'Push payload must be valid JSON',
+            }),
+          );
+        }
+        return;
+      }
+
+      if (urlPath === '/cleanup/leases') {
+        if (req.method !== 'POST') {
+          res.writeHead(405);
+          res.end(JSON.stringify({ error: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' }));
+          return;
+        }
+        if (!cleanupService || config.AUTONOMOUS_PUSH_MODE !== 'OIDC') {
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: 'NOT_FOUND', message: 'Cleanup intake is disabled' }));
+          return;
+        }
+        if (!isReady()) {
+          res.writeHead(503);
+          res.end(JSON.stringify({ error: 'SERVICE_UNAVAILABLE', message: 'Worker is not ready' }));
+          return;
+        }
+
+        const verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
+        const authResult = await verifier.verifyToken(req.headers.authorization, {
+          expectedAudience: config.PUBSUB_OIDC_AUDIENCE!,
+          expectedServiceAccount: config.CLEANUP_OIDC_SERVICE_ACCOUNT!,
+        });
+        if (
+          !authResult.valid ||
+          authResult.audience !== config.PUBSUB_OIDC_AUDIENCE ||
+          authResult.email !== config.CLEANUP_OIDC_SERVICE_ACCOUNT
+        ) {
+          res.writeHead(401);
+          res.end(JSON.stringify({ error: 'UNAUTHORIZED', message: 'Invalid cleanup identity' }));
+          return;
+        }
+
+        try {
+          const result = await cleanupService.sweepExpiredLeases();
+          res.writeHead(result.status === 'PARTIAL_FAILURE' ? 503 : 200);
+          res.end(JSON.stringify(result));
+        } catch {
+          res.writeHead(503);
+          res.end(
+            JSON.stringify({
+              error: 'CLEANUP_UNAVAILABLE',
+              message: 'Cleanup sweep failed; retry required',
             }),
           );
         }

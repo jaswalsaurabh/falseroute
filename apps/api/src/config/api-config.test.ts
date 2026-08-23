@@ -74,4 +74,23 @@ describe('API Configuration Shutdown Budget Validation', () => {
       ConfigurationError,
     );
   });
+
+  it('requires a project and accepts a bounded topic for live Pub/Sub', () => {
+    expect(() =>
+      parseApiConfig({
+        ...validApiEnv,
+        NODE_ENV: 'production',
+        EVENT_PUBLISHER_MODE: 'LIVE_PUBSUB',
+      }),
+    ).toThrow(ConfigurationError);
+
+    const config = parseApiConfig({
+      ...validApiEnv,
+      NODE_ENV: 'production',
+      EVENT_PUBLISHER_MODE: 'LIVE_PUBSUB',
+      PUBSUB_PROJECT_ID: 'falseroute-staging-123',
+      PUBSUB_TOPIC_ID: 'falseroute-events',
+    });
+    expect(config.PUBSUB_TOPIC_ID).toBe('falseroute-events');
+  });
 });
