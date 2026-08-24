@@ -1,5 +1,7 @@
 import React from 'react';
-import { ArrowUpRight, LockKeyhole, Moon, Sun } from 'lucide-react';
+import { LockKeyhole, Moon, Sun } from 'lucide-react';
+import falseRouteLogo from '../../../../assets/branding/false-route-fox-logo.svg';
+import falseRouteLogoReversed from '../../../../assets/branding/false-route-fox-logo-reversed.svg';
 import { Button } from './Button.js';
 import { RouteToggle } from './RouteToggle.js';
 
@@ -24,16 +26,19 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="topbar">
-      <div className="brand-lockup">
-        <div className="brand-mark" aria-hidden="true">
-          <ArrowUpRight size={20} strokeWidth={3} />
-        </div>
-        <div>
-          <div className="brand-name">
-            False<span>Route</span>
-          </div>
-          <div className="brand-subtitle">Autonomous control plane</div>
-        </div>
+      <div className="brand-lockup" role="img" aria-label="FalseRoute">
+        <img
+          className="brand-logo brand-logo-light"
+          src={falseRouteLogo}
+          alt=""
+          aria-hidden="true"
+        />
+        <img
+          className="brand-logo brand-logo-dark"
+          src={falseRouteLogoReversed}
+          alt=""
+          aria-hidden="true"
+        />
       </div>
       {isUnlocked && (
         <>

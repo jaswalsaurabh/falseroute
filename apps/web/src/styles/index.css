@@ -65,7 +65,6 @@ button {
   display: flex;
   align-items: center;
 }
-.brand-lockup,
 .pane-title {
   gap: 12px;
 }
@@ -123,21 +122,6 @@ button {
   gap: 16px;
   justify-content: flex-end;
   min-width: 0;
-}
-.brand-name {
-  color: var(--text-main);
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-.brand-name span {
-  color: var(--accent-cyan);
-}
-.brand-subtitle {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin-top: 5px;
 }
 .app-container {
   max-width: 1440px;
@@ -1097,15 +1081,19 @@ code {
 .brand-lockup {
   min-width: 220px;
 }
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: none;
-  border-radius: 11px;
-  color: var(--text-main);
-  background: var(--brand-mark-gradient);
+.brand-logo {
+  display: block;
+  width: 210px;
+  height: auto;
+}
+.brand-logo-dark {
+  display: none;
+}
+[data-theme='dark'] .brand-logo-light {
+  display: none;
+}
+[data-theme='dark'] .brand-logo-dark {
+  display: block;
 }
 .topbar-status {
   display: flex;

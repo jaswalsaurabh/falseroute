@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title desc">
+  <title id="title">FalseRoute fox mark</title>
+  <desc id="desc">An original faceted violet fox head.</desc>
+  <g transform="translate(20 19)">
+    <path d="M8 8 58 36 80 28 102 36 152 8 140 78 158 108 126 144 80 162 34 144 2 108 20 78Z" fill="#4f3db7"/>
+    <path d="M8 8 58 36 20 78Z" fill="#8b7fe8"/>
+    <path d="m152 8-50 28 38 42Z" fill="#7565dc"/>
+    <path d="m58 36 22-8 22 8-22 52Z" fill="#6655cf"/>
+    <path d="m20 78 60 10-26 47-20 9-32-36Z" fill="#7565dc"/>
+    <path d="m140 78-60 10 26 47 20 9 32-36Z" fill="#5b49c5"/>
+    <path d="m80 88-26 47 26 27 26-27Z" fill="#b6aef5"/>
+    <path d="m37 83 30-5-11 18Zm86 0-30-5 11 18Z" fill="#fff"/>
+    <path d="m72 122h16l-8 11Z" fill="#30246f"/>
+  </g>
+</svg>

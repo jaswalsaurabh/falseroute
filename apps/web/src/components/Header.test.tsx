@@ -3,6 +3,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { Header } from './Header.js';
 
 describe('Header navigation', () => {
+  it('renders the FalseRoute fox logo', () => {
+    render(<Header isUnlocked={false} />);
+
+    expect(screen.getByRole('img', { name: 'FalseRoute' })).toBeDefined();
+  });
+
   it('renders both primary routes and marks the control room as active', () => {
     render(<Header isUnlocked route="dashboard" onNavigate={vi.fn()} />);
 

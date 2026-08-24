@@ -105,7 +105,6 @@
   --pane-padding: 20px;
   --table-header-bg: var(--surface-card-accent);
   --table-row-hover: var(--surface-card-hover);
-  --brand-mark-gradient: linear-gradient(135deg, var(--accent-teal), var(--accent-violet));
 }
 
 [data-theme='dark'] {
