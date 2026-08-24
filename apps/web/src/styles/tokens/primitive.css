@@ -82,6 +82,22 @@
   --color-red-alpha-08: rgba(195, 53, 77, 0.08);
   --shadow-card-light: 0 12px 30px rgba(26, 41, 62, 0.08);
 
+  /* Dark control-room palette. */
+  --color-dark-page: #090b10;
+  --color-dark-header: rgba(16, 19, 26, 0.9);
+  --color-dark-card: rgba(21, 25, 35, 0.94);
+  --color-dark-raised: #1d2330;
+  --color-dark-hover: #222a38;
+  --color-dark-input: #10131a;
+  --color-dark-ink: #f2f5f9;
+  --color-dark-body: #b9c5d6;
+  --color-dark-muted: #718096;
+  --color-dark-border-subtle: rgba(185, 197, 214, 0.12);
+  --color-dark-border-default: rgba(185, 197, 214, 0.2);
+  --color-dark-modal: #151923;
+  --color-dark-backdrop: rgba(0, 0, 0, 0.72);
+  --shadow-card-dark: 0 16px 44px rgba(0, 0, 0, 0.22);
+
   /* Tier 1 Primitive Spacing */
 
   --space-1: 4px;

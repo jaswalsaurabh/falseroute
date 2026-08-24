@@ -1,50 +1,65 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, ArrowUpRight, Clock3, Cloud, ShieldAlert, Waves } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Toaster } from 'sonner';
 import {
-  type IntrusionEvent,
-  type DeceptionDecision,
-  type SimulatedDeceptionEffect,
   type ActivityEvent,
+  type DeceptionDecision,
+  type IntrusionEvent,
+  type SimulatedDeceptionEffect,
   type SystemMode,
 } from '@false-route/contracts';
 import { ApiClient } from './api/client.js';
 import { Header } from './components/Header.js';
-import { Badge } from './components/Badge.js';
-import { IconBadge } from './components/IconBadge.js';
-import { UnlockScreen } from './features/auth/UnlockScreen.js';
-import { ScenarioInjector } from './features/simulator/ScenarioInjector.js';
-import { WorkflowTimeline } from './features/orchestration/WorkflowTimeline.js';
-import { ActiveResourcesPanel } from './features/active-responses/ActiveResourcesPanel.js';
-import { EventList } from './features/events/EventList.js';
 import { EventDetailModal } from './features/events/EventDetailModal.js';
+import { UnlockScreen } from './features/auth/UnlockScreen.js';
 import { ActivityStreamConsumer } from './features/telemetry/ActivityStreamConsumer.js';
+import { ControlRoomPage } from './pages/ControlRoomPage.js';
+import { IntrusionEventsPage } from './pages/IntrusionEventsPage.js';
+
+type Route = 'dashboard' | 'events';
+type StreamStatus = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
+type Theme = 'light' | 'dark';
+
+const currentRoute = (): Route => (window.location.pathname === '/events' ? 'events' : 'dashboard');
 
 export const App: React.FC = () => {
+  const [route, setRoute] = useState<Route>(currentRoute);
   const [operatorToken, setOperatorToken] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [events, setEvents] = useState<IntrusionEvent[]>([]);
+  const [totalEvents, setTotalEvents] = useState(0);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [systemMode, setSystemMode] = useState<SystemMode>('LOCAL_FAKE');
-  const [streamStatus, setStreamStatus] = useState<
-    'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED'
-  >('DISCONNECTED');
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('DISCONNECTED');
   const [selectedEvent, setSelectedEvent] = useState<IntrusionEvent | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<DeceptionDecision | null>(null);
-  const [selectedSimulatedEffect, setSelectedSimulatedEffect] =
-    useState<SimulatedDeceptionEffect | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const selectedEventRef = React.useRef<IntrusionEvent | null>(null);
+  const [selectedEffect, setSelectedEffect] = useState<SimulatedDeceptionEffect | null>(null);
+  const [theme, setTheme] = useState<Theme>(() =>
+    document.documentElement.dataset['theme'] === 'dark' ? 'dark' : 'light',
+  );
+  const selectedEventRef = useRef<IntrusionEvent | null>(null);
   selectedEventRef.current = selectedEvent;
   const apiClient = useMemo(
-    () => (operatorToken !== null ? new ApiClient(operatorToken) : null),
+    () => (operatorToken === null ? null : new ApiClient(operatorToken)),
     [operatorToken],
   );
 
   useEffect(() => {
-    const hasSessionHint = document.cookie.includes('falseroute_operator_csrf=');
-    if (!hasSessionHint) {
+    const onPopState = () => setRoute(currentRoute());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset['theme'] = theme;
+  }, [theme]);
+
+  const navigate = useCallback((path: '/' | '/events') => {
+    window.history.pushState({}, '', path);
+    setRoute(path === '/events' ? 'events' : 'dashboard');
+  }, []);
+
+  useEffect(() => {
+    if (!document.cookie.includes('falseroute_operator_csrf=')) {
       setAuthChecked(true);
       return;
     }
@@ -58,24 +73,26 @@ export const App: React.FC = () => {
 
   const loadEvents = useCallback(async () => {
     if (!apiClient) return;
-    setIsLoading(true);
     try {
       const response = await apiClient.listEvents({ limit: 50, offset: 0 });
       setEvents(response.events);
+      setTotalEvents(response.total);
       const current = selectedEventRef.current;
-      if (current && current.status !== 'DECIDED' && current.status !== 'FAILED') {
-        const updated = response.events.find((event) => event.id === current.id);
-        if (updated && updated.status !== current.status) {
-          const detail = await apiClient.getEvent(current.id);
-          setSelectedEvent(detail.event);
-          setSelectedDecision(detail.decision ?? null);
-          setSelectedSimulatedEffect(detail.simulatedEffect ?? null);
-        }
+      const updated = current && response.events.find((event) => event.id === current.id);
+      if (
+        current &&
+        updated &&
+        updated.status !== current.status &&
+        current.status !== 'DECIDED' &&
+        current.status !== 'FAILED'
+      ) {
+        const detail = await apiClient.getEvent(current.id);
+        setSelectedEvent(detail.event);
+        setSelectedDecision(detail.decision ?? null);
+        setSelectedEffect(detail.simulatedEffect ?? null);
       }
     } catch (error) {
       console.error('Failed to fetch intrusion events:', error);
-    } finally {
-      setIsLoading(false);
     }
   }, [apiClient]);
 
@@ -88,169 +105,107 @@ export const App: React.FC = () => {
     const consumer = new ActivityStreamConsumer(operatorToken, '', {
       onEvent: (event) => {
         setActivityEvents((previous) => [event, ...previous.slice(0, 99)]);
-        loadEvents();
+        void loadEvents();
       },
-      onSystemMode: (mode) => setSystemMode(mode),
-      onStatusChange: (status) => setStreamStatus(status),
+      onSystemMode: setSystemMode,
+      onStatusChange: setStreamStatus,
     });
     consumer.start();
-    loadEvents();
+    void loadEvents();
     return () => consumer.stop();
   }, [operatorToken, loadEvents]);
 
-  const handleSelectEvent = async (event: IntrusionEvent) => {
+  useEffect(() => {
+    // The events page owns filtered polling; keep this lightweight refresh scoped
+    // to the dashboard so the two routes do not issue duplicate list requests.
+    if (operatorToken === null || route !== 'dashboard') return;
+    const timer = window.setInterval(() => void loadEvents(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [operatorToken, route, loadEvents]);
+
+  const selectEvent = async (event: IntrusionEvent) => {
     setSelectedEvent(event);
     setSelectedDecision(null);
-    setSelectedSimulatedEffect(null);
-    if (apiClient)
-      try {
-        const detail = await apiClient.getEvent(event.id);
-        setSelectedEvent(detail.event);
-        setSelectedDecision(detail.decision ?? null);
-        setSelectedSimulatedEffect(detail.simulatedEffect ?? null);
-      } catch (error) {
-        console.error('Failed to load event details:', error);
-      }
+    setSelectedEffect(null);
+    if (!apiClient) return;
+    try {
+      const detail = await apiClient.getEvent(event.id);
+      setSelectedEvent(detail.event);
+      setSelectedDecision(detail.decision ?? null);
+      setSelectedEffect(detail.simulatedEffect ?? null);
+    } catch (error) {
+      console.error('Failed to load event details:', error);
+    }
   };
+
   const clearSelection = () => {
     setSelectedEvent(null);
     setSelectedDecision(null);
-    setSelectedSimulatedEffect(null);
+    setSelectedEffect(null);
   };
-  const liveSignals = events.length;
-  const containedRoutes = events.filter((event) => event.status === 'DECIDED').length;
-  const needsAttention = events.filter(
-    (event) => event.status === 'FAILED' || event.status === 'PROCESSING',
-  ).length;
-  const streamLabel = streamStatus === 'CONNECTED' ? 'Live SSE stream' : streamStatus.toLowerCase();
+
+  const lockSession = () => {
+    void apiClient?.logout().catch(() => undefined);
+    setOperatorToken(null);
+    setEvents([]);
+    setTotalEvents(0);
+    setActivityEvents([]);
+    clearSelection();
+  };
+
+  const focusScenarioInjector = () => {
+    if (route !== 'dashboard') navigate('/');
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>('#scenario-injector')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+      document.querySelector<HTMLElement>('#scenario-injector button')?.focus();
+    }, 0);
+  };
 
   return (
     <div className="app-shell">
       <Toaster position="bottom-right" toastOptions={{ className: 'app-toast' }} />
       <Header
         isUnlocked={operatorToken !== null}
-        onLock={() => {
-          void apiClient?.logout().catch(() => undefined);
-          setOperatorToken(null);
-          setEvents([]);
-          setActivityEvents([]);
-          clearSelection();
-        }}
+        onLock={lockSession}
+        route={route}
+        onNavigate={navigate}
+        systemMode={systemMode}
+        streamStatus={streamStatus}
+        theme={theme}
+        onToggleTheme={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
+        onInject={focusScenarioInjector}
       />
       <main className="app-container">
         {!authChecked ? (
-          <div style={{ padding: 'var(--space-unit-xl)', textAlign: 'center' }}>
-            Restoring operator session…
-          </div>
+          <div className="loading-state">Restoring operator session…</div>
         ) : operatorToken === null ? (
           <UnlockScreen onUnlock={setOperatorToken} />
+        ) : route === 'events' ? (
+          <IntrusionEventsPage client={apiClient!} onSelectEvent={selectEvent} />
         ) : (
-          <>
-            <section className="hero-panel" aria-labelledby="hero-title">
-              <div className="hero-copy">
-                <Badge variant="info">
-                  <Waves size={14} aria-hidden="true" /> Operator console
-                </Badge>
-                <h1 id="hero-title">
-                  See the signal. <span>Shape the response.</span>
-                </h1>
-                <p>
-                  FalseRoute turns synthetic intrusion telemetry into bounded, explainable response
-                  decisions. Every effect below is labelled by its provenance.
-                </p>
-              </div>
-              <div className="hero-status">
-                <div
-                  className={`connection-orb connection-${streamStatus.toLowerCase()}`}
-                  aria-hidden="true"
-                >
-                  <Activity size={24} />
-                </div>
-                <div>
-                  <strong>{streamLabel}</strong>
-                  <span>mode: {systemMode}</span>
-                </div>
-              </div>
-            </section>
-            <section className="metric-grid" aria-label="Control room summary">
-              <MetricCard
-                icon={<Activity size={18} />}
-                label="Signals today"
-                value={String(liveSignals)}
-                detail="Observed and recorded activity"
-                tone="observed"
-              />
-              <MetricCard
-                icon={<ArrowUpRight size={18} />}
-                label="Contained routes"
-                value={String(containedRoutes)}
-                detail="Decision records available"
-                tone="success"
-              />
-              <MetricCard
-                icon={<Clock3 size={18} />}
-                label="Median response"
-                value="—"
-                detail="Insufficient timing sample"
-                tone="model"
-              />
-              <MetricCard
-                icon={<ShieldAlert size={18} />}
-                label="Needs attention"
-                value={String(needsAttention).padStart(2, '0')}
-                detail="Pending or failed workflows"
-                tone="warning"
-              />
-            </section>
-            <div className="workspace-grid">
-              <ScenarioInjector client={apiClient!} onInjected={loadEvents} />
-              <WorkflowTimeline
-                events={activityEvents}
-                streamStatus={streamStatus}
-                onClear={() => setActivityEvents([])}
-              />
-              <ActiveResourcesPanel />
-            </div>
-            <EventList
-              events={events}
-              isLoading={isLoading}
-              onRefresh={loadEvents}
-              onSelectEvent={handleSelectEvent}
-              autoRefresh={autoRefresh}
-              onToggleAutoRefresh={() => setAutoRefresh((previous) => !previous)}
-            />
-            <footer className="app-footer">
-              <Cloud size={14} aria-hidden="true" /> All values are synthetic staging data · effects
-              shown are recorded mock states
-            </footer>
-            <EventDetailModal
-              isOpen={Boolean(selectedEvent)}
-              onClose={clearSelection}
-              event={selectedEvent}
-              decision={selectedDecision}
-              simulatedEffect={selectedSimulatedEffect}
-            />
-          </>
+          <ControlRoomPage
+            events={events}
+            totalEvents={totalEvents}
+            activityEvents={activityEvents}
+            streamStatus={streamStatus}
+            systemMode={systemMode}
+            apiClient={apiClient!}
+            onRefresh={loadEvents}
+            onSelectEvent={selectEvent}
+            onClearActivity={() => setActivityEvents([])}
+          />
         )}
       </main>
+      <EventDetailModal
+        isOpen={Boolean(selectedEvent)}
+        onClose={clearSelection}
+        event={selectedEvent}
+        decision={selectedDecision}
+        simulatedEffect={selectedEffect}
+      />
     </div>
   );
 };
-
-interface MetricCardProps {
-  readonly icon: React.ReactNode;
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-  readonly tone: 'observed' | 'success' | 'model' | 'warning';
-}
-const MetricCard: React.FC<MetricCardProps> = ({ icon, label, value, detail, tone }) => (
-  <article className="metric-card">
-    <div className="metric-heading">
-      <IconBadge tone={tone}>{icon}</IconBadge>
-      <span>{label}</span>
-    </div>
-    <strong className="metric-value">{value}</strong>
-    <span className={`metric-detail metric-detail-${tone}`}>{detail}</span>
-  </article>
-);

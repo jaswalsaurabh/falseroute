@@ -53,6 +53,11 @@
   --accent-teal-halo: var(--color-teal-alpha-11);
   --accent-violet: var(--color-violet-600);
   --accent-violet-soft: var(--color-violet-50);
+  --accent-cyan: var(--accent-teal);
+  --accent-cyan-soft: var(--accent-teal-soft);
+  --accent-cyan-halo: var(--ambient-teal);
+  --accent-indigo: var(--accent-violet);
+  --accent-indigo-soft: var(--accent-violet-soft);
   --ambient-teal: var(--color-teal-alpha-11);
   --ambient-violet: var(--color-violet-alpha-12);
   --connection-success-halo: var(--color-green-alpha-08);
@@ -82,9 +87,41 @@
   --radius-input: var(--radius-md);
   --radius-modal: var(--radius-lg);
   --radius-control: var(--radius-md);
+  --radius-pane: var(--radius-xl);
   --elevation-card: var(--shadow-card-light);
   --elevation-modal: var(--shadow-lg);
   --focus-ring: var(--color-teal-600);
   --motion-fast: 150ms ease-in-out;
   --motion-normal: 250ms ease-in-out;
+  --layer-base: var(--z-index-base);
+  --control-height: 40px;
+  --pane-padding: 20px;
+  --table-header-bg: var(--surface-card-accent);
+  --table-row-hover: var(--surface-card-hover);
+  --brand-mark-gradient: linear-gradient(135deg, var(--accent-teal), var(--accent-violet));
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-app: var(--color-dark-page);
+  --surface-header: var(--color-dark-header);
+  --surface-card: var(--color-dark-card);
+  --surface-card-hover: var(--color-dark-hover);
+  --surface-card-accent: var(--color-dark-raised);
+  --surface-input: var(--color-dark-input);
+  --surface-modal: var(--color-dark-modal);
+  --surface-backdrop: var(--color-dark-backdrop);
+  --border-subtle: var(--color-dark-border-subtle);
+  --border-default: var(--color-dark-border-default);
+  --text-main: var(--color-dark-ink);
+  --text-body: var(--color-dark-body);
+  --text-secondary: var(--color-dark-body);
+  --text-muted: var(--color-dark-muted);
+  --action-secondary-bg: var(--color-dark-raised);
+  --action-secondary-hover: var(--color-dark-hover);
+  --action-secondary-text: var(--color-dark-ink);
+  --status-neutral-bg: var(--color-dark-raised);
+  --status-neutral-border: var(--color-dark-border-default);
+  --status-neutral-text: var(--color-dark-body);
+  --elevation-card: var(--shadow-card-dark);
 }

@@ -67,6 +67,9 @@ export const ListIntrusionEventsQuerySchema = z
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
     status: ProcessingStatusSchema.optional(),
+    search: z.string().trim().min(1).max(100).optional(),
+    sortBy: z.enum(['receivedAt', 'occurredAt', 'status', 'eventType', 'sourceIp']).optional(),
+    sortDirection: z.enum(['asc', 'desc']).optional(),
   })
   .strict();
 

@@ -12,6 +12,30 @@ describe('ApiClient', () => {
     vi.clearAllMocks();
   });
 
+  it('serializes the complete intrusion-event query without losing zero offset', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ events: [], total: 0, limit: 25, offset: 0 }),
+    });
+    const client = new ApiClient(syntheticToken, 'https://example.invalid');
+
+    await client.listEvents({
+      limit: 25,
+      offset: 0,
+      status: 'DECIDED',
+      search: 'configuration probe',
+      sortBy: 'occurredAt',
+      sortDirection: 'asc',
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://example.invalid/api/v1/intrusion-events?limit=25&offset=0&status=DECIDED&search=configuration+probe&sortBy=occurredAt&sortDirection=asc',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('performs successful readiness check and authenticated event-list validation', async () => {
     const fetchCalls: Array<{ url: string; headers: Record<string, string> }> = [];
 

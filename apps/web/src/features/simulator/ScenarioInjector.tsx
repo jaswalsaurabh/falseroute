@@ -1,20 +1,43 @@
 import React, { useState } from 'react';
-import { Crosshair, Send, Server, ShieldAlert } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   CreateAutonomousScenarioRequestSchema,
   SCENARIO_CATALOG,
+  type IntrusionEvent,
   type ScenarioKind,
 } from '@false-route/contracts';
 import { type ApiClient } from '../../api/client.js';
 import { Badge } from '../../components/Badge.js';
 import { Button } from '../../components/Button.js';
-import { IconBadge } from '../../components/IconBadge.js';
 export interface ScenarioInjectorProps {
   readonly client: ApiClient;
+  readonly events?: readonly IntrusionEvent[];
+  readonly onSelectEvent?: (event: IntrusionEvent) => void;
   readonly onInjected?: () => void;
 }
-export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({ client, onInjected }) => {
+const statusVariant = (status: IntrusionEvent['status']) =>
+  status === 'DECIDED'
+    ? ('success' as const)
+    : status === 'FAILED'
+      ? ('danger' as const)
+      : status === 'PENDING' || status === 'PROCESSING'
+        ? ('warning' as const)
+        : ('info' as const);
+
+const relativeTime = (receivedAt: string): string => {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(receivedAt)) / 1000));
+  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`;
+  if (elapsedSeconds < 3600) return `${Math.floor(elapsedSeconds / 60)}m ago`;
+  return `${Math.floor(elapsedSeconds / 3600)}h ago`;
+};
+
+export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
+  client,
+  events = [],
+  onSelectEvent,
+  onInjected,
+}) => {
   const [selectedScenario, setSelectedScenario] = useState<ScenarioKind>('ENV_FILE_PROBE');
   const [customIp, setCustomIp] = useState('198.51.100.25');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,65 +72,94 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({ client, onIn
     }
   };
   return (
-    <section className="pane pane-telemetry" aria-labelledby="scenario-injector-heading">
+    <section
+      className="pane pane-telemetry"
+      id="scenario-injector"
+      aria-labelledby="scenario-injector-heading"
+    >
       <div className="pane-header">
-        <div className="pane-title">
-          <IconBadge tone="observed">
-            <Crosshair size={17} />
-          </IconBadge>
-          <div>
-            <h2 id="scenario-injector-heading">
-              Telemetry <span className="sr-only">1. Autonomous Scenario Injector</span>
-            </h2>
-            <p>Incoming signals, normalized and queued</p>
-          </div>
+        <div>
+          <h2 id="scenario-injector-heading">
+            <span className="pane-step">01</span>Telemetry
+            <span className="sr-only">1. Autonomous Scenario Injector</span>
+          </h2>
+          <p>Incoming signals, normalized and queued</p>
         </div>
-        <Badge variant="success">Live</Badge>
+        <span className="status-chip status-chip-compact">
+          <span className="status-dot status-dot-observed" /> Live
+        </span>
       </div>
-      <form className="injector-form" onSubmit={handleInject}>
-        <div className="section-kicker">
-          <ShieldAlert size={15} /> Fixed synthetic scenario
+      <div className="telemetry-feed" aria-label="Recent intrusion signals">
+        {events.length === 0 ? (
+          <div className="telemetry-empty">
+            No signals recorded. Select a fixed scenario below to begin the bounded workflow.
+          </div>
+        ) : (
+          events.slice(0, 4).map((event) => (
+            <button
+              type="button"
+              className="telemetry-event"
+              key={event.id}
+              onClick={() => onSelectEvent?.(event)}
+              aria-label={`Inspect ${event.eventType.replaceAll('_', ' ').toLowerCase()} event`}
+            >
+              <span className="telemetry-event-heading">
+                <strong>{event.eventType.replaceAll('_', ' ').toLowerCase()}</strong>
+                <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
+              </span>
+              <span className="telemetry-event-meta">
+                <code>{event.sourceIp}</code>
+                <span>
+                  {relativeTime(event.receivedAt)} · {event.id.slice(0, 8).toUpperCase()}
+                </span>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+      <form className="scenario-footer" onSubmit={handleInject}>
+        <span className="scenario-label">Preview a fixed synthetic scenario</span>
+        <div className="scenario-grid" aria-label="Fixed scenario catalog">
+          {Object.values(SCENARIO_CATALOG).map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              className="scenario-option"
+              aria-pressed={selectedScenario === item.kind}
+              onClick={() => {
+                setSelectedScenario(item.kind);
+                const sourceIp = item.defaultEvidence['sourceIp'];
+                if (typeof sourceIp === 'string') setCustomIp(sourceIp);
+                setFeedback(null);
+              }}
+            >
+              <strong>{item.title}</strong>
+              <span>
+                Risk ceiling {item.maxRiskScore} · {item.decoyTemplate ? 'decoy' : 'quarantine'}
+              </span>
+            </button>
+          ))}
         </div>
-        <label htmlFor="scenario-select">
-          Attack Scenario Pattern
-          <select
-            id="scenario-select"
-            className="input-field"
-            value={selectedScenario}
-            onChange={(event) => {
-              setSelectedScenario(event.target.value as ScenarioKind);
-              setFeedback(null);
-            }}
-          >
-            {Object.values(SCENARIO_CATALOG).map((item) => (
-              <option key={item.kind} value={item.kind}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="scenario-preview">
-          <strong>{preset.description}</strong>
-          <span>
-            <Server size={14} /> policy: <code>{preset.expectedPolicy}</code>
-          </span>
-          <span>decoy: {preset.decoyTemplate ?? 'quarantine response'}</span>
+        <div className="scenario-submit-row">
+          <label htmlFor="custom-ip-input">
+            <span className="sr-only">Synthetic source IP</span>
+            <input
+              id="custom-ip-input"
+              type="text"
+              className="input-field mono"
+              value={customIp}
+              onChange={(event) => setCustomIp(event.target.value)}
+              pattern="^(\d{1,3}\.){3}\d{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
+              required
+            />
+          </label>
+          <Button type="submit" aria-label="Inject Attack Scenario" isLoading={isSubmitting}>
+            <Send size={15} /> Inject scenario
+          </Button>
         </div>
-        <label htmlFor="custom-ip-input">
-          Synthetic source IP
-          <input
-            id="custom-ip-input"
-            type="text"
-            className="input-field mono"
-            value={customIp}
-            onChange={(event) => setCustomIp(event.target.value)}
-            pattern="^(\d{1,3}\.){3}\d{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$"
-            required
-          />
-        </label>
-        <Button type="submit" aria-label="Inject Attack Scenario" isLoading={isSubmitting}>
-          <Send size={15} /> {isSubmitting ? 'Injecting telemetry' : 'Inject attack scenario'}
-        </Button>
+        <p className="selected-scenario-copy">
+          <strong>{preset.title}:</strong> {preset.description}
+        </p>
         {feedback && (
           <div role="status" className={`feedback feedback-${feedback.type}`}>
             <Badge variant={feedback.type === 'success' ? 'success' : 'danger'}>

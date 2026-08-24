@@ -1,20 +1,15 @@
 import React from 'react';
-import { Ban, CloudCog, LockKeyhole } from 'lucide-react';
+import { Ban, CloudCog } from 'lucide-react';
 import { Badge } from '../../components/Badge.js';
-import { IconBadge } from '../../components/IconBadge.js';
 export const ActiveResourcesPanel: React.FC = () => (
   <section className="pane pane-containment" aria-labelledby="active-resources-heading">
     <div className="pane-header">
-      <div className="pane-title">
-        <IconBadge tone="success">
-          <LockKeyhole size={17} />
-        </IconBadge>
-        <div>
-          <h2 id="active-resources-heading">
-            Containment <span className="sr-only">3. Active Deception &amp; Quarantine State</span>
-          </h2>
-          <p>Owned decoys, routes, and TTL leases</p>
-        </div>
+      <div>
+        <h2 id="active-resources-heading">
+          <span className="pane-step">03</span>Containment
+          <span className="sr-only">3. Active Deception &amp; Quarantine State</span>
+        </h2>
+        <p>Owned decoys, routes, and TTL leases</p>
       </div>
       <Badge variant="warning">Unavailable</Badge>
     </div>

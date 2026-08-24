@@ -175,8 +175,11 @@ export class ApiClient {
   async listEvents(query?: ListIntrusionEventsQuery): Promise<ListIntrusionEventsResponse> {
     const params = new URLSearchParams();
     if (query?.limit) params.set('limit', String(query.limit));
-    if (query?.offset) params.set('offset', String(query.offset));
+    if (query?.offset !== undefined) params.set('offset', String(query.offset));
     if (query?.status) params.set('status', query.status);
+    if (query?.search) params.set('search', query.search);
+    if (query?.sortBy) params.set('sortBy', query.sortBy);
+    if (query?.sortDirection) params.set('sortDirection', query.sortDirection);
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return this.request(`/api/v1/intrusion-events${queryString}`, { method: 'GET' }, (data) =>

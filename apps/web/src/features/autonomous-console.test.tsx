@@ -21,11 +21,10 @@ describe('Autonomous Console Components', () => {
     render(<ScenarioInjector client={mockClient} />);
 
     expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
-    const select = screen.getByLabelText('Attack Scenario Pattern') as HTMLSelectElement;
-    expect(select.options.length).toBe(7);
+    expect(screen.getAllByRole('button', { pressed: false }).length).toBe(6);
 
     // Switch scenario to WordPress probe
-    fireEvent.change(select, { target: { value: 'WORDPRESS_CONFIG_PROBE' } });
+    fireEvent.click(screen.getByRole('button', { name: /WordPress Configuration Probe/i }));
     expect(screen.getAllByText(/WordPress/i).length).toBeGreaterThanOrEqual(1);
 
     // Click submit
@@ -35,10 +34,10 @@ describe('Autonomous Console Components', () => {
     expect(mockClient.createAutonomousScenario).toHaveBeenCalledWith(
       expect.objectContaining({
         scenarioKind: 'WORDPRESS_CONFIG_PROBE',
-        sourceIp: '198.51.100.25',
+        sourceIp: '198.51.100.26',
         evidence: expect.objectContaining({
           scenarioKind: 'WORDPRESS_CONFIG_PROBE',
-          sourceIp: '198.51.100.25',
+          sourceIp: '198.51.100.26',
         }),
       }),
     );
@@ -125,7 +124,7 @@ describe('Autonomous Console Components', () => {
 
     expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
     expect(screen.getByText('LIVE SSE STREAM')).toBeDefined();
-    expect(screen.getByText('RECEIVED')).toBeDefined();
+    expect(screen.getAllByText('RECEIVED').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('REQUESTED (AI)')).toBeDefined();
     expect(screen.getByText('POLICY AUTHORIZED')).toBeDefined();
     expect(screen.getByText('POLICY NARROWED')).toBeDefined();
