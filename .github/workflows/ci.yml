@@ -17,6 +17,8 @@ jobs:
     name: Quality Gates & Verification
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
 
     services:
       postgres:
@@ -58,8 +60,6 @@ jobs:
         run: pnpm guard:prisma
 
       - name: Run Prisma migration on test database
-        env:
-          DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public'
         run: pnpm --filter @false-route/database migrate:deploy
 
       - name: Verify repository governance & source policies
@@ -84,8 +84,6 @@ jobs:
         run: pnpm test
 
       - name: Run full integration & system integration suites
-        env:
-          DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public'
         run: pnpm test:integration
 
   containers:

@@ -54,7 +54,7 @@ gcloud run jobs deploy "$JOB_NAME" \
   --image="$API_IMAGE" \
   --service-account="$API_SERVICE_ACCOUNT_SUFFIX@$PROJECT_ID.iam.gserviceaccount.com" \
   --command='node' \
-  --args='node_modules/prisma/build/index.js,migrate,deploy,--schema=/app/prisma/schema.prisma' \
+  --args='node_modules/prisma/build/index.js,migrate,deploy,--config=/app/prisma.config.ts' \
   --set-secrets="DATABASE_URL=$DATABASE_SECRET:latest" \
   --vpc-connector="$VPC_CONNECTOR" \
   --vpc-egress='private-ranges-only' \

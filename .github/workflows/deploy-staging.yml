@@ -143,7 +143,7 @@ jobs:
             --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --image="$REGISTRY/falseroute-api@$api_digest" \
             --service-account="falseroute-api-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
             --command="node" \
-            --args="node_modules/prisma/build/index.js,migrate,deploy,--schema=/app/prisma/schema.prisma" \
+            --args="node_modules/prisma/build/index.js,migrate,deploy,--config=/app/prisma.config.ts" \
             --set-secrets="DATABASE_URL=falseroute-api-database-url:latest" \
             --vpc-connector="fr-staging-vpc-conn" --vpc-egress="private-ranges-only" \
             --tasks=1 --max-retries=0 --task-timeout=10m --quiet
