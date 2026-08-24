@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { App } from './App.js';
+import { App, readThemePreference } from './App.js';
 import { DecisionCard } from './features/events/DecisionCard.js';
 import { type IntrusionEvent, type DeceptionDecision } from '@false-route/contracts';
 
@@ -11,6 +11,15 @@ describe('Web Dashboard Unit Tests', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    delete document.documentElement.dataset['theme'];
+  });
+
+  it('restores the persisted theme preference after a reload', () => {
+    document.documentElement.dataset['theme'] = 'light';
+    window.localStorage.setItem('falseroute-theme', 'dark');
+
+    expect(readThemePreference()).toBe('dark');
   });
 
   it('renders controlled demonstration unlock screen by default', () => {

@@ -19,6 +19,17 @@ import { IntrusionEventsPage } from './pages/IntrusionEventsPage.js';
 type Route = 'dashboard' | 'events';
 type StreamStatus = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
 type Theme = 'light' | 'dark';
+const THEME_STORAGE_KEY = 'falseroute-theme';
+
+export const readThemePreference = (): Theme => {
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; use the document default.
+  }
+  return document.documentElement.dataset['theme'] === 'dark' ? 'dark' : 'light';
+};
 
 const currentRoute = (): Route => (window.location.pathname === '/events' ? 'events' : 'dashboard');
 
@@ -37,9 +48,7 @@ export const App: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<IntrusionEvent | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<DeceptionDecision | null>(null);
   const [selectedEffect, setSelectedEffect] = useState<SimulatedDeceptionEffect | null>(null);
-  const [theme, setTheme] = useState<Theme>(() =>
-    document.documentElement.dataset['theme'] === 'dark' ? 'dark' : 'light',
-  );
+  const [theme, setTheme] = useState<Theme>(readThemePreference);
   const selectedEventRef = useRef<IntrusionEvent | null>(null);
   const loadEventsTimerRef = useRef<number | null>(null);
   selectedEventRef.current = selectedEvent;
@@ -56,6 +65,11 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme still applies for this session when persistent storage is unavailable.
+    }
   }, [theme]);
 
   const navigate = useCallback((path: '/' | '/events') => {

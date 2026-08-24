@@ -10,6 +10,14 @@ export interface CampaignStepInput {
   readonly occurredAt: Date;
 }
 
+export interface CampaignInitialEventInput {
+  readonly eventId: string;
+  readonly correlationId: string;
+  readonly occurredAt: Date;
+  readonly sourceIp: string;
+  readonly evidence: Record<string, unknown>;
+}
+
 export interface CampaignRunRecord {
   readonly id: string;
   readonly definitionId: string;
@@ -90,6 +98,30 @@ export class CampaignRepository {
   async getCampaign(id: string): Promise<CampaignRunRecord | null> {
     const campaign = await this.prisma.campaignRun.findUnique({ where: { id } });
     return campaign ? toCampaignRun(campaign) : null;
+  }
+
+  async ensureInitialEvent(input: CampaignInitialEventInput): Promise<void> {
+    await this.prisma.intrusionEvent.upsert({
+      where: { id: input.eventId },
+      create: {
+        id: input.eventId,
+        occurredAt: input.occurredAt,
+        receivedAt: new Date(),
+        correlationId: input.correlationId,
+        sourceIp: input.sourceIp,
+        targetAsset: 'mock-admin-portal',
+        eventType: 'UNAUTHORIZED_ACCESS_ATTEMPT',
+        failedLoginCount: 1,
+        riskIndicators: ['ENV_FILE_PROBE'],
+        containmentMode: 'SIMULATED',
+        usedDecoyCredential: false,
+        scenarioKind: 'ENV_FILE_PROBE',
+        evidence: input.evidence as Prisma.InputJsonValue,
+        status: 'PENDING',
+        provenance: 'OBSERVED',
+      },
+      update: {},
+    });
   }
 
   async ensureInitialStep(

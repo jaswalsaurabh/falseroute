@@ -246,13 +246,16 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
         });
       } catch (err) {
         if (err instanceof AttemptBudgetExhaustedError) {
+          const exhaustedReason = lastClassified
+            ? `Gemini attempt budget exhausted after ${lastClassified.status.toLowerCase()} provider attempts: ${lastClassified.sanitizedReason}`
+            : 'Gemini attempt budget exhausted before dispatch';
           return this.buildDegradedResult(
             event.correlationId,
             {
               kind: 'TERMINAL',
               isRetriable: false,
               status: 'UNAVAILABLE',
-              sanitizedReason: 'Durable Gemini attempt budget exhausted before dispatch',
+              sanitizedReason: exhaustedReason,
             },
             evaluatedAt,
           );

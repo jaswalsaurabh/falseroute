@@ -16,7 +16,7 @@ export class CampaignService {
     // A campaign already past step zero owns its initial publication. This keeps
     // duplicate operator starts from creating another transport delivery.
     if (campaign.currentStep === 0) {
-      await this.publisher.publish({
+      const envelope = {
         eventId: campaign.id,
         correlationId: campaign.correlationId,
         schemaVersion: '1.0.0',
@@ -35,7 +35,15 @@ export class CampaignService {
           isPositiveMatch: true,
         },
         provenance: 'OBSERVED',
+      } as const;
+      await this.repository.ensureInitialEvent({
+        eventId: envelope.eventId,
+        correlationId: envelope.correlationId,
+        occurredAt: new Date(envelope.occurredAt),
+        sourceIp: envelope.sourceIp,
+        evidence: envelope.evidence,
       });
+      await this.publisher.publish(envelope);
     }
     return CampaignRunSchema.parse(toContract(campaign));
   }

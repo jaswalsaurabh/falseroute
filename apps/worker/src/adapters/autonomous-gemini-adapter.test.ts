@@ -371,6 +371,45 @@ describe('LiveAutonomousGeminiAdapter', () => {
     ).toMatchObject({ context: mockContext });
   });
 
+  it('accepts a bounded assessment wrapped in a JSON markdown fence', async () => {
+    const adapter = new LiveAutonomousGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-2.5-flash',
+    });
+    const assessment = {
+      incidentStage: 'RECONNAISSANCE',
+      riskTier: 'HIGH',
+      confidence: 0.82,
+      hypothesis: 'A synthetic configuration probe is in progress.',
+      evidenceRefs: ['evidence-1'],
+      recommendedActions: ['ALERT_OPERATOR'],
+      rationale: 'The observed probe matches the fixed scenario evidence.',
+      needsFollowUp: true,
+    };
+    const generateContentMock = vi.fn().mockResolvedValue({
+      text: `\`\`\`json\n${JSON.stringify(assessment)}\n\`\`\``,
+      functionCalls: [
+        {
+          name: 'recommend_response_plan',
+          args: {
+            eventId: mockEnvelope.eventId,
+            recommendedActions: ['ALERT_OPERATOR'],
+            rationale: 'The observed probe matches the fixed scenario evidence.',
+            confidence: 0.82,
+          },
+        },
+      ],
+    });
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const result = await adapter.analyzeEnvelope(mockEnvelope, undefined, mockContext);
+
+    expect(result.status).toBe('SUCCESS');
+    if (result.status === 'SUCCESS') expect(result.assessment).toEqual(assessment);
+  });
+
   it('degrades the complete result when assessment evidence is absent from context', async () => {
     const adapter = new LiveAutonomousGeminiAdapter({
       apiKey: 'test-api-key',

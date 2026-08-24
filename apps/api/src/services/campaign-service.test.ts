@@ -19,6 +19,7 @@ describe('CampaignService', () => {
   it('starts the fixed campaign and publishes the first synthetic step', async () => {
     const repository = {
       startInitialCampaign: vi.fn().mockResolvedValue(campaign),
+      ensureInitialEvent: vi.fn().mockResolvedValue(undefined),
       getCampaign: vi.fn(),
     } as unknown as CampaignRepository;
     const publisher = { publish: vi.fn().mockResolvedValue({ transportId: 'transport-1' }) };
@@ -27,6 +28,7 @@ describe('CampaignService', () => {
     const result = await service.start('campaign-correlation');
 
     expect(result.status).toBe('RUNNING');
+    expect(repository.ensureInitialEvent).toHaveBeenCalledOnce();
     expect(publisher.publish).toHaveBeenCalledOnce();
     expect(publisher.publish.mock.calls[0]?.[0]).toMatchObject({
       eventId: campaign.id,

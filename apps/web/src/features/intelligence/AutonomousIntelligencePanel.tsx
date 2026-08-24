@@ -40,6 +40,20 @@ const originLabel: Record<ActionOrigin, string> = {
 
 const actionLabel = (action: string) => action.replaceAll('_', ' ');
 
+const toolAction: Record<string, string> = {
+  request_decoy_deployment: 'DEPLOY_DECOY',
+  request_false_route_assignment: 'ASSIGN_FALSE_ROUTE',
+  request_source_quarantine: 'QUARANTINE_SOURCE',
+  request_operator_alert: 'ALERT_OPERATOR',
+  recommend_response_plan: 'RECOMMEND_PLAN',
+};
+
+const isActionOrigin = (value: unknown): value is ActionOrigin =>
+  value === 'MODEL_REQUEST' ||
+  value === 'MANDATORY_RULE' ||
+  value === 'POLICY_FALLBACK' ||
+  value === 'DEGRADED_FALLBACK';
+
 export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelProps> = ({
   activityEvents,
   context,
@@ -62,10 +76,38 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
       : hasDegradedActivity
         ? 'degraded'
         : 'ready';
+  const policyProjections = activityEvents
+    .filter(
+      (event) =>
+        event.eventType === 'TOOL_AUTHORIZED' ||
+        event.eventType === 'TOOL_NARROWED' ||
+        event.eventType === 'TOOL_REJECTED',
+    )
+    .map((event) => {
+      const payload = event.payload ?? {};
+      const toolName = payload['toolName'];
+      const action = typeof toolName === 'string' ? toolAction[toolName] : undefined;
+      const outcome = payload['outcome'];
+      const origin = payload['origin'];
+      return action && typeof outcome === 'string'
+        ? {
+            action,
+            outcome,
+            origin: isActionOrigin(origin) ? origin : 'POLICY_FALLBACK',
+          }
+        : null;
+    })
+    .filter((projection): projection is NonNullable<typeof projection> => projection !== null);
   const comparison = assessment
     ? assessment.recommendedActions.map((action) => {
-        const outcome = context?.priorPolicyOutcomes.find((item) => item.action === action);
-        return { action, outcome };
+        const priorOutcome = context?.priorPolicyOutcomes.find((item) => item.action === action);
+        const currentOutcome = policyProjections.find((item) => item.action === action);
+        return {
+          action,
+          outcome: priorOutcome
+            ? { outcome: priorOutcome.outcome, origin: priorOutcome.origin }
+            : currentOutcome,
+        };
       })
     : [];
   const campaignPercent = campaign

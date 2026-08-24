@@ -128,6 +128,7 @@ export class AutonomousWorkflowOrchestrator {
             signalCount: incidentContext.signals.length,
             evidenceCount: incidentContext.evidence.length,
             completeness: incidentContext.contextCompleteness,
+            context: incidentContext,
           },
         });
       } else {
@@ -159,8 +160,13 @@ export class AutonomousWorkflowOrchestrator {
     try {
       modelResult = await this.budgetService.executeWithBudget({
         eventId,
-        execute: () =>
-          this.geminiAdapter.analyzeEnvelope(validatedEnvelope, undefined, incidentContext),
+        execute: (attemptGate) =>
+          this.geminiAdapter.analyzeEnvelope(
+            validatedEnvelope,
+            undefined,
+            incidentContext,
+            attemptGate,
+          ),
       });
     } catch (budgetErr) {
       const reason = budgetErr instanceof Error ? budgetErr.message : String(budgetErr);

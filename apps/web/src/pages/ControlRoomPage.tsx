@@ -1,6 +1,7 @@
 import React from 'react';
 import { Cloud } from 'lucide-react';
 import {
+  IncidentContextSchema,
   IncidentAssessmentSchema,
   type ActivityEvent,
   type IntrusionEvent,
@@ -53,6 +54,10 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
   );
   const assessment = assessmentActivity?.payload?.['assessment'];
   const parsedAssessment = IncidentAssessmentSchema.safeParse(assessment);
+  const contextActivity = activityEvents.find(
+    (event) => event.eventType === 'INCIDENT_CONTEXT_BUILT',
+  );
+  const parsedContext = IncidentContextSchema.safeParse(contextActivity?.payload?.['context']);
 
   return (
     <>
@@ -100,6 +105,7 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
 
       <AutonomousIntelligencePanel
         activityEvents={activityEvents}
+        context={parsedContext.success ? parsedContext.data : null}
         assessment={parsedAssessment.success ? parsedAssessment.data : null}
         campaign={campaign}
         campaignStarting={campaignStarting}
