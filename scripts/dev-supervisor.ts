@@ -77,6 +77,7 @@ export interface DevSupervisorOptions {
   rootDir: string;
   services?: ServiceKey[] | undefined;
   env?: Record<string, string> | undefined;
+  serviceEnv?: Partial<Record<ServiceKey, Record<string, string | undefined>>> | undefined;
   skipBuild?: boolean | undefined;
   spawnFn?: SpawnFunction | undefined;
   buildFn?: BuildFunction | undefined;
@@ -91,6 +92,7 @@ export class DevSupervisor {
   private readonly rootDir: string;
   private readonly services: ServiceKey[];
   private readonly env: Record<string, string>;
+  private readonly serviceEnv: Partial<Record<ServiceKey, Record<string, string | undefined>>>;
   private readonly skipBuild: boolean;
   private readonly spawnFn: SpawnFunction;
   private readonly buildFn: BuildFunction;
@@ -111,6 +113,7 @@ export class DevSupervisor {
     this.rootDir = options.rootDir;
     this.services = options.services !== undefined ? options.services : ['web', 'api', 'worker'];
     this.env = options.env ?? {};
+    this.serviceEnv = options.serviceEnv ?? {};
     this.skipBuild = options.skipBuild ?? false;
     this.spawnFn = options.spawnFn ?? spawn;
     this.buildFn =
@@ -180,6 +183,7 @@ export class DevSupervisor {
           env: {
             ...process.env,
             ...this.env,
+            ...this.serviceEnv[serviceKey],
           },
           stdio: ['pipe', 'pipe', 'pipe'],
           detached: process.platform !== 'win32',

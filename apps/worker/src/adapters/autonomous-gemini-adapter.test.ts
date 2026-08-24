@@ -63,6 +63,11 @@ describe('LiveAutonomousGeminiAdapter', () => {
     const result = await adapter.analyzeEnvelope(mockEnvelope);
 
     expect(result.status).toBe('SUCCESS');
+    const callArgs = generateContentMock.mock.calls[0]?.[0];
+    const modelInput = JSON.parse(callArgs.contents[0].parts[0].text as string) as {
+      eventId?: string;
+    };
+    expect(modelInput.eventId).toBe(mockEnvelope.eventId);
     if (result.status === 'SUCCESS') {
       expect(result.confidence).toBe(0.94);
       // Raw model text must NOT appear in summary

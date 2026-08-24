@@ -63,7 +63,8 @@ describe('LiveGeminiAdapter', () => {
     const callArgs = generateContentMock.mock.calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs?.config?.abortSignal).toBeInstanceOf(AbortSignal);
-    expect(callArgs?.config?.maxOutputTokens).toBe(1024);
+    expect(callArgs?.config?.temperature).toBe(0);
+    expect(callArgs?.config?.maxOutputTokens).toBe(2048);
 
     expect(result.correlationId).toBe(mockEvent.correlationId);
     expect(result.provenance).toBe('INFERRED');

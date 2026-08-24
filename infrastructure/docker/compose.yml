@@ -2,6 +2,34 @@
 # This compose file is not an alternative production deployment configuration.
 
 services:
+  pubsub:
+    build:
+      context: .
+      dockerfile: pubsub-emulator.Dockerfile
+    container_name: falseroute-pubsub-emulator
+    restart: unless-stopped
+    command:
+      - gcloud
+      - beta
+      - emulators
+      - pubsub
+      - start
+      - --project=falseroute-local
+      - --host-port=0.0.0.0:8085
+    ports:
+      - '8085:8085'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import socket; s=socket.create_connection(('127.0.0.1',8085),2); s.close()
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   postgres:
     image: postgres:18.4
     container_name: falseroute-postgres-local

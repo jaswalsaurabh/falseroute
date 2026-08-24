@@ -1,40 +1,72 @@
 import React from 'react';
-import { Activity, LockKeyhole, Radio, ShieldCheck } from 'lucide-react';
-import { Badge } from './Badge.js';
+import { LockKeyhole, Moon, Sun } from 'lucide-react';
+import falseRouteLogo from '../../../../assets/branding/false-route-fox-logo.svg';
+import falseRouteLogoReversed from '../../../../assets/branding/false-route-fox-logo-reversed.svg';
 import { Button } from './Button.js';
-import { IconBadge } from './IconBadge.js';
+import { RouteToggle } from './RouteToggle.js';
 
 export interface HeaderProps {
   readonly isUnlocked: boolean;
   readonly onLock?: () => void;
+  readonly route?: 'dashboard' | 'events';
+  readonly onNavigate?: (path: '/' | '/events') => void;
+  readonly theme?: 'light' | 'dark';
+  readonly onToggleTheme?: () => void;
+  readonly onInject?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isUnlocked, onLock }) => {
+export const Header: React.FC<HeaderProps> = ({
+  isUnlocked,
+  onLock,
+  route = 'dashboard',
+  onNavigate,
+  theme = 'light',
+  onToggleTheme,
+  onInject,
+}) => {
   return (
     <header className="topbar">
-      <div className="brand-lockup">
-        <IconBadge tone="model">
-          <ShieldCheck size={20} aria-hidden="true" />
-        </IconBadge>
-        <div>
-          <div className="brand-name">
-            False<span>Route</span>
-          </div>
-          <div className="brand-subtitle">Autonomous response control room</div>
-        </div>
+      <div className="brand-lockup" role="img" aria-label="FalseRoute">
+        <img
+          className="brand-logo brand-logo-light"
+          src={falseRouteLogo}
+          alt=""
+          aria-hidden="true"
+        />
+        <img
+          className="brand-logo brand-logo-dark"
+          src={falseRouteLogoReversed}
+          alt=""
+          aria-hidden="true"
+        />
       </div>
       {isUnlocked && (
-        <div className="topbar-actions">
-          <Badge variant="simulated">
-            <Radio size={14} aria-hidden="true" /> SIMULATED CONTAINMENT
-          </Badge>
-          <Badge variant="success">
-            <Activity size={14} aria-hidden="true" /> CONTROLLED DEMO
-          </Badge>
-          <Button variant="secondary" onClick={onLock} aria-label="Lock operator session">
-            <LockKeyhole size={15} aria-hidden="true" /> Lock session
-          </Button>
-        </div>
+        <>
+          <nav className="topbar-nav" aria-label="Primary navigation">
+            <RouteToggle route={route} onNavigate={onNavigate} />
+          </nav>
+          <div className="topbar-right">
+            <div className="topbar-actions">
+              <Button
+                variant="secondary"
+                className="icon-button"
+                onClick={onToggleTheme}
+                aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} colour theme`}
+              >
+                {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+              </Button>
+              <Button onClick={onInject}>Inject scenario</Button>
+              <Button
+                variant="secondary"
+                className="icon-button"
+                onClick={onLock}
+                aria-label="Lock operator session"
+              >
+                <LockKeyhole size={15} aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </header>
   );

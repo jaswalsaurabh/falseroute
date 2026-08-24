@@ -21,11 +21,12 @@ describe('Autonomous Console Components', () => {
     render(<ScenarioInjector client={mockClient} />);
 
     expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
-    const select = screen.getByLabelText('Attack Scenario Pattern') as HTMLSelectElement;
-    expect(select.options.length).toBe(7);
+    expect(screen.getByRole('combobox', { name: /Select synthetic scenario/i })).toBeDefined();
 
     // Switch scenario to WordPress probe
-    fireEvent.change(select, { target: { value: 'WORDPRESS_CONFIG_PROBE' } });
+    fireEvent.change(screen.getByRole('combobox', { name: /Select synthetic scenario/i }), {
+      target: { value: 'WORDPRESS_CONFIG_PROBE' },
+    });
     expect(screen.getAllByText(/WordPress/i).length).toBeGreaterThanOrEqual(1);
 
     // Click submit
@@ -35,10 +36,10 @@ describe('Autonomous Console Components', () => {
     expect(mockClient.createAutonomousScenario).toHaveBeenCalledWith(
       expect.objectContaining({
         scenarioKind: 'WORDPRESS_CONFIG_PROBE',
-        sourceIp: '198.51.100.25',
+        sourceIp: '198.51.100.26',
         evidence: expect.objectContaining({
           scenarioKind: 'WORDPRESS_CONFIG_PROBE',
-          sourceIp: '198.51.100.25',
+          sourceIp: '198.51.100.26',
         }),
       }),
     );
@@ -119,19 +120,34 @@ describe('Autonomous Console Components', () => {
         provenance: 'UNAVAILABLE',
         occurredAt: '2026-08-22T10:00:05.000Z',
       },
+      {
+        cursor: 8,
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-1',
+        stage: 'EXECUTED',
+        eventType: 'TOOL_EXECUTED',
+        summary: 'Provider action executed successfully',
+        provenance: 'OBSERVED',
+        occurredAt: '2026-08-22T10:00:06.000Z',
+      },
     ];
 
     render(<WorkflowTimeline events={mockEvents} streamStatus="CONNECTED" />);
 
     expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
     expect(screen.getByText('LIVE SSE STREAM')).toBeDefined();
-    expect(screen.getByText('RECEIVED')).toBeDefined();
+    expect(screen.getAllByText('RECEIVED').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('REQUESTED (AI)')).toBeDefined();
     expect(screen.getByText('POLICY AUTHORIZED')).toBeDefined();
     expect(screen.getByText('POLICY NARROWED')).toBeDefined();
     expect(screen.getByText('POLICY REJECTED')).toBeDefined();
     expect(screen.getByText('FAKE EXECUTED')).toBeDefined();
     expect(screen.getByText('AI DEGRADED')).toBeDefined();
+    expect(screen.getByRole('img', { name: 'POLICY AUTHORIZED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'POLICY NARROWED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'FAKE EXECUTED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'EXECUTED' })).toBeDefined();
+    expect(screen.getAllByRole('img', { name: 'observed' }).length).toBeGreaterThan(0);
   });
 
   it('ActiveResourcesPanel does not infer active resources from activity history', () => {

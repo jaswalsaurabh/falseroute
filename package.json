@@ -16,6 +16,8 @@
     "dev:worker": "node scripts/dev-supervisor.ts --services=worker",
     "dev:services": "node scripts/dev-supervisor.ts --services=api,worker",
     "dev:infra": "docker compose -f infrastructure/docker/compose.yml up -d postgres",
+    "dev:hybrid": "node scripts/dev-hybrid.ts",
+    "dev:hybrid:bootstrap": "node scripts/bootstrap-pubsub-emulator.ts",
     "dev:infra:down": "docker compose -f infrastructure/docker/compose.yml down",
     "dev:migrate": "node scripts/dev-supervisor.ts --migrate",
     "staging:migrate": "bash scripts/run-staging-migrations.sh",

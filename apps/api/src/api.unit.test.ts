@@ -246,6 +246,35 @@ describe('Express API Unit Tests', () => {
     expect(parsed.total).toBe(1);
   });
 
+  it('validates and forwards intrusion-event search, filtering, sorting, and pagination', async () => {
+    const listEvents = vi.spyOn(repository, 'listEvents');
+    const res = await request(app)
+      .get(
+        '/api/v1/intrusion-events?limit=25&offset=50&status=DECIDED&search=configuration%20probe&sortBy=occurredAt&sortDirection=asc',
+      )
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(listEvents).toHaveBeenCalledWith({
+      limit: 25,
+      offset: 50,
+      status: 'DECIDED',
+      search: 'configuration probe',
+      sortBy: 'occurredAt',
+      sortDirection: 'asc',
+    });
+    listEvents.mockRestore();
+  });
+
+  it('rejects unsupported intrusion-event sort fields', async () => {
+    const res = await request(app)
+      .get('/api/v1/intrusion-events?sortBy=riskIndicators')
+      .set('Authorization', authHeader);
+
+    expect(res.status).toBe(400);
+    expect(ApiErrorResponseSchema.parse(res.body).error).toBe('VALIDATION_ERROR');
+  });
+
   it('returns single intrusion event with decision and simulated effect adhering to schema', async () => {
     const res = await request(app)
       .get(`/api/v1/intrusion-events/${mockDecoyEvent.id}`)

@@ -73,6 +73,33 @@ export class LocalSharedSecretOidcTokenVerifier implements OidcTokenVerifier {
   }
 }
 
+/** Local-only verifier for the emulator, which cannot mint Google OIDC tokens. */
+export class PubSubEmulatorTokenVerifier implements OidcTokenVerifier {
+  async verifyToken(): Promise<{ valid: boolean; email?: string }> {
+    return { valid: true, email: 'local-pubsub-emulator@example.invalid' };
+  }
+}
+
+/**
+ * The emulator includes snake_case aliases alongside the production Pub/Sub
+ * message fields. Normalize that transport quirk before strict contract parsing.
+ */
+function normalizePubSubEnvelope(rawBody: unknown): unknown {
+  if (!rawBody || typeof rawBody !== 'object' || !('message' in rawBody)) return rawBody;
+  const rawMessage = (rawBody as { message?: unknown }).message;
+  if (!rawMessage || typeof rawMessage !== 'object') return rawBody;
+  const message = rawMessage as Record<string, unknown>;
+  return {
+    ...(rawBody as Record<string, unknown>),
+    message: {
+      data: message.data,
+      messageId: message.messageId ?? message.message_id,
+      publishTime: message.publishTime ?? message.publish_time,
+      ...(message.attributes !== undefined ? { attributes: message.attributes } : {}),
+    },
+  };
+}
+
 export interface PushHandlerResponse {
   readonly statusCode: number;
   readonly body: Record<string, unknown>;
@@ -102,7 +129,7 @@ export class PubSubPushHandler {
     }
 
     // 2. Parse Pub/Sub envelope
-    const envelopeParsed = PubSubPushEnvelopeSchema.safeParse(rawBody);
+    const envelopeParsed = PubSubPushEnvelopeSchema.safeParse(normalizePubSubEnvelope(rawBody));
     if (!envelopeParsed.success) {
       const serialized = (() => {
         try {
@@ -234,7 +261,7 @@ export class PubSubPushHandler {
       };
     }
 
-    const envelopeParsed = PubSubPushEnvelopeSchema.safeParse(rawBody);
+    const envelopeParsed = PubSubPushEnvelopeSchema.safeParse(normalizePubSubEnvelope(rawBody));
     if (!envelopeParsed.success) {
       return {
         statusCode: 503,
