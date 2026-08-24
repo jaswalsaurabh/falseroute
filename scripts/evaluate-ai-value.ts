@@ -1,6 +1,38 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { ActionOrigin } from '../packages/contracts/src/incident-intelligence.ts';
+import {
+  parseModelReplayEvidence,
+  type ModelReplayEvidence,
+} from './fixtures/ai-value/model-replay.ts';
+
+const HYBRID_REPLAY_EVIDENCE_PATH = 'scripts/fixtures/ai-value/v1/hybrid-replay-evidence.json';
+
+function loadHybridReplayEvidence(): readonly ModelReplayEvidence[] {
+  const input = JSON.parse(readFileSync(HYBRID_REPLAY_EVIDENCE_PATH, 'utf8')) as {
+    records?: readonly {
+      fixtureId: string;
+      assessment: unknown;
+      finalOptionalActions: readonly string[];
+      actionOrigins: readonly string[];
+    }[];
+  };
+  if (!Array.isArray(input.records)) throw new Error('Hybrid replay evidence records are required');
+  return input.records.map((record) =>
+    parseModelReplayEvidence({
+      fixtureId: record.fixtureId,
+      provider: 'gemini',
+      replaySource: 'hybrid',
+      assessmentProvenance: 'MODEL_INFERENCE',
+      assessment: record.assessment,
+      policyOutcome: {
+        owner: 'DETERMINISTIC_POLICY',
+        finalOptionalActions: record.finalOptionalActions,
+        actionOrigins: record.actionOrigins,
+      },
+    }),
+  );
+}
 
 export const METRIC_DEFINITIONS = {
   crossSignalSynthesis: 20,
@@ -48,6 +80,7 @@ export interface EvaluationResult {
     readonly failedDimensions: readonly Dimension[];
     readonly eligibleForModelInfluence: boolean;
     readonly modelInfluenced: boolean;
+    readonly modelEvidenceAvailable: boolean;
   }[];
 }
 
@@ -69,6 +102,50 @@ const EXISTING_SCENARIOS = [
 
 function normalizedActions(actions: readonly string[]): string {
   return actions.toSorted().join('|');
+}
+
+function normalizedRecommendations(actions: readonly string[]): string {
+  return normalizedActions(actions.filter((action) => action !== 'NO_ACTION'));
+}
+
+function expectedStage(stage: string): string {
+  const normalized = stage.toUpperCase();
+  const aliases: Record<string, string> = {
+    INITIAL_PROBE: 'RECONNAISSANCE',
+    ACTIVE_BURST: 'CONTAINMENT_CANDIDATE',
+    ACTIVE_FLOOD: 'CONTAINMENT_CANDIDATE',
+    CREDENTIAL_TAMPER: 'CREDENTIAL_ATTACK',
+    CONFIRMED_INTRUSION: 'DECEPTION_ENGAGEMENT',
+    BENIGN: 'INSUFFICIENT_EVIDENCE',
+  };
+  return aliases[normalized] ?? normalized;
+}
+
+function containsAll(values: readonly string[], expected: readonly string[]): boolean {
+  const valueSet = new Set(values);
+  return expected.every((value) => valueSet.has(value));
+}
+
+function validateReplayEvidence(
+  evidence: readonly ModelReplayEvidence[],
+): ReadonlyMap<string, ModelReplayEvidence> {
+  const byFixture = new Map<string, ModelReplayEvidence>();
+  for (const candidate of evidence) {
+    let parsed: ModelReplayEvidence;
+    try {
+      parsed = parseModelReplayEvidence(candidate);
+    } catch (error) {
+      throw new Error(
+        `Invalid model replay evidence: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+    if (byFixture.has(parsed.fixtureId)) {
+      throw new Error(`Duplicate model replay evidence: ${parsed.fixtureId}`);
+    }
+    byFixture.set(parsed.fixtureId, parsed);
+  }
+  return byFixture;
 }
 
 function validateFixtureSet(input: unknown): FixtureSet {
@@ -127,8 +204,12 @@ function validateFixtureSet(input: unknown): FixtureSet {
   return set as FixtureSet;
 }
 
-export function evaluateFixtureSet(input: unknown): EvaluationResult {
+export function evaluateFixtureSet(
+  input: unknown,
+  replayEvidence: readonly ModelReplayEvidence[] = loadHybridReplayEvidence(),
+): EvaluationResult {
   const set = validateFixtureSet(input);
+  const evidenceByFixture = validateReplayEvidence(replayEvidence);
   let applicableWeight = 0;
   let passedWeight = 0;
   let eligibleInfluenceCheckpoints = 0;
@@ -137,12 +218,49 @@ export function evaluateFixtureSet(input: unknown): EvaluationResult {
   const fixtures = set.fixtures.map((fixture) => {
     const passedDimensions: Dimension[] = [];
     const failedDimensions: Dimension[] = [];
+    const modelEvidence = evidenceByFixture.get(fixture.fixtureId);
+    const assessment = modelEvidence?.assessment;
+    const assessmentMatchesEvidence =
+      assessment !== undefined && containsAll(assessment.evidenceRefs, fixture.evidenceIds);
+    const assessmentMatchesExpected =
+      assessment !== undefined &&
+      assessment.incidentStage === expectedStage(fixture.expectedStage) &&
+      assessment.riskTier === fixture.expectedRisk.toUpperCase();
+    const optionalSelectionIsValid =
+      assessment !== undefined &&
+      fixture.acceptableOptionalActionSets.some(
+        (actions) =>
+          normalizedRecommendations(actions) ===
+          normalizedRecommendations(assessment.recommendedActions),
+      );
+    const policyOutcomeIsBounded =
+      modelEvidence !== undefined &&
+      modelEvidence.policyOutcome.owner === 'DETERMINISTIC_POLICY' &&
+      fixture.acceptableOptionalActionSets.some(
+        (actions) =>
+          normalizedActions(actions) ===
+          normalizedActions(modelEvidence.policyOutcome.finalOptionalActions),
+      );
     for (const dimension of fixture.applicableDimensions) {
       const weight = METRIC_DEFINITIONS[dimension];
       applicableWeight += weight;
-      // The baseline has no model assessment. Deterministic fallback and mandatory actions
-      // are deliberately never credited as AI evidence.
-      const passed = false;
+      const passed =
+        modelEvidence !== undefined &&
+        modelEvidence.assessmentProvenance === 'MODEL_INFERENCE' &&
+        policyOutcomeIsBounded &&
+        (dimension === 'crossSignalSynthesis'
+          ? assessmentMatchesEvidence
+          : dimension === 'stageRiskInference'
+            ? assessmentMatchesExpected
+            : dimension === 'optionalResponseSelection'
+              ? optionalSelectionIsValid
+              : dimension === 'adaptationToNewEvidence'
+                ? assessmentMatchesEvidence && assessment?.needsFollowUp === true
+                : dimension === 'evidenceLinkedExplanation'
+                  ? assessmentMatchesEvidence &&
+                    assessment?.hypothesis.length !== 0 &&
+                    assessment?.rationale.length !== 0
+                  : optionalSelectionIsValid || assessmentMatchesExpected);
       if (passed) {
         passedDimensions.push(dimension);
         passedWeight += weight;
@@ -152,9 +270,15 @@ export function evaluateFixtureSet(input: unknown): EvaluationResult {
     const hasGenuineChoice = fixture.acceptableOptionalActionSets.length >= 2;
     const modelInfluenced =
       hasGenuineChoice &&
-      normalizedActions(fixture.finalOptionalActions) !==
+      modelEvidence !== undefined &&
+      modelEvidence.assessmentProvenance === 'MODEL_INFERENCE' &&
+      optionalSelectionIsValid &&
+      normalizedActions(modelEvidence.assessment.recommendedActions) !==
         normalizedActions(fixture.fallbackOptionalActions) &&
-      fixture.actionOrigins.includes('MODEL_REQUEST');
+      normalizedActions(modelEvidence.policyOutcome.finalOptionalActions) !==
+        normalizedActions(fixture.fallbackOptionalActions) &&
+      modelEvidence.policyOutcome.actionOrigins.includes('MODEL_REQUEST') &&
+      policyOutcomeIsBounded;
     if (hasGenuineChoice) {
       eligibleInfluenceCheckpoints++;
       if (modelInfluenced) influencedCheckpoints++;
@@ -165,6 +289,7 @@ export function evaluateFixtureSet(input: unknown): EvaluationResult {
       failedDimensions,
       eligibleForModelInfluence: hasGenuineChoice,
       modelInfluenced,
+      modelEvidenceAvailable: modelEvidence !== undefined,
     };
   });
 
