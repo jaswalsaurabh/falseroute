@@ -33,6 +33,7 @@ import {
 import { FakeAutonomousGeminiAdapter } from './adapters/fake-autonomous-gemini-adapter.js';
 import {
   LocalSharedSecretOidcTokenVerifier,
+  PubSubEmulatorTokenVerifier,
   GoogleOidcTokenVerifier,
   PubSubPushHandler,
   type OidcTokenVerifier,
@@ -253,6 +254,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
         verifier = new LocalSharedSecretOidcTokenVerifier(config.AUTONOMOUS_LOCAL_PUSH_TOKEN!);
+      } else if (config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR') {
+        verifier = new PubSubEmulatorTokenVerifier();
       } else {
         verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
       }

@@ -103,4 +103,20 @@ describe('worker configuration claim lease safety margin', () => {
     });
     expect(config.AUTONOMOUS_PUSH_MODE).toBe('OIDC');
   });
+
+  it('accepts emulator push mode only in development', () => {
+    const config = parseWorkerConfig({
+      ...validWorkerEnv,
+      AUTONOMOUS_PUSH_MODE: 'PUBSUB_EMULATOR',
+    });
+    expect(config.AUTONOMOUS_PUSH_MODE).toBe('PUBSUB_EMULATOR');
+
+    expect(() =>
+      parseWorkerConfig({
+        ...validWorkerEnv,
+        NODE_ENV: 'production',
+        AUTONOMOUS_PUSH_MODE: 'PUBSUB_EMULATOR',
+      }),
+    ).toThrow(ConfigurationError);
+  });
 });

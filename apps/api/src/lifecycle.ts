@@ -105,7 +105,12 @@ export async function startApiServer(
     await telemetry.init();
 
     const activityRepo = options.activityRepo ?? new ActivityEventRepository(db as PrismaClient);
-    streamService = options.streamService ?? new ActivityStreamService(activityRepo);
+    streamService =
+      options.streamService ??
+      new ActivityStreamService(
+        activityRepo,
+        config.SYSTEM_MODE === undefined ? undefined : { systemMode: config.SYSTEM_MODE },
+      );
 
     const eventPublisher =
       options.eventPublisher ??

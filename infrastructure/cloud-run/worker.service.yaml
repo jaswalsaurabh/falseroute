@@ -48,6 +48,8 @@ spec:
               value: '5000'
             - name: GEMINI_OPERATION_DEADLINE_MS
               value: '8000'
+            - name: GEMINI_MODEL
+              value: 'gemini-3.5-flash'
             - name: WORKER_SHUTDOWN_TIMEOUT_MS
               value: '8000'
             - name: DATABASE_URL

@@ -64,6 +64,10 @@ resource "google_cloud_run_v2_service" "api" {
         value = "https://${var.domain_name}"
       }
       env {
+        name  = "SYSTEM_MODE"
+        value = "SIMULATED"
+      }
+      env {
         name  = "SHUTDOWN_TIMEOUT_MS"
         value = "8000"
       }
@@ -199,6 +203,10 @@ resource "google_cloud_run_v2_service" "worker" {
       env {
         name  = "GEMINI_OPERATION_DEADLINE_MS"
         value = "8000"
+      }
+      env {
+        name  = "GEMINI_MODEL"
+        value = "gemini-3.5-flash"
       }
       env {
         name  = "WORKER_SHUTDOWN_TIMEOUT_MS"

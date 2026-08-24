@@ -32,6 +32,7 @@ import { createEmergencyReleaseRouter } from './routes/emergency-release-routes.
 import {
   InMemoryEventPublisher,
   LocalHttpEventPublisher,
+  PubSubEmulatorEventPublisher,
   type EventPublisher,
 } from './integrations/event-publisher.js';
 
@@ -120,7 +121,14 @@ export function createApp(options: AppOptions): Express {
           sharedSecret: config.LOCAL_WORKER_PUSH_TOKEN,
           timeoutMs: config.EVENT_PUBLISH_TIMEOUT_MS ?? 5000,
         })
-      : new InMemoryEventPublisher());
+      : config.EVENT_PUBLISHER_MODE === 'PUBSUB_EMULATOR'
+        ? new PubSubEmulatorEventPublisher({
+            projectId: config.PUBSUB_PROJECT_ID!,
+            topicId: config.PUBSUB_TOPIC_ID ?? 'falseroute-events',
+            emulatorHost: config.PUBSUB_EMULATOR_HOST!,
+            timeoutMs: config.EVENT_PUBLISH_TIMEOUT_MS ?? 5000,
+          })
+        : new InMemoryEventPublisher());
   if (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB' && !options.eventPublisher) {
     throw new Error('LIVE_PUBSUB requires an explicitly injected production EventPublisher');
   }

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BaseEnvironmentSchema, ConfigurationError } from '@false-route/config';
+import { SystemModeSchema } from '@false-route/contracts';
 
 export const ApiConfigSchema = BaseEnvironmentSchema.extend({
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
@@ -14,9 +15,12 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
     .string()
     .min(8, 'OPERATOR_ACCESS_TOKEN must be at least 8 characters long'),
   OPERATOR_REPLAY_TOKEN: z.string().min(16).optional(),
-  EVENT_PUBLISHER_MODE: z.enum(['MEMORY', 'LOCAL_HTTP', 'LIVE_PUBSUB']).default('MEMORY'),
+  EVENT_PUBLISHER_MODE: z
+    .enum(['MEMORY', 'LOCAL_HTTP', 'PUBSUB_EMULATOR', 'LIVE_PUBSUB'])
+    .default('MEMORY'),
   PUBSUB_PROJECT_ID: z.string().min(6).optional(),
   PUBSUB_TOPIC_ID: z.string().min(3).default('falseroute-events'),
+  PUBSUB_EMULATOR_HOST: z.string().min(1).optional(),
   LOCAL_WORKER_PUSH_URL: z.string().url().default('http://127.0.0.1:8088/pubsub/push'),
   LOCAL_WORKER_PUSH_TOKEN: z.string().min(16).optional(),
   EVENT_PUBLISH_TIMEOUT_MS: z.coerce.number().int().min(100).max(30000).default(5000),
@@ -39,6 +43,7 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
    * deployment explicitly declares trusted proxy hops.
    */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  SYSTEM_MODE: SystemModeSchema.default('LOCAL_FAKE'),
 })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV === 'production' && config.EVENT_PUBLISHER_MODE === 'MEMORY') {
@@ -64,11 +69,29 @@ export const ApiConfigSchema = BaseEnvironmentSchema.extend({
         });
       }
     }
-    if (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB' && !config.PUBSUB_PROJECT_ID) {
+    if (
+      (config.EVENT_PUBLISHER_MODE === 'LIVE_PUBSUB' ||
+        config.EVENT_PUBLISHER_MODE === 'PUBSUB_EMULATOR') &&
+      !config.PUBSUB_PROJECT_ID
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['PUBSUB_PROJECT_ID'],
         message: 'PUBSUB_PROJECT_ID is required for live Pub/Sub publishing',
+      });
+    }
+    if (config.EVENT_PUBLISHER_MODE === 'PUBSUB_EMULATOR' && !config.PUBSUB_EMULATOR_HOST) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBSUB_EMULATOR_HOST'],
+        message: 'PUBSUB_EMULATOR_HOST is required for Pub/Sub emulator publishing',
+      });
+    }
+    if (config.NODE_ENV === 'production' && config.EVENT_PUBLISHER_MODE === 'PUBSUB_EMULATOR') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['EVENT_PUBLISHER_MODE'],
+        message: 'Pub/Sub emulator publishing is prohibited in production',
       });
     }
     if (
@@ -115,6 +138,8 @@ export type ApiConfig = Omit<
   | 'EVENT_PUBLISHER_MODE'
   | 'PUBSUB_PROJECT_ID'
   | 'PUBSUB_TOPIC_ID'
+  | 'PUBSUB_EMULATOR_HOST'
+  | 'SYSTEM_MODE'
   | 'LOCAL_WORKER_PUSH_URL'
   | 'LOCAL_WORKER_PUSH_TOKEN'
   | 'EVENT_PUBLISH_TIMEOUT_MS'
@@ -125,9 +150,11 @@ export type ApiConfig = Omit<
   SHUTDOWN_DB_DISCONNECT_TIMEOUT_MS?: number;
   SHUTDOWN_TELEMETRY_TIMEOUT_MS?: number;
   OPERATOR_REPLAY_TOKEN?: string | undefined;
-  EVENT_PUBLISHER_MODE?: 'MEMORY' | 'LOCAL_HTTP' | 'LIVE_PUBSUB';
+  EVENT_PUBLISHER_MODE?: 'MEMORY' | 'LOCAL_HTTP' | 'PUBSUB_EMULATOR' | 'LIVE_PUBSUB';
   PUBSUB_PROJECT_ID?: string | undefined;
   PUBSUB_TOPIC_ID?: string;
+  PUBSUB_EMULATOR_HOST?: string | undefined;
+  SYSTEM_MODE?: z.infer<typeof SystemModeSchema>;
   LOCAL_WORKER_PUSH_URL?: string;
   LOCAL_WORKER_PUSH_TOKEN?: string | undefined;
   EVENT_PUBLISH_TIMEOUT_MS?: number;

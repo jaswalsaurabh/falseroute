@@ -22,6 +22,14 @@ export interface GooglePubSubEventPublisherOptions {
   readonly client?: AuthenticatedRequestClient;
 }
 
+export interface PubSubEmulatorEventPublisherOptions {
+  readonly projectId: string;
+  readonly topicId: string;
+  readonly emulatorHost: string;
+  readonly timeoutMs?: number;
+  readonly fetchImpl?: typeof fetch;
+}
+
 /** Publishes versioned event envelopes through the authenticated Pub/Sub REST API. */
 export class GooglePubSubEventPublisher implements EventPublisher {
   private readonly timeoutMs: number;
@@ -60,6 +68,41 @@ export class GooglePubSubEventPublisher implements EventPublisher {
       scopes: ['https://www.googleapis.com/auth/pubsub'],
     }).getClient() as Promise<AuthenticatedRequestClient>;
     return this.clientPromise;
+  }
+}
+
+/** Publishes through the local Google Pub/Sub emulator without Google auth. */
+export class PubSubEmulatorEventPublisher implements EventPublisher {
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(private readonly options: PubSubEmulatorEventPublisherOptions) {
+    if (!options.emulatorHost || options.emulatorHost.includes('pubsub.googleapis.com')) {
+      throw new Error('Pub/Sub emulator host must be a local emulator endpoint');
+    }
+    this.timeoutMs = options.timeoutMs ?? 5000;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async publish(envelope: IntrusionEventEnvelope): Promise<{ transportId: string }> {
+    const response = await this.fetchImpl(
+      `http://${this.options.emulatorHost}/v1/projects/${this.options.projectId}/topics/${this.options.topicId}:publish`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ data: Buffer.from(JSON.stringify(envelope), 'utf8').toString('base64') }],
+        }),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Pub/Sub emulator publish failed with HTTP ${response.status}`);
+    }
+    const body = (await response.json()) as { messageIds?: string[] };
+    const transportId = body.messageIds?.[0];
+    if (!transportId) throw new Error('Pub/Sub emulator response did not contain a message ID');
+    return { transportId };
   }
 }
 
