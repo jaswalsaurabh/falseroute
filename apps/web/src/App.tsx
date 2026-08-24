@@ -172,8 +172,6 @@ export const App: React.FC = () => {
         onLock={lockSession}
         route={route}
         onNavigate={navigate}
-        systemMode={systemMode}
-        streamStatus={streamStatus}
         theme={theme}
         onToggleTheme={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
         onInject={focusScenarioInjector}

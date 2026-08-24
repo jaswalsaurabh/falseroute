@@ -21,10 +21,12 @@ describe('Autonomous Console Components', () => {
     render(<ScenarioInjector client={mockClient} />);
 
     expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
-    expect(screen.getAllByRole('button', { pressed: false }).length).toBe(6);
+    expect(screen.getByRole('combobox', { name: /Select synthetic scenario/i })).toBeDefined();
 
     // Switch scenario to WordPress probe
-    fireEvent.click(screen.getByRole('button', { name: /WordPress Configuration Probe/i }));
+    fireEvent.change(screen.getByRole('combobox', { name: /Select synthetic scenario/i }), {
+      target: { value: 'WORDPRESS_CONFIG_PROBE' },
+    });
     expect(screen.getAllByText(/WordPress/i).length).toBeGreaterThanOrEqual(1);
 
     // Click submit
@@ -118,6 +120,16 @@ describe('Autonomous Console Components', () => {
         provenance: 'UNAVAILABLE',
         occurredAt: '2026-08-22T10:00:05.000Z',
       },
+      {
+        cursor: 8,
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-1',
+        stage: 'EXECUTED',
+        eventType: 'TOOL_EXECUTED',
+        summary: 'Provider action executed successfully',
+        provenance: 'OBSERVED',
+        occurredAt: '2026-08-22T10:00:06.000Z',
+      },
     ];
 
     render(<WorkflowTimeline events={mockEvents} streamStatus="CONNECTED" />);
@@ -131,6 +143,11 @@ describe('Autonomous Console Components', () => {
     expect(screen.getByText('POLICY REJECTED')).toBeDefined();
     expect(screen.getByText('FAKE EXECUTED')).toBeDefined();
     expect(screen.getByText('AI DEGRADED')).toBeDefined();
+    expect(screen.getByRole('img', { name: 'POLICY AUTHORIZED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'POLICY NARROWED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'FAKE EXECUTED' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'EXECUTED' })).toBeDefined();
+    expect(screen.getAllByRole('img', { name: 'observed' }).length).toBeGreaterThan(0);
   });
 
   it('ActiveResourcesPanel does not infer active resources from activity history', () => {

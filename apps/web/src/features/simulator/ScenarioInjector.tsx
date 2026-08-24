@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send } from 'lucide-react';
+import { Activity, CheckCircle2, Radio, Send, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   CreateAutonomousScenarioRequestSchema,
@@ -10,6 +10,7 @@ import {
 import { type ApiClient } from '../../api/client.js';
 import { Badge } from '../../components/Badge.js';
 import { Button } from '../../components/Button.js';
+import { IconBadge } from '../../components/IconBadge.js';
 export interface ScenarioInjectorProps {
   readonly client: ApiClient;
   readonly events?: readonly IntrusionEvent[];
@@ -45,6 +46,23 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
     null,
   );
   const preset = SCENARIO_CATALOG[selectedScenario];
+  const awaitingDecision = events.filter(
+    (event) => event.status === 'PENDING' || event.status === 'PROCESSING',
+  ).length;
+  const decidedSignals = events.filter((event) => event.status === 'DECIDED').length;
+  const failedSignals = events.filter((event) => event.status === 'FAILED').length;
+
+  const handleScenarioChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextKind = event.target.value as ScenarioKind;
+    setSelectedScenario(nextKind);
+    const nextPreset = SCENARIO_CATALOG[nextKind];
+    const sourceIp = nextPreset?.defaultEvidence?.['sourceIp'];
+    if (typeof sourceIp === 'string') {
+      setCustomIp(sourceIp);
+    }
+    setFeedback(null);
+  };
+
   const handleInject = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSubmitting(true);
@@ -85,9 +103,9 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
           </h2>
           <p>Incoming signals, normalized and queued</p>
         </div>
-        <span className="status-chip status-chip-compact">
-          <span className="status-dot status-dot-observed" /> Live
-        </span>
+        <IconBadge tone="info" label="Live telemetry" tooltip="Live telemetry">
+          <Radio size={13} aria-hidden="true" />
+        </IconBadge>
       </div>
       <div className="telemetry-feed" aria-label="Recent intrusion signals">
         {events.length === 0 ? (
@@ -105,7 +123,20 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
             >
               <span className="telemetry-event-heading">
                 <strong>{event.eventType.replaceAll('_', ' ').toLowerCase()}</strong>
-                <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
+                <IconBadge
+                  tone={statusVariant(event.status)}
+                  size="compact"
+                  label={event.status === 'DECIDED' ? 'Decided' : event.status}
+                  tooltip={event.status === 'DECIDED' ? 'Decided' : event.status}
+                >
+                  {event.status === 'DECIDED' ? (
+                    <CheckCircle2 size={13} aria-hidden="true" />
+                  ) : event.status === 'FAILED' ? (
+                    <TriangleAlert size={13} aria-hidden="true" />
+                  ) : (
+                    <Activity size={13} aria-hidden="true" />
+                  )}
+                </IconBadge>
               </span>
               <span className="telemetry-event-meta">
                 <code>{event.sourceIp}</code>
@@ -117,28 +148,47 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
           ))
         )}
       </div>
+      <div className="telemetry-summary" aria-label="Telemetry summary">
+        <article className="telemetry-summary-card">
+          <span>Loaded signals</span>
+          <strong>{events.length}</strong>
+          <small>Latest API window</small>
+        </article>
+        <article className="telemetry-summary-card">
+          <span>Awaiting decision</span>
+          <strong>{awaitingDecision}</strong>
+          <small>Pending or processing</small>
+        </article>
+        <article className="telemetry-summary-card">
+          <span>Decided signals</span>
+          <strong>{decidedSignals}</strong>
+          <small>Policy result recorded</small>
+        </article>
+        <article className="telemetry-summary-card">
+          <span>Failed signals</span>
+          <strong>{failedSignals}</strong>
+          <small>Requires attention</small>
+        </article>
+      </div>
       <form className="scenario-footer" onSubmit={handleInject}>
-        <span className="scenario-label">Preview a fixed synthetic scenario</span>
-        <div className="scenario-grid" aria-label="Fixed scenario catalog">
-          {Object.values(SCENARIO_CATALOG).map((item) => (
-            <button
-              key={item.kind}
-              type="button"
-              className="scenario-option"
-              aria-pressed={selectedScenario === item.kind}
-              onClick={() => {
-                setSelectedScenario(item.kind);
-                const sourceIp = item.defaultEvidence['sourceIp'];
-                if (typeof sourceIp === 'string') setCustomIp(sourceIp);
-                setFeedback(null);
-              }}
-            >
-              <strong>{item.title}</strong>
-              <span>
-                Risk ceiling {item.maxRiskScore} · {item.decoyTemplate ? 'decoy' : 'quarantine'}
-              </span>
-            </button>
-          ))}
+        <label htmlFor="scenario-select" className="scenario-label">
+          Preview a fixed synthetic scenario
+        </label>
+        <div className="scenario-select-wrapper">
+          <select
+            id="scenario-select"
+            className="input-field scenario-select"
+            value={selectedScenario}
+            onChange={handleScenarioChange}
+            aria-label="Select synthetic scenario"
+          >
+            {Object.values(SCENARIO_CATALOG).map((item) => (
+              <option key={item.kind} value={item.kind}>
+                {item.title} (Risk ceiling {item.maxRiskScore} ·{' '}
+                {item.decoyTemplate ? 'decoy' : 'quarantine'})
+              </option>
+            ))}
+          </select>
         </div>
         <div className="scenario-submit-row">
           <label htmlFor="custom-ip-input">

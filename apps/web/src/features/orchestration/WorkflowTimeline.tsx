@@ -1,8 +1,22 @@
 import React from 'react';
-import { Check, CircleDot, FileText, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  Check,
+  CheckCircle2,
+  CircleDot,
+  Eye,
+  FileText,
+  Radio,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  WandSparkles,
+  Workflow,
+} from 'lucide-react';
 import type { ActivityEvent } from '@false-route/contracts';
-import { Badge } from '../../components/Badge.js';
-import { Button } from '../../components/Button.js';
+import { IconBadge } from '../../components/IconBadge.js';
 export interface WorkflowTimelineProps {
   readonly events: readonly ActivityEvent[];
   readonly streamStatus: 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
@@ -64,23 +78,28 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
           </h2>
           <p>Recommendation, policy, and execution trace</p>
         </div>
-        <Badge
-          variant={
+        <IconBadge
+          tone={
             streamStatus === 'CONNECTED'
               ? 'success'
               : streamStatus === 'DISCONNECTED'
                 ? 'danger'
                 : 'warning'
           }
+          label={streamStatus === 'CONNECTED' ? 'Bounded loop' : streamStatus.toLowerCase()}
+          tooltip={
+            streamStatus === 'CONNECTED' ? 'Bounded loop' : `Stream ${streamStatus.toLowerCase()}`
+          }
         >
           {streamStatus === 'CONNECTED' ? (
-            <>
-              Bounded loop <span className="sr-only">LIVE SSE STREAM</span>
-            </>
+            <Workflow size={13} aria-hidden="true" />
+          ) : streamStatus === 'DISCONNECTED' ? (
+            <TriangleAlert size={13} aria-hidden="true" />
           ) : (
-            streamStatus.toLowerCase()
+            <Activity size={13} aria-hidden="true" />
           )}
-        </Badge>
+          {streamStatus === 'CONNECTED' && <span className="sr-only">LIVE SSE STREAM</span>}
+        </IconBadge>
       </div>
       <div className="workflow-steps" aria-label="Workflow stages">
         {['Ingest', 'Dedupe', 'Analyze', 'Policy', 'Execute', 'Lease'].map((step, index) => (
@@ -96,16 +115,24 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
       <div className="risk-card">
         <div className="risk-heading">
           <span>Adversary intent &amp; risk</span>
-          <Badge variant="warning">Derived when available</Badge>
+          <IconBadge tone="warning" label="Derived when available" tooltip="Derived when available">
+            <TriangleAlert size={13} aria-hidden="true" />
+          </IconBadge>
         </div>
         <p>
           {events[0]?.summary ??
             'Awaiting an observed signal before a risk explanation is available.'}
         </p>
         <div className="provenance-row">
-          <Badge variant="observed">Observed</Badge>
-          <Badge variant="inferred">Inferred</Badge>
-          <Badge variant="derived">Derived</Badge>
+          <IconBadge tone="info" size="compact" label="Observed" tooltip="Observed">
+            <Eye size={13} aria-hidden="true" />
+          </IconBadge>
+          <IconBadge tone="model" size="compact" label="Inferred" tooltip="Inferred">
+            <Sparkles size={13} aria-hidden="true" />
+          </IconBadge>
+          <IconBadge tone="model" size="compact" label="Derived" tooltip="Derived">
+            <WandSparkles size={13} aria-hidden="true" />
+          </IconBadge>
         </div>
       </div>
       <div className="decision-grid">
@@ -130,11 +157,24 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
           <span>
             <FileText size={14} /> worker / execution-trace.log
           </span>
-          {onClear && events.length > 0 && (
-            <Button variant="secondary" onClick={onClear} aria-label="Clear activity log">
-              <Trash2 size={14} />
-            </Button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <IconBadge tone="info" size="compact" label="Streaming" tooltip="Streaming">
+              <Radio size={13} aria-hidden="true" />
+            </IconBadge>
+            {onClear && events.length > 0 && (
+              <button
+                type="button"
+                className="icon-badge icon-badge-neutral icon-badge-compact terminal-clear-btn"
+                data-tooltip="Clear activity log"
+                data-tooltip-placement="bottom"
+                data-tooltip-align="right"
+                onClick={onClear}
+                aria-label="Clear activity log"
+              >
+                <Trash2 size={12} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
         {events.length === 0 ? (
           <div className="terminal-empty">
@@ -147,11 +187,53 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             {events.slice(0, 8).map((event) => (
               <li key={`${event.cursor}-${event.eventId}`}>
                 <time>{new Date(event.occurredAt).toLocaleTimeString()}</time>
-                <Badge variant={stageVariant(event.stage)}>
-                  {stageLabel(event.stage, event.eventType)}
-                </Badge>
+                <IconBadge
+                  tone={stageVariant(event.stage)}
+                  size="compact"
+                  label={stageLabel(event.stage, event.eventType)}
+                  tooltip={stageLabel(event.stage, event.eventType)}
+                >
+                  {event.stage === 'COMPLETED' ? (
+                    <CheckCircle2 size={12} aria-hidden="true" />
+                  ) : event.stage === 'EXECUTED' ? (
+                    <CheckCircle2 size={12} aria-hidden="true" />
+                  ) : event.stage === 'FAKE_EXECUTED' ? (
+                    <Sparkles size={12} aria-hidden="true" />
+                  ) : event.stage === 'AUTHORIZED' ? (
+                    <ShieldCheck size={12} aria-hidden="true" />
+                  ) : event.stage === 'NARROWED' ? (
+                    <SlidersHorizontal size={12} aria-hidden="true" />
+                  ) : event.stage === 'FAILED' || event.stage === 'REJECTED' ? (
+                    <TriangleAlert size={12} aria-hidden="true" />
+                  ) : event.stage === 'REQUESTED' ? (
+                    <Sparkles size={12} aria-hidden="true" />
+                  ) : (
+                    <Activity size={12} aria-hidden="true" />
+                  )}
+                </IconBadge>
                 <span>{event.summary}</span>
-                <code>{event.provenance.toLowerCase()}</code>
+                <IconBadge
+                  tone={
+                    event.provenance === 'UNAVAILABLE'
+                      ? 'warning'
+                      : event.provenance === 'OBSERVED'
+                        ? 'info'
+                        : 'model'
+                  }
+                  size="compact"
+                  label={event.provenance.toLowerCase()}
+                  tooltip={event.provenance.toLowerCase()}
+                >
+                  {event.provenance === 'OBSERVED' ? (
+                    <Eye size={12} aria-hidden="true" />
+                  ) : event.provenance === 'UNAVAILABLE' ? (
+                    <TriangleAlert size={12} aria-hidden="true" />
+                  ) : event.provenance === 'INFERRED' ? (
+                    <Sparkles size={12} aria-hidden="true" />
+                  ) : (
+                    <WandSparkles size={12} aria-hidden="true" />
+                  )}
+                </IconBadge>
               </li>
             ))}
           </ol>

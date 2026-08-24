@@ -18,7 +18,7 @@ describe('Web Production Static Server', () => {
 
     server = createStaticServer(tempDir);
     await new Promise<void>((resolve) => {
-      server.listen(0, () => {
+      server.listen(0, '127.0.0.1', () => {
         const addr = server.address();
         port = typeof addr === 'object' && addr !== null ? addr.port : 0;
         resolve();

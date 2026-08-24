@@ -46,13 +46,7 @@ export const IntrusionEventsPageView: React.FC<IntrusionEventsPageViewProps> = (
   onToggleAutoRefresh,
   onSelectEvent,
 }) => (
-  <section className="intrusion-events-page" aria-labelledby="intrusion-events-heading">
-    <header className="intrusion-events-page-header">
-      <p className="eyebrow">Operator workspace · staging</p>
-      <h1 id="intrusion-events-heading">Intrusion events</h1>
-      <p>Search and inspect observed signals alongside their recorded processing state.</p>
-    </header>
-
+  <section className="intrusion-events-page" aria-label="Intrusion events">
     <Card className="intrusion-events-card">
       <EventsToolbar
         search={search}

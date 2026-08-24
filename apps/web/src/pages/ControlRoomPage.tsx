@@ -37,21 +37,6 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
 
   return (
     <>
-      <section className="hero-panel" aria-labelledby="hero-title">
-        <div className="hero-copy">
-          <div className="eyebrow">Operator workspace · staging</div>
-          <h1 id="hero-title">See the signal. Shape the response.</h1>
-          <p>
-            A calm, accountable view of how FalseRoute turns a bounded intrusion signal into a
-            verified deception response.
-          </p>
-        </div>
-        <div className="hero-callout">
-          <strong>Design direction</strong>
-          <span>Readable first. Every recommendation carries its source, state, and expiry.</span>
-        </div>
-      </section>
-
       <section className="metric-grid" aria-label="Response summary">
         <MetricCard
           label="Recorded signals"

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Ban, CloudCog } from 'lucide-react';
-import { Badge } from '../../components/Badge.js';
+import { Ban, CloudCog, Minus, TriangleAlert } from 'lucide-react';
+import { IconBadge } from '../../components/IconBadge.js';
 export const ActiveResourcesPanel: React.FC = () => (
   <section className="pane pane-containment" aria-labelledby="active-resources-heading">
     <div className="pane-header">
@@ -11,7 +11,9 @@ export const ActiveResourcesPanel: React.FC = () => (
         </h2>
         <p>Owned decoys, routes, and TTL leases</p>
       </div>
-      <Badge variant="warning">Unavailable</Badge>
+      <IconBadge tone="warning" label="Unavailable" tooltip="Unavailable">
+        <TriangleAlert size={13} aria-hidden="true" />
+      </IconBadge>
     </div>
     <div className="containment-stats">
       <div>
@@ -32,7 +34,9 @@ export const ActiveResourcesPanel: React.FC = () => (
         <CloudCog size={14} /> Cloud Run decoys
       </h3>
       <div className="unavailable-card">
-        <Badge variant="warning">Unavailable</Badge>
+        <IconBadge tone="warning" label="Unavailable" tooltip="Unavailable">
+          <TriangleAlert size={13} aria-hidden="true" />
+        </IconBadge>
         <span className="sr-only">Unavailable in this deployment.</span>
         <p>Authoritative lease-backed resource state is not exposed by the current API.</p>
       </div>
@@ -42,7 +46,9 @@ export const ActiveResourcesPanel: React.FC = () => (
         <Ban size={14} /> Cloud Armor quarantine leases
       </h3>
       <div className="unavailable-card">
-        <Badge variant="neutral">No inferred state</Badge>
+        <IconBadge tone="neutral" label="No inferred state" tooltip="No inferred state">
+          <Minus size={13} aria-hidden="true" />
+        </IconBadge>
         <p>
           Historical activity is not used to claim an active quarantine or route.{' '}
           <span className="sr-only">These are historical audit records.</span>

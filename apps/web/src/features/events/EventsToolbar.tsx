@@ -50,33 +50,35 @@ export const EventsToolbar: React.FC<EventsToolbarProps> = ({
       />
     </div>
 
-    <label className="events-status-filter" htmlFor="intrusion-events-status">
-      <span>Status</span>
-      <select
-        id="intrusion-events-status"
-        value={status}
-        onChange={(event) => onStatusChange(event.target.value as EventStatusFilter)}
-      >
-        {STATUS_OPTIONS.map((option) => (
-          <option key={option} value={option}>
-            {option === 'ALL' ? 'All statuses' : option}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="events-toolbar-right">
+      <label className="events-status-filter" htmlFor="intrusion-events-status">
+        <span>Status</span>
+        <select
+          id="intrusion-events-status"
+          value={status}
+          onChange={(event) => onStatusChange(event.target.value as EventStatusFilter)}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option === 'ALL' ? 'All statuses' : option}
+            </option>
+          ))}
+        </select>
+      </label>
 
-    <div className="events-toolbar-actions">
-      <Button
-        type="button"
-        variant="secondary"
-        aria-pressed={autoRefresh}
-        onClick={onToggleAutoRefresh}
-      >
-        <ListFilter size={14} aria-hidden="true" /> Auto-refresh {autoRefresh ? 'on' : 'off'}
-      </Button>
-      <Button type="button" variant="secondary" onClick={onRefresh} isLoading={isRefreshing}>
-        <RefreshCw size={14} aria-hidden="true" /> Refresh
-      </Button>
+      <div className="events-toolbar-actions">
+        <Button
+          type="button"
+          variant="secondary"
+          aria-pressed={autoRefresh}
+          onClick={onToggleAutoRefresh}
+        >
+          <ListFilter size={14} aria-hidden="true" /> Auto-refresh {autoRefresh ? 'on' : 'off'}
+        </Button>
+        <Button type="button" variant="secondary" onClick={onRefresh} isLoading={isRefreshing}>
+          <RefreshCw size={14} aria-hidden="true" /> Refresh
+        </Button>
+      </div>
     </div>
   </div>
 );
