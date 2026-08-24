@@ -55,11 +55,13 @@ jobs:
         run: pnpm check:secrets
 
       - name: Validate Prisma schema with migration guard
+        env:
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
         run: pnpm guard:prisma
 
       - name: Run Prisma migration on test database
         env:
-          DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public'
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
         run: pnpm --filter @false-route/database migrate:deploy
 
       - name: Verify repository governance & source policies
@@ -85,7 +87,7 @@ jobs:
 
       - name: Run full integration & system integration suites
         env:
-          DATABASE_URL: 'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_test?schema=public'
+          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
         run: pnpm test:integration
 
   containers:
