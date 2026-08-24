@@ -43,11 +43,13 @@ spec:
             - name: WORKER_POLL_INTERVAL_MS
               value: '500'
             - name: WORKER_CLAIM_LEASE_MS
-              value: '15000'
+              value: '45000'
             - name: WORKER_CLAIM_PERSISTENCE_MARGIN_MS
               value: '5000'
             - name: GEMINI_OPERATION_DEADLINE_MS
-              value: '8000'
+              value: '30000'
+            - name: GEMINI_REQUEST_TIMEOUT_MS
+              value: '15000'
             - name: GEMINI_MODEL
               value: 'gemini-3.5-flash'
             - name: WORKER_SHUTDOWN_TIMEOUT_MS

@@ -12,6 +12,7 @@ import { type ApiConfig } from './config/api-config.js';
 import { correlationMiddleware } from './middleware/correlation.js';
 import { createPrincipalIdentifier } from './middleware/principal.js';
 import { operatorAuthMiddleware } from './middleware/auth.js';
+import { clearedSessionCookieHeaders } from './middleware/operator-session.js';
 import { createRateLimiter } from './middleware/rate-limit.js';
 import { createOverloadGuard } from './middleware/load-shed.js';
 import { errorHandlerMiddleware, NotFoundError } from './middleware/error-handler.js';
@@ -73,12 +74,13 @@ export function createApp(options: AppOptions): Express {
     cors({
       origin: allowedOrigins,
       credentials: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
+      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
       allowedHeaders: [
         'Content-Type',
         'Authorization',
         'X-Correlation-Id',
         'X-Replay-Authorization',
+        'X-CSRF-Token',
       ],
       preflightContinue: true,
     }),
@@ -144,6 +146,8 @@ export function createApp(options: AppOptions): Express {
 
   const authMiddleware = operatorAuthMiddleware({
     expectedToken: config.OPERATOR_ACCESS_TOKEN,
+    sessionSecret: config.OPERATOR_ACCESS_TOKEN,
+    secureCookies: config.NODE_ENV === 'production',
     ...(clock !== undefined ? { clock } : {}),
   });
   const operatorController = new OperatorController();
@@ -177,6 +181,12 @@ export function createApp(options: AppOptions): Express {
   // is important during a staged schema rollout: a valid operator must not be
   // reported as unauthenticated because an unrelated list query failed.
   app.get('/api/v1/operator/session', authMiddleware, operatorController.session);
+  app.delete('/api/v1/operator/session', authMiddleware, (_req, res) => {
+    for (const cookie of clearedSessionCookieHeaders(config.NODE_ENV === 'production')) {
+      res.append('Set-Cookie', cookie);
+    }
+    res.status(204).send();
+  });
 
   const eventRouter = createEventRouter({
     controller: eventController,

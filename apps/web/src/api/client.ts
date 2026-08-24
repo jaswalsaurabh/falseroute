@@ -33,9 +33,9 @@ export class ApiError extends Error {
 
 export class ApiClient {
   private readonly baseUrl: string;
-  private readonly token: string;
+  private readonly token: string | null;
 
-  constructor(token: string, baseUrl = '') {
+  constructor(token: string | null, baseUrl = '') {
     this.token = token;
     this.baseUrl = baseUrl;
   }
@@ -47,15 +47,23 @@ export class ApiClient {
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.token}`,
       ...(options.headers as Record<string, string>),
     };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    if (options.method && !['GET', 'HEAD', 'OPTIONS'].includes(options.method.toUpperCase())) {
+      const csrfToken = document.cookie
+        .split('; ')
+        .find((entry) => entry.startsWith('falseroute_operator_csrf='))
+        ?.slice('falseroute_operator_csrf='.length);
+      if (csrfToken) headers['X-CSRF-Token'] = decodeURIComponent(csrfToken);
+    }
 
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${endpoint}`, {
         ...options,
         headers,
+        credentials: 'include',
       });
     } catch (_networkErr) {
       throw new ApiError(
@@ -128,6 +136,10 @@ export class ApiClient {
       }
       return undefined;
     });
+  }
+
+  async logout(): Promise<void> {
+    await this.request('/api/v1/operator/session', { method: 'DELETE' }, () => undefined);
   }
 
   async checkLiveness(): Promise<HealthCheckResponse> {

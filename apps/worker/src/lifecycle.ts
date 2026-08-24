@@ -187,7 +187,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
     const simulatedAgent = options.simulatedAgent ?? new DeterministicSimulatedDeceptionAdapter();
     const budgetRepo = new BudgetRepository(db as PrismaClient);
-    const budgetService = new GeminiBudgetService({ budgetRepo });
+    const budgetService = new GeminiBudgetService({
+      budgetRepo,
+      dailyTokenLimit: config.GEMINI_DAILY_TOKEN_LIMIT,
+    });
 
     const sharedCloudRunAdapter = new FakeCloudRunAdapter();
     const sharedFalseRouteAdapter = new FakeFalseRouteAdapter();

@@ -194,7 +194,7 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       env {
         name  = "WORKER_CLAIM_LEASE_MS"
-        value = "15000"
+        value = "45000"
       }
       env {
         name  = "WORKER_CLAIM_PERSISTENCE_MARGIN_MS"
@@ -202,7 +202,11 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       env {
         name  = "GEMINI_OPERATION_DEADLINE_MS"
-        value = "8000"
+        value = "30000"
+      }
+      env {
+        name  = "GEMINI_REQUEST_TIMEOUT_MS"
+        value = "15000"
       }
       env {
         name  = "GEMINI_MODEL"

@@ -108,6 +108,7 @@ export class LiveAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
     limiterSignal?: AbortSignal,
   ): Promise<AutonomousModelAnalysisResult | AutonomousDegradedModelResult> {
     const minimizedInput = {
+      eventId: envelope.eventId,
       scenarioKind: envelope.scenarioKind,
       sourceIp: envelope.sourceIp,
       evidence: envelope.evidence,

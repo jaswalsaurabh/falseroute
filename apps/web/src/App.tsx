@@ -22,6 +22,7 @@ import { ActivityStreamConsumer } from './features/telemetry/ActivityStreamConsu
 
 export const App: React.FC = () => {
   const [operatorToken, setOperatorToken] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [events, setEvents] = useState<IntrusionEvent[]>([]);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [systemMode, setSystemMode] = useState<SystemMode>('LOCAL_FAKE');
@@ -37,9 +38,23 @@ export const App: React.FC = () => {
   const selectedEventRef = React.useRef<IntrusionEvent | null>(null);
   selectedEventRef.current = selectedEvent;
   const apiClient = useMemo(
-    () => (operatorToken ? new ApiClient(operatorToken) : null),
+    () => (operatorToken !== null ? new ApiClient(operatorToken) : null),
     [operatorToken],
   );
+
+  useEffect(() => {
+    const hasSessionHint = document.cookie.includes('falseroute_operator_csrf=');
+    if (!hasSessionHint) {
+      setAuthChecked(true);
+      return;
+    }
+    const client = new ApiClient(null);
+    void client
+      .validateCredentials()
+      .then(() => setOperatorToken(''))
+      .catch(() => undefined)
+      .finally(() => setAuthChecked(true));
+  }, []);
 
   const loadEvents = useCallback(async () => {
     if (!apiClient) return;
@@ -65,7 +80,7 @@ export const App: React.FC = () => {
   }, [apiClient]);
 
   useEffect(() => {
-    if (!operatorToken) {
+    if (operatorToken === null) {
       setActivityEvents([]);
       setStreamStatus('DISCONNECTED');
       return;
@@ -113,8 +128,9 @@ export const App: React.FC = () => {
     <div className="app-shell">
       <Toaster position="bottom-right" toastOptions={{ className: 'app-toast' }} />
       <Header
-        isUnlocked={Boolean(operatorToken)}
+        isUnlocked={operatorToken !== null}
         onLock={() => {
+          void apiClient?.logout().catch(() => undefined);
           setOperatorToken(null);
           setEvents([]);
           setActivityEvents([]);
@@ -122,7 +138,11 @@ export const App: React.FC = () => {
         }}
       />
       <main className="app-container">
-        {!operatorToken ? (
+        {!authChecked ? (
+          <div style={{ padding: 'var(--space-unit-xl)', textAlign: 'center' }}>
+            Restoring operator session…
+          </div>
+        ) : operatorToken === null ? (
           <UnlockScreen onUnlock={setOperatorToken} />
         ) : (
           <>

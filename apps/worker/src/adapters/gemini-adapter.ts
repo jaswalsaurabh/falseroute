@@ -208,7 +208,10 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
             abortSignal: attemptController.signal,
             systemInstruction: DEFAULT_SYSTEM_INSTRUCTION,
             responseMimeType: 'application/json',
-            maxOutputTokens: 1024,
+            // Keep deterministic sampling and leave headroom for the bounded explanation so a
+            // valid JSON object is not truncated at the provider boundary.
+            temperature: 0,
+            maxOutputTokens: 2048,
           },
         });
 
