@@ -8,6 +8,8 @@ import {
 import { ProvenanceClassificationSchema } from './provenance.js';
 import { ScenarioKindSchema, validateScenarioEvidence } from './scenario.js';
 
+export { ResponseActionSchema, type ResponseAction } from './primitives.js';
+
 export const EventSourceSchema = z.enum(['SIMULATOR', 'PUB_SUB', 'GATEWAY', 'OPERATOR', 'WORKER']);
 export type EventSource = z.infer<typeof EventSourceSchema>;
 
@@ -24,17 +26,6 @@ export const WorkflowStatusSchema = z.enum([
   'QUARANTINED',
 ]);
 export type WorkflowStatus = z.infer<typeof WorkflowStatusSchema>;
-
-export const ResponseActionSchema = z.enum([
-  'RECOMMEND_PLAN',
-  'DEPLOY_DECOY',
-  'ASSIGN_FALSE_ROUTE',
-  'QUARANTINE_SOURCE',
-  'ALERT_OPERATOR',
-  'REJECT_ACCESS',
-  'NO_ACTION',
-]);
-export type ResponseAction = z.infer<typeof ResponseActionSchema>;
 
 export const LeaseStatusSchema = z.enum([
   'ACTIVE',

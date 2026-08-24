@@ -6,6 +6,7 @@ import {
 } from '@false-route/contracts';
 import { type AutonomousWorkflowRepository } from '@false-route/database';
 import { type AutonomousWorkflowOrchestrator } from '../orchestration/autonomous-workflow.js';
+import { type CampaignOrchestrator } from '../orchestration/campaign-orchestrator.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 
@@ -114,6 +115,7 @@ export class PubSubPushHandler {
       readonly expectedAudience?: string;
       readonly expectedServiceAccount?: string;
     } = {},
+    private readonly campaignOrchestrator?: CampaignOrchestrator,
   ) {}
 
   async handlePushRequest(
@@ -218,16 +220,35 @@ export class PubSubPushHandler {
 
     // 5. Process through autonomous workflow orchestrator
     try {
-      const result = await this.orchestrator.processEventEnvelope(
-        {
-          ...intrusionParsed.data,
-          evidence:
-            evidenceValidation && evidenceValidation.success
-              ? evidenceValidation.data
-              : intrusionParsed.data.evidence,
-        },
-        message.messageId,
-      );
+      const event = {
+        ...intrusionParsed.data,
+        evidence:
+          evidenceValidation && evidenceValidation.success
+            ? evidenceValidation.data
+            : intrusionParsed.data.evidence,
+      };
+      const isCampaignEvent =
+        this.campaignOrchestrator !== undefined &&
+        (event.source === 'OPERATOR' || event.source === 'WORKER') &&
+        [
+          'ENV_FILE_PROBE',
+          'PATH_TRAVERSAL_PROBE',
+          'SQL_INJECTION_PROBE',
+          'DECOY_CREDENTIAL_USE',
+        ].includes(event.scenarioKind);
+      const result = isCampaignEvent
+        ? (await this.campaignOrchestrator!.process(event, message.messageId),
+          {
+            status: 'COMPLETED' as const,
+            eventId: event.eventId,
+            executedActions: [],
+          })
+        : await this.orchestrator.processEventEnvelope(
+            {
+              ...event,
+            },
+            message.messageId,
+          );
 
       return {
         statusCode: 200,

@@ -6,6 +6,7 @@ import {
   type IntrusionEvent,
   type SimulatedDeceptionEffect,
   type SystemMode,
+  type CampaignRun,
 } from '@false-route/contracts';
 import { ApiClient } from './api/client.js';
 import { Header } from './components/Header.js';
@@ -30,6 +31,9 @@ export const App: React.FC = () => {
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [systemMode, setSystemMode] = useState<SystemMode>('LOCAL_FAKE');
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('DISCONNECTED');
+  const [campaign, setCampaign] = useState<CampaignRun | null>(null);
+  const [campaignStarting, setCampaignStarting] = useState(false);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<IntrusionEvent | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<DeceptionDecision | null>(null);
   const [selectedEffect, setSelectedEffect] = useState<SimulatedDeceptionEffect | null>(null);
@@ -37,6 +41,7 @@ export const App: React.FC = () => {
     document.documentElement.dataset['theme'] === 'dark' ? 'dark' : 'light',
   );
   const selectedEventRef = useRef<IntrusionEvent | null>(null);
+  const loadEventsTimerRef = useRef<number | null>(null);
   selectedEventRef.current = selectedEvent;
   const apiClient = useMemo(
     () => (operatorToken === null ? null : new ApiClient(operatorToken)),
@@ -96,16 +101,39 @@ export const App: React.FC = () => {
     }
   }, [apiClient]);
 
+  const scheduleLoadEvents = useCallback(() => {
+    if (loadEventsTimerRef.current !== null) return;
+    loadEventsTimerRef.current = window.setTimeout(() => {
+      loadEventsTimerRef.current = null;
+      void loadEvents();
+    }, 500);
+  }, [loadEvents]);
+
+  const startCampaign = useCallback(async () => {
+    if (!apiClient) return;
+    setCampaignStarting(true);
+    setCampaignError(null);
+    try {
+      setCampaign(await apiClient.startCampaign());
+    } catch (error) {
+      setCampaignError(error instanceof Error ? error.message : 'Unable to start campaign');
+    } finally {
+      setCampaignStarting(false);
+    }
+  }, [apiClient]);
+
   useEffect(() => {
     if (operatorToken === null) {
       setActivityEvents([]);
+      setCampaign(null);
+      setCampaignError(null);
       setStreamStatus('DISCONNECTED');
       return;
     }
     const consumer = new ActivityStreamConsumer(operatorToken, '', {
       onEvent: (event) => {
         setActivityEvents((previous) => [event, ...previous.slice(0, 99)]);
-        void loadEvents();
+        scheduleLoadEvents();
       },
       onSystemMode: setSystemMode,
       onStatusChange: setStreamStatus,
@@ -113,7 +141,27 @@ export const App: React.FC = () => {
     consumer.start();
     void loadEvents();
     return () => consumer.stop();
-  }, [operatorToken, loadEvents]);
+  }, [operatorToken, loadEvents, scheduleLoadEvents]);
+
+  useEffect(() => {
+    if (
+      !apiClient ||
+      !campaign ||
+      campaign.status === 'COMPLETED' ||
+      campaign.status === 'FAILED'
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void apiClient
+        .getCampaign(campaign.campaignId)
+        .then(setCampaign)
+        .catch((error: unknown) =>
+          setCampaignError(error instanceof Error ? error.message : 'Unable to refresh campaign'),
+        );
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [apiClient, campaign]);
 
   useEffect(() => {
     // The events page owns filtered polling; keep this lightweight refresh scoped
@@ -150,6 +198,8 @@ export const App: React.FC = () => {
     setEvents([]);
     setTotalEvents(0);
     setActivityEvents([]);
+    setCampaign(null);
+    setCampaignError(null);
     clearSelection();
   };
 
@@ -194,6 +244,10 @@ export const App: React.FC = () => {
             onRefresh={loadEvents}
             onSelectEvent={selectEvent}
             onClearActivity={() => setActivityEvents([])}
+            campaign={campaign}
+            campaignStarting={campaignStarting}
+            onStartCampaign={() => void startCampaign()}
+            campaignError={campaignError}
           />
         )}
       </main>

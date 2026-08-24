@@ -16,6 +16,7 @@ import {
   LocalSharedSecretOidcTokenVerifier,
   PubSubPushHandler,
   ToolGateway,
+  FakeAutonomousGeminiAdapter,
 } from '@false-route/worker';
 import { type CreateAutonomousScenarioRequest } from '@false-route/contracts';
 
@@ -57,6 +58,7 @@ describe('Autonomous System Integration â€” Full Vertical Slice (API Scenario â†
       workflowRepo,
       activityRepo,
       toolGateway,
+      new FakeAutonomousGeminiAdapter('auto'),
     );
     const oidcVerifier = new LocalSharedSecretOidcTokenVerifier(LOCAL_PUSH_SECRET);
     pushHandler = new PubSubPushHandler(orchestrator, oidcVerifier, workflowRepo);

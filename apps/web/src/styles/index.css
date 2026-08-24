@@ -274,6 +274,177 @@ button {
   gap: 16px;
   align-items: stretch;
 }
+.intelligence-shell {
+  margin-top: 16px;
+  padding: 20px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+}
+.intelligence-heading,
+.intelligence-card-heading,
+.campaign-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-unit-md);
+}
+.intelligence-heading h2,
+.intelligence-card-heading h3 {
+  margin: 5px 0 0;
+  color: var(--text-main);
+}
+.intelligence-heading h2 {
+  font-size: 18px;
+}
+.intelligence-card-heading h3 {
+  font-size: 15px;
+}
+.intelligence-heading p,
+.intelligence-footnote,
+.intelligence-source {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-unit-md);
+  margin-top: var(--space-unit-lg);
+}
+.intelligence-card {
+  min-width: 0;
+  padding: var(--space-unit-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+.intelligence-card-wide {
+  grid-column: 1 / -1;
+}
+.intelligence-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-unit-sm);
+  margin-top: var(--space-unit-md);
+}
+.intelligence-facts div,
+.decision-comparison-row {
+  padding: var(--space-unit-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
+}
+.intelligence-facts span,
+.intelligence-facts strong {
+  display: block;
+}
+.intelligence-facts span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.intelligence-facts strong {
+  margin-top: 4px;
+  color: var(--text-main);
+  font-size: 13px;
+}
+.intelligence-hypothesis {
+  margin: var(--space-unit-md) 0 var(--space-unit-sm);
+  color: var(--text-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.intelligence-detail {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.intelligence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-unit-xs);
+  margin-top: var(--space-unit-md);
+}
+.intelligence-empty,
+.intelligence-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-unit-sm);
+  min-height: 72px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.intelligence-state {
+  justify-content: center;
+  margin-top: var(--space-unit-md);
+}
+.intelligence-state-danger,
+.intelligence-degraded {
+  color: var(--status-warning-text);
+}
+.decision-comparison {
+  display: grid;
+  gap: var(--space-unit-xs);
+  margin-top: var(--space-unit-md);
+}
+.decision-comparison-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  align-items: center;
+  gap: var(--space-unit-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.decision-comparison-row strong {
+  color: var(--text-main);
+  font-size: 12px;
+}
+.decision-comparison-header {
+  padding: 0 var(--space-unit-sm) var(--space-unit-xs);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.campaign-progress {
+  height: 10px;
+  margin-top: var(--space-unit-lg);
+  overflow: hidden;
+  border-radius: var(--radius-badge);
+  background: var(--surface-card);
+}
+.campaign-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--status-simulated-text);
+  transition: width var(--motion-fast);
+}
+.campaign-summary {
+  margin-top: var(--space-unit-sm);
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.campaign-summary strong {
+  color: var(--text-main);
+}
+.intelligence-degraded {
+  display: flex;
+  align-items: center;
+  gap: var(--space-unit-xs);
+  margin: var(--space-unit-md) 0 0;
+  font-size: 12px;
+}
+.intelligence-source {
+  margin-top: var(--space-unit-md);
+}
 .pane {
   overflow: visible;
 }
@@ -1033,6 +1204,21 @@ code {
     justify-self: end;
   }
   .decision-grid {
+    grid-template-columns: 1fr;
+  }
+  .intelligence-grid {
+    grid-template-columns: 1fr;
+  }
+  .intelligence-card-wide {
+    grid-column: auto;
+  }
+  .intelligence-heading,
+  .intelligence-card-heading,
+  .campaign-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .decision-comparison-row {
     grid-template-columns: 1fr;
   }
   .terminal-log li {

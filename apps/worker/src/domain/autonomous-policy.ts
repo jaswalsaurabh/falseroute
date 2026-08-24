@@ -3,12 +3,13 @@ import {
   type AutonomousModelAnalysisResult,
   type AutonomousDegradedModelResult,
   type ToolCall,
+  type ResponseAction,
+  type ActionOrigin,
   SCENARIO_CATALOG,
   validateScenarioEvidence,
 } from '@false-route/contracts';
 
 export type PolicyOutcome = 'AUTHORIZED' | 'NARROWED' | 'REJECTED';
-export type ActionOrigin = 'MODEL_REQUEST' | 'POLICY_FALLBACK' | 'MANDATORY_RULE';
 
 export interface ModelRequestEvaluation {
   readonly requestedTool: ToolCall;
@@ -114,7 +115,12 @@ export function evaluateAutonomousPolicy(
     }
   }
 
-  const canonicalActionPlans = buildCanonicalActionPlans(envelope, preset, modelActionMap);
+  const canonicalActionPlans = buildCanonicalActionPlans(
+    envelope,
+    preset,
+    modelActionMap,
+    isModelSuccess && !isLowConfidence,
+  );
   const canonicalActionsToExecute = canonicalActionPlans.map((p) => p.toolCall);
 
   return {
@@ -136,16 +142,25 @@ function matchesCanonical(
 }
 
 function buildCanonicalToolCall(
-  toolName: string,
+  toolName: ToolCall['toolName'],
   envelope: IntrusionEventEnvelope,
   preset: (typeof SCENARIO_CATALOG)[keyof typeof SCENARIO_CATALOG],
   requestedAt = new Date().toISOString(),
 ): { canonical: ToolCall; authReason: string; narrowReason: string } | null {
   const { eventId, scenarioKind, sourceIp } = envelope;
 
+  const action = actionForToolName(toolName);
+  if (!action || preset.actionOwnership.forbiddenActions.includes(action)) return null;
+
   switch (toolName) {
     case 'request_decoy_deployment': {
-      if (!preset.allowedActions.includes('DEPLOY_DECOY') || !preset.decoyTemplate) return null;
+      if (
+        !preset.actionOwnership.optionalActions.includes('DEPLOY_DECOY') &&
+        !preset.actionOwnership.mandatoryActions.includes('DEPLOY_DECOY') &&
+        !preset.actionOwnership.degradedFallbackActions.includes('DEPLOY_DECOY')
+      )
+        return null;
+      if (!preset.decoyTemplate) return null;
       return {
         canonical: {
           toolCallId: `${eventId}-deploy`,
@@ -166,11 +181,11 @@ function buildCanonicalToolCall(
     }
     case 'request_false_route_assignment': {
       if (
-        !preset.allowedActions.includes('ASSIGN_FALSE_ROUTE') &&
-        scenarioKind !== 'DECOY_CREDENTIAL_USE'
-      ) {
+        !preset.actionOwnership.optionalActions.includes('ASSIGN_FALSE_ROUTE') &&
+        !preset.actionOwnership.mandatoryActions.includes('ASSIGN_FALSE_ROUTE') &&
+        !preset.actionOwnership.degradedFallbackActions.includes('ASSIGN_FALSE_ROUTE')
+      )
         return null;
-      }
       const targetDecoy = preset.decoyTemplate ?? 'mock-admin-decoy';
       const reason =
         scenarioKind === 'DECOY_CREDENTIAL_USE'
@@ -195,7 +210,12 @@ function buildCanonicalToolCall(
       };
     }
     case 'request_source_quarantine': {
-      if (!preset.allowedActions.includes('QUARANTINE_SOURCE')) return null;
+      if (
+        !preset.actionOwnership.optionalActions.includes('QUARANTINE_SOURCE') &&
+        !preset.actionOwnership.mandatoryActions.includes('QUARANTINE_SOURCE') &&
+        !preset.actionOwnership.degradedFallbackActions.includes('QUARANTINE_SOURCE')
+      )
+        return null;
       const cidrPrefix = sourceIp.includes(':') ? 128 : 32;
       return {
         canonical: {
@@ -216,11 +236,11 @@ function buildCanonicalToolCall(
     }
     case 'request_operator_alert': {
       if (
-        !preset.allowedActions.includes('ALERT_OPERATOR') &&
-        scenarioKind !== 'DECOY_CREDENTIAL_USE'
-      ) {
+        !preset.actionOwnership.optionalActions.includes('ALERT_OPERATOR') &&
+        !preset.actionOwnership.mandatoryActions.includes('ALERT_OPERATOR') &&
+        !preset.actionOwnership.degradedFallbackActions.includes('ALERT_OPERATOR')
+      )
         return null;
-      }
       const severity =
         scenarioKind === 'DECOY_CREDENTIAL_USE' || preset.maxRiskScore > 90 ? 'CRITICAL' : 'HIGH';
       const headline =
@@ -248,6 +268,21 @@ function buildCanonicalToolCall(
   }
 }
 
+function actionForToolName(toolName: ToolCall['toolName']): ResponseAction | null {
+  switch (toolName) {
+    case 'request_decoy_deployment':
+      return 'DEPLOY_DECOY';
+    case 'request_false_route_assignment':
+      return 'ASSIGN_FALSE_ROUTE';
+    case 'request_source_quarantine':
+      return 'QUARANTINE_SOURCE';
+    case 'request_operator_alert':
+      return 'ALERT_OPERATOR';
+    default:
+      return null;
+  }
+}
+
 function evaluateSingleModelRequest(
   req: ToolCall,
   envelope: IntrusionEventEnvelope,
@@ -270,12 +305,16 @@ function evaluateSingleModelRequest(
     const rawActions = Array.isArray(p['recommendedActions'])
       ? (p['recommendedActions'] as string[])
       : [];
-    const allowedActions: readonly string[] =
-      scenarioKind === 'DECOY_CREDENTIAL_USE'
-        ? ['ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR']
-        : preset.allowedActions;
-    const validActions = rawActions.filter((a) => allowedActions.includes(a));
-    const unauthorizedActions = rawActions.filter((a) => !allowedActions.includes(a));
+    const ownership = preset.actionOwnership;
+    const selectableActions = [...ownership.mandatoryActions, ...ownership.optionalActions];
+    const validActions = rawActions.filter((a): a is ResponseAction =>
+      selectableActions.includes(a as ResponseAction),
+    );
+    const unauthorizedActions = rawActions.filter(
+      (a) =>
+        !selectableActions.includes(a as ResponseAction) ||
+        ownership.forbiddenActions.includes(a as ResponseAction),
+    );
 
     if (validActions.length === 0) {
       requestEvaluations.push({
@@ -283,7 +322,7 @@ function evaluateSingleModelRequest(
         outcome: 'REJECTED',
         policyReason: `Response plan recommended actions [${rawActions.join(', ')}] conflict with allowed actions for scenario ${scenarioKind}`,
       });
-    } else if (unauthorizedActions.length > 0 || rawActions.length !== allowedActions.length) {
+    } else if (unauthorizedActions.length > 0 || rawActions.length !== selectableActions.length) {
       const canonical: ToolCall = {
         toolCallId: req.toolCallId,
         toolName: 'recommend_response_plan',
@@ -317,15 +356,19 @@ function evaluateSingleModelRequest(
     return;
   }
 
+  const action = actionForToolName(req.toolName);
   const built = buildCanonicalToolCall(req.toolName, envelope, preset, req.requestedAt);
   if (!built) {
     const isQuarantine = req.toolName === 'request_source_quarantine';
     requestEvaluations.push({
       requestedTool: req,
       outcome: 'REJECTED',
-      policyReason: isQuarantine
-        ? `Source quarantine rejected: scenario ${scenarioKind} requires deception routing, not quarantine`
-        : `${req.toolName} not authorized for scenario ${scenarioKind}`,
+      policyReason:
+        action && preset.actionOwnership.forbiddenActions.includes(action as never)
+          ? `${action} is forbidden for scenario ${scenarioKind}`
+          : isQuarantine
+            ? `Source quarantine rejected: scenario ${scenarioKind} does not own QUARANTINE_SOURCE`
+            : `${req.toolName} not authorized for scenario ${scenarioKind}`,
     });
     return;
   }
@@ -339,16 +382,26 @@ function evaluateSingleModelRequest(
     policyReason,
     canonicalToolCall: built.canonical,
   });
-  modelActionMap.set(req.toolName, { outcome, policyReason, canonical: built.canonical });
+  if (action && preset.actionOwnership.optionalActions.includes(action as never)) {
+    modelActionMap.set(req.toolName, { outcome, policyReason, canonical: built.canonical });
+  } else {
+    requestEvaluations[requestEvaluations.length - 1] = {
+      requestedTool: req,
+      outcome: 'NARROWED',
+      policyReason: `${action} is mandatory and remains owned by deterministic policy`,
+      canonicalToolCall: built.canonical,
+    };
+  }
 }
 
 function buildCanonicalActionPlans(
   envelope: IntrusionEventEnvelope,
   preset: (typeof SCENARIO_CATALOG)[keyof typeof SCENARIO_CATALOG],
   modelActionMap: Map<string, EvaluatedAction>,
+  modelAvailable: boolean,
 ): CanonicalActionPlan[] {
   const plans: CanonicalActionPlan[] = [];
-  const actionTools = [
+  const actionTools: ToolCall['toolName'][] = [
     'request_decoy_deployment',
     'request_false_route_assignment',
     'request_source_quarantine',
@@ -359,24 +412,31 @@ function buildCanonicalActionPlans(
     const built = buildCanonicalToolCall(toolName, envelope, preset);
     if (!built) continue;
 
+    const action = actionForToolName(toolName);
     const evaluated = modelActionMap.get(toolName);
-    if (evaluated) {
+    const isDegradedFallback =
+      !modelAvailable &&
+      action !== null &&
+      preset.actionOwnership.degradedFallbackActions.includes(action as never);
+    const isMandatory =
+      action !== null && preset.actionOwnership.mandatoryActions.includes(action as never);
+
+    if (evaluated && !isMandatory) {
       plans.push({
         toolCall: evaluated.canonical,
         outcome: evaluated.outcome,
         policyReason: evaluated.policyReason,
         origin: 'MODEL_REQUEST',
       });
-    } else {
+    } else if (isMandatory || isDegradedFallback) {
+      const origin: ActionOrigin = isDegradedFallback ? 'DEGRADED_FALLBACK' : 'MANDATORY_RULE';
       plans.push({
         toolCall: built.canonical,
         outcome: 'AUTHORIZED',
-        policyReason:
-          envelope.scenarioKind === 'DECOY_CREDENTIAL_USE'
-            ? built.authReason
-            : `Canonical ${toolName.replace('request_', '').replace(/_/g, ' ')} authorized from authoritative scenario catalog`,
-        origin:
-          envelope.scenarioKind === 'DECOY_CREDENTIAL_USE' ? 'MANDATORY_RULE' : 'POLICY_FALLBACK',
+        policyReason: isMandatory
+          ? built.authReason
+          : `Conservative ${toolName.replace('request_', '').replace(/_/g, ' ')} selected because Gemini analysis was unavailable, invalid, or below the confidence threshold`,
+        origin,
       });
     }
   }

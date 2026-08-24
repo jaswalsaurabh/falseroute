@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IpAddressSchema, IsoDateTimeSchema, UuidSchema } from './primitives.js';
 import { ResponseActionSchema } from './workflow.js';
+import { IncidentAssessmentSchema } from './incident-intelligence.js';
 
 export const ToolNameSchema = z.enum([
   'recommend_response_plan',
@@ -184,6 +185,7 @@ export const AutonomousModelAnalysisResultSchema = z
     confidence: z.number().min(0).max(1),
     summary: z.string().min(1).max(500),
     toolRequests: z.array(AutonomousToolCallSchema).max(5),
+    assessment: IncidentAssessmentSchema.optional(),
     provenance: z.literal('INFERRED'),
   })
   .strict();

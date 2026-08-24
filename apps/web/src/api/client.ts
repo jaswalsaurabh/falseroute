@@ -8,12 +8,14 @@ import {
   type GetDeceptionDecisionResponse,
   type ReadinessCheckResponse,
   type HealthCheckResponse,
+  type CampaignRun,
   CreateIntrusionEventResponseSchema,
   ListIntrusionEventsResponseSchema,
   GetIntrusionEventResponseSchema,
   GetDeceptionDecisionResponseSchema,
   ReadinessCheckResponseSchema,
   HealthCheckResponseSchema,
+  CampaignRunSchema,
   ApiErrorResponseSchema,
 } from '@false-route/contracts';
 
@@ -196,6 +198,18 @@ export class ApiClient {
   async getDecision(eventId: string): Promise<GetDeceptionDecisionResponse> {
     return this.request(`/api/v1/intrusion-events/${eventId}/decision`, { method: 'GET' }, (data) =>
       GetDeceptionDecisionResponseSchema.parse(data),
+    );
+  }
+
+  async startCampaign(): Promise<CampaignRun> {
+    return this.request('/api/v1/campaigns', { method: 'POST' }, (data) =>
+      CampaignRunSchema.parse(data),
+    );
+  }
+
+  async getCampaign(id: string): Promise<CampaignRun> {
+    return this.request(`/api/v1/campaigns/${encodeURIComponent(id)}`, { method: 'GET' }, (data) =>
+      CampaignRunSchema.parse(data),
     );
   }
 }

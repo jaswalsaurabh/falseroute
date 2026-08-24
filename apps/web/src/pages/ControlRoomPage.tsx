@@ -1,10 +1,16 @@
 import React from 'react';
 import { Cloud } from 'lucide-react';
-import type { ActivityEvent, IntrusionEvent, SystemMode } from '@false-route/contracts';
+import {
+  IncidentAssessmentSchema,
+  type ActivityEvent,
+  type IntrusionEvent,
+  type SystemMode,
+} from '@false-route/contracts';
 import type { ApiClient } from '../api/client.js';
 import { ActiveResourcesPanel } from '../features/active-responses/ActiveResourcesPanel.js';
 import { WorkflowTimeline } from '../features/orchestration/WorkflowTimeline.js';
 import { ScenarioInjector } from '../features/simulator/ScenarioInjector.js';
+import { AutonomousIntelligencePanel } from '../features/intelligence/AutonomousIntelligencePanel.js';
 
 type StreamStatus = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
 
@@ -18,6 +24,10 @@ export interface ControlRoomPageProps {
   readonly onRefresh: () => void;
   readonly onSelectEvent: (event: IntrusionEvent) => void;
   readonly onClearActivity: () => void;
+  readonly campaign: import('@false-route/contracts').CampaignRun | null;
+  readonly campaignStarting: boolean;
+  readonly onStartCampaign: () => void;
+  readonly campaignError: string | null;
 }
 
 export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
@@ -30,10 +40,19 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
   onRefresh,
   onSelectEvent,
   onClearActivity,
+  campaign,
+  campaignStarting,
+  onStartCampaign,
+  campaignError,
 }) => {
   const needsAttention = events.filter(
     (event) => event.status === 'FAILED' || event.status === 'PROCESSING',
   ).length;
+  const assessmentActivity = activityEvents.find(
+    (event) => event.eventType === 'GEMINI_ANALYSIS_COMPLETED',
+  );
+  const assessment = assessmentActivity?.payload?.['assessment'];
+  const parsedAssessment = IncidentAssessmentSchema.safeParse(assessment);
 
   return (
     <>
@@ -78,6 +97,15 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
         />
         <ActiveResourcesPanel />
       </section>
+
+      <AutonomousIntelligencePanel
+        activityEvents={activityEvents}
+        assessment={parsedAssessment.success ? parsedAssessment.data : null}
+        campaign={campaign}
+        campaignStarting={campaignStarting}
+        onStartCampaign={onStartCampaign}
+        campaignError={campaignError}
+      />
 
       <footer className="app-footer">
         <Cloud size={14} aria-hidden="true" /> All values are synthetic staging data · mode{' '}

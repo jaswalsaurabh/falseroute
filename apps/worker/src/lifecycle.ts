@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ActivityEventRepository,
   AutonomousWorkflowRepository,
+  CampaignRepository,
   BudgetRepository,
   PrismaClient,
   createDatabaseClient,
@@ -26,6 +27,7 @@ import {
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
+import { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
 import {
   type AutonomousGeminiAdapter,
   LiveAutonomousGeminiAdapter,
@@ -254,6 +256,26 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
           workerProcessId,
         );
 
+      let campaignOrchestrator: CampaignOrchestrator | undefined;
+      if (
+        config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET' ||
+        config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR'
+      ) {
+        const campaignRepository = new CampaignRepository(db as PrismaClient);
+        campaignOrchestrator = new CampaignOrchestrator(
+          campaignRepository,
+          activityRepo,
+          {
+            publish: async (envelope) => {
+              const transportId = `campaign-${randomUUID()}`;
+              await campaignOrchestrator!.process(envelope, transportId);
+              return { transportId };
+            },
+          },
+          autonomousOrchestrator,
+        );
+      }
+
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
         verifier = new LocalSharedSecretOidcTokenVerifier(config.AUTONOMOUS_LOCAL_PUSH_TOKEN!);
@@ -265,12 +287,20 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
       pushHandler =
         options.pushHandler ??
-        new PubSubPushHandler(autonomousOrchestrator, verifier, workflowRepo, {
-          ...(config.PUBSUB_OIDC_AUDIENCE ? { expectedAudience: config.PUBSUB_OIDC_AUDIENCE } : {}),
-          ...(config.PUBSUB_OIDC_SERVICE_ACCOUNT
-            ? { expectedServiceAccount: config.PUBSUB_OIDC_SERVICE_ACCOUNT }
-            : {}),
-        });
+        new PubSubPushHandler(
+          autonomousOrchestrator,
+          verifier,
+          workflowRepo,
+          {
+            ...(config.PUBSUB_OIDC_AUDIENCE
+              ? { expectedAudience: config.PUBSUB_OIDC_AUDIENCE }
+              : {}),
+            ...(config.PUBSUB_OIDC_SERVICE_ACCOUNT
+              ? { expectedServiceAccount: config.PUBSUB_OIDC_SERVICE_ACCOUNT }
+              : {}),
+          },
+          campaignOrchestrator,
+        );
     }
 
     orchestrator = new WorkerOrchestrator({

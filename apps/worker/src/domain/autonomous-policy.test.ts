@@ -122,7 +122,11 @@ describe('evaluateAutonomousPolicy', () => {
     expect(evaluation.canonicalActionsToExecute.length).toBe(3);
     expect(evaluation.canonicalActionPlans.length).toBe(3);
     expect(evaluation.canonicalActionPlans.every((p) => p.outcome === 'AUTHORIZED')).toBe(true);
-    expect(evaluation.canonicalActionPlans.every((p) => p.origin === 'MODEL_REQUEST')).toBe(true);
+    expect(evaluation.canonicalActionPlans.map((p) => p.origin)).toEqual([
+      'MODEL_REQUEST',
+      'MODEL_REQUEST',
+      'MANDATORY_RULE',
+    ]);
   });
 
   it('rejects all model requests and executes zero actions for negative control', () => {
@@ -259,7 +263,7 @@ describe('evaluateAutonomousPolicy', () => {
     }
   });
 
-  it('rejects low-confidence model requests and authorizes deterministic fallback actions with POLICY_FALLBACK origin', () => {
+  it('rejects low-confidence model requests and uses only explicit degraded fallback actions', () => {
     const lowConfidenceResult: AutonomousModelAnalysisResult = {
       status: 'SUCCESS',
       correlationId: 'corr-policy-low',
@@ -285,8 +289,9 @@ describe('evaluateAutonomousPolicy', () => {
 
     const evaluation = evaluateAutonomousPolicy(baseEnvProbeEnvelope, lowConfidenceResult);
     expect(evaluation.requestEvaluations[0]?.outcome).toBe('REJECTED');
-    expect(evaluation.canonicalActionsToExecute.length).toBe(3);
-    expect(evaluation.canonicalActionPlans.every((p) => p.origin === 'POLICY_FALLBACK')).toBe(true);
+    expect(evaluation.canonicalActionsToExecute.length).toBe(1);
+    expect(evaluation.canonicalActionPlans[0]?.toolCall.toolName).toBe('request_operator_alert');
+    expect(evaluation.canonicalActionPlans[0]?.origin).toBe('DEGRADED_FALLBACK');
     expect(evaluation.canonicalActionPlans.every((p) => p.outcome === 'AUTHORIZED')).toBe(true);
   });
 
@@ -347,6 +352,7 @@ describe('evaluateAutonomousPolicy', () => {
       'request_false_route_assignment',
     );
     expect(evaluation.canonicalActionsToExecute[2]?.toolName).toBe('request_operator_alert');
+    expect(evaluation.canonicalActionPlans[2]?.origin).toBe('MANDATORY_RULE');
   });
 
   it('guarantees mandatory mock-admin-decoy route for DECOY_CREDENTIAL_USE even if Gemini omits it', () => {
@@ -409,8 +415,8 @@ describe('evaluateAutonomousPolicy', () => {
 
     const evaluation = evaluateAutonomousPolicy(baseEnvProbeEnvelope, degradedResult);
     expect(evaluation.modelDisposition).toBe('DEGRADED');
-    expect(evaluation.canonicalActionsToExecute.length).toBe(3);
-    expect(evaluation.canonicalActionPlans.every((p) => p.origin === 'POLICY_FALLBACK')).toBe(true);
+    expect(evaluation.canonicalActionsToExecute.length).toBe(1);
+    expect(evaluation.canonicalActionPlans[0]?.origin).toBe('DEGRADED_FALLBACK');
     expect(evaluation.canonicalActionPlans.every((p) => p.outcome === 'AUTHORIZED')).toBe(true);
   });
 
@@ -469,5 +475,43 @@ describe('evaluateAutonomousPolicy', () => {
       expect(planEval?.outcome).toBe('REJECTED');
       expect(planEval?.policyReason).toContain('does not match envelope eventId');
     });
+  });
+
+  it('does not add optional actions when a valid Gemini analysis omits them', () => {
+    const evaluation = evaluateAutonomousPolicy(
+      baseEnvProbeEnvelope,
+      makePlanResult('optional-omitted', ['ALERT_OPERATOR']),
+    );
+
+    expect(evaluation.canonicalActionsToExecute).toHaveLength(1);
+    expect(evaluation.canonicalActionPlans[0]?.toolCall.toolName).toBe('request_operator_alert');
+    expect(evaluation.canonicalActionPlans[0]?.origin).toBe('MANDATORY_RULE');
+  });
+
+  it('rejects forbidden model actions while retaining mandatory policy actions', () => {
+    const evaluation = evaluateAutonomousPolicy(baseEnvProbeEnvelope, {
+      ...makePlanResult('forbidden', ['ALERT_OPERATOR']),
+      toolRequests: [
+        {
+          toolCallId: 'call-forbidden-quarantine',
+          toolName: 'request_source_quarantine',
+          parameters: {
+            eventId: baseEnvProbeEnvelope.eventId,
+            sourceIp: baseEnvProbeEnvelope.sourceIp,
+            cidrPrefix: 32,
+            ttlSeconds: 300,
+            reason: 'Attempted quarantine',
+          },
+          requestedAt: '2026-08-22T10:00:02.000Z',
+        },
+      ],
+    });
+
+    expect(evaluation.requestEvaluations[0]?.outcome).toBe('REJECTED');
+    expect(evaluation.requestEvaluations[0]?.policyReason).toContain('forbidden');
+    expect(evaluation.canonicalActionPlans.map((plan) => plan.toolCall.toolName)).toEqual([
+      'request_operator_alert',
+    ]);
+    expect(evaluation.canonicalActionPlans[0]?.origin).toBe('MANDATORY_RULE');
   });
 });

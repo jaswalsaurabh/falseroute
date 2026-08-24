@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeAutonomousGeminiAdapter } from './fake-autonomous-gemini-adapter.js';
-import { type IntrusionEventEnvelope } from '@false-route/contracts';
+import { type IncidentContext, type IntrusionEventEnvelope } from '@false-route/contracts';
 
 describe('FakeAutonomousGeminiAdapter', () => {
   const baseEnvelope: IntrusionEventEnvelope = {
@@ -22,6 +22,34 @@ describe('FakeAutonomousGeminiAdapter', () => {
       isPositiveMatch: true,
     },
     provenance: 'OBSERVED',
+  };
+
+  const context: IncidentContext = {
+    contextSchemaVersion: '1.0.0',
+    currentEventId: baseEnvelope.eventId,
+    correlationId: baseEnvelope.correlationId,
+    scenarioKind: baseEnvelope.scenarioKind,
+    syntheticSource: 'fake-adapter-test',
+    signals: [
+      {
+        signalId: 'signal-1',
+        scenarioKind: baseEnvelope.scenarioKind,
+        summary: 'Synthetic probe',
+        observedAt: baseEnvelope.occurredAt,
+        evidenceRefs: ['evidence-1'],
+      },
+    ],
+    evidence: [
+      {
+        evidenceId: 'evidence-1',
+        evidenceType: 'ENV_FILE_PROBE',
+        observedAt: baseEnvelope.occurredAt,
+        provenance: 'OBSERVED',
+      },
+    ],
+    priorPolicyOutcomes: [],
+    activeLeases: [],
+    contextCompleteness: 'COMPLETE',
   };
 
   it('produces valid tool requests starting with recommend_response_plan in auto/success mode', async () => {
@@ -178,6 +206,49 @@ describe('FakeAutonomousGeminiAdapter', () => {
       expect(result.toolRequests.length).toBe(1);
       expect(result.toolRequests[0]!.toolName).toBe('recommend_response_plan');
       expect(result.toolRequests[0]!.parameters['recommendedActions']).toEqual(['NO_ACTION']);
+    }
+  });
+
+  it('supports bounded valid and low-confidence assessments with context', async () => {
+    const valid = await new FakeAutonomousGeminiAdapter('success').analyzeEnvelope(
+      baseEnvelope,
+      undefined,
+      context,
+    );
+    expect(valid.status).toBe('SUCCESS');
+
+    const low = await new FakeAutonomousGeminiAdapter('low-confidence').analyzeEnvelope(
+      baseEnvelope,
+      undefined,
+      context,
+    );
+    expect(low.status).toBe('SUCCESS');
+    if (low.status === 'SUCCESS') expect(low.confidence).toBe(0.25);
+  });
+
+  it('supports unavailable and conflicting fake modes without widening authority', async () => {
+    const unavailable = await new FakeAutonomousGeminiAdapter('unavailable').analyzeEnvelope(
+      baseEnvelope,
+      undefined,
+      context,
+    );
+    expect(unavailable.status).toBe('UNAVAILABLE');
+
+    const conflicting = await new FakeAutonomousGeminiAdapter(
+      'conflicting-requests',
+    ).analyzeEnvelope(baseEnvelope, undefined, context);
+    expect(conflicting.status).toBe('SUCCESS');
+  });
+
+  it('degrades invalid and malicious assessment outputs', async () => {
+    for (const mode of ['invalid-assessment', 'malicious-assessment'] as const) {
+      const result = await new FakeAutonomousGeminiAdapter(mode).analyzeEnvelope(
+        baseEnvelope,
+        undefined,
+        context,
+      );
+      expect(result.status).toBe('INVALID_OUTPUT');
+      expect(result).not.toHaveProperty('toolRequests');
     }
   });
 });

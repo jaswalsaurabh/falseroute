@@ -1,0 +1,256 @@
+{
+  "fixtureSetVersion": "ai-value-v1",
+  "fixtures": [
+    {
+      "fixtureId": "env-positive",
+      "scenarioKind": "ENV_FILE_PROBE",
+      "control": "positive",
+      "evidenceIds": ["env-signal"],
+      "expectedStage": "initial_probe",
+      "expectedRisk": "high",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "actionOrigins": ["POLICY_FALLBACK", "POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "env-negative",
+      "scenarioKind": "ENV_FILE_PROBE",
+      "control": "negative",
+      "evidenceIds": ["env-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "wordpress-positive",
+      "scenarioKind": "WORDPRESS_CONFIG_PROBE",
+      "control": "positive",
+      "evidenceIds": ["wordpress-signal"],
+      "expectedStage": "initial_probe",
+      "expectedRisk": "high",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "actionOrigins": ["POLICY_FALLBACK", "POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "wordpress-negative",
+      "scenarioKind": "WORDPRESS_CONFIG_PROBE",
+      "control": "negative",
+      "evidenceIds": ["wordpress-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "ip-burst-positive",
+      "scenarioKind": "SUSPICIOUS_IP_BURST",
+      "control": "positive",
+      "evidenceIds": ["burst-signal"],
+      "expectedStage": "active_burst",
+      "expectedRisk": "critical",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["QUARANTINE_SOURCE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["QUARANTINE_SOURCE"],
+      "actionOrigins": ["POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "ip-burst-negative",
+      "scenarioKind": "SUSPICIOUS_IP_BURST",
+      "control": "negative",
+      "evidenceIds": ["burst-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "sip-positive",
+      "scenarioKind": "SIP_INVITE_FLOOD",
+      "control": "positive",
+      "evidenceIds": ["sip-signal"],
+      "expectedStage": "active_flood",
+      "expectedRisk": "critical",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["QUARANTINE_SOURCE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["QUARANTINE_SOURCE"],
+      "actionOrigins": ["POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "sip-negative",
+      "scenarioKind": "SIP_INVITE_FLOOD",
+      "control": "negative",
+      "evidenceIds": ["sip-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "token-positive",
+      "scenarioKind": "TOKEN_TAMPER",
+      "control": "positive",
+      "evidenceIds": ["token-signal"],
+      "expectedStage": "credential_tamper",
+      "expectedRisk": "critical",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["QUARANTINE_SOURCE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["QUARANTINE_SOURCE"],
+      "actionOrigins": ["POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "token-negative",
+      "scenarioKind": "TOKEN_TAMPER",
+      "control": "negative",
+      "evidenceIds": ["token-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "path-positive",
+      "scenarioKind": "PATH_TRAVERSAL_PROBE",
+      "control": "positive",
+      "evidenceIds": ["path-signal"],
+      "expectedStage": "initial_probe",
+      "expectedRisk": "high",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "optionalResponseSelection",
+        "evidenceLinkedExplanation",
+        "operatorWorkReduction"
+      ],
+      "acceptableOptionalActionSets": [["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"], ["ALERT_OPERATOR"]],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "actionOrigins": ["POLICY_FALLBACK", "POLICY_FALLBACK"]
+    },
+    {
+      "fixtureId": "path-negative",
+      "scenarioKind": "PATH_TRAVERSAL_PROBE",
+      "control": "negative",
+      "evidenceIds": ["path-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "decoy-credential-positive",
+      "scenarioKind": "DECOY_CREDENTIAL_USE",
+      "control": "positive",
+      "evidenceIds": ["credential-signal"],
+      "expectedStage": "confirmed_intrusion",
+      "expectedRisk": "critical",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "adaptationToNewEvidence",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "decoy-credential-negative",
+      "scenarioKind": "DECOY_CREDENTIAL_USE",
+      "control": "negative",
+      "evidenceIds": ["credential-control"],
+      "expectedStage": "benign",
+      "expectedRisk": "low",
+      "applicableDimensions": [
+        "crossSignalSynthesis",
+        "stageRiskInference",
+        "evidenceLinkedExplanation"
+      ],
+      "acceptableOptionalActionSets": [[]],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    }
+  ]
+}

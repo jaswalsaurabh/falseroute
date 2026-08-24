@@ -3,9 +3,12 @@ import {
   type AutonomousModelAnalysisResult,
   type AutonomousDegradedModelResult,
   type AutonomousToolCall,
+  type IncidentContext,
+  type IncidentAssessment,
   AutonomousModelAnalysisResultSchema,
   AutonomousDegradedModelResultSchema,
   SCENARIO_CATALOG,
+  validateIncidentAssessment,
   validateScenarioEvidence,
 } from '@false-route/contracts';
 import { type AutonomousGeminiAdapter } from './autonomous-gemini-adapter.js';
@@ -23,7 +26,9 @@ export type FakeAutonomousMode =
   | 'unsafe-resource-request'
   | 'low-confidence'
   | 'rate-limited'
-  | 'server-error';
+  | 'server-error'
+  | 'invalid-assessment'
+  | 'malicious-assessment';
 
 export interface FakeAutonomousAdapterOptions {
   readonly mode?: FakeAutonomousMode;
@@ -67,6 +72,7 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
   async analyzeEnvelope(
     envelope: IntrusionEventEnvelope,
     parentSignal?: AbortSignal,
+    context?: IncidentContext,
   ): Promise<AutonomousModelAnalysisResult | AutonomousDegradedModelResult> {
     this.callCount++;
 
@@ -89,6 +95,23 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
     }
 
     const evaluatedAt = new Date().toISOString();
+
+    let contextAssessment: IncidentAssessment | undefined;
+    if (context) {
+      const assessment = this.buildAssessment(envelope, context);
+      const validation = validateIncidentAssessment(assessment, context);
+      if (!validation.success) {
+        return AutonomousDegradedModelResultSchema.parse({
+          status: 'INVALID_OUTPUT',
+          correlationId: envelope.correlationId,
+          modelIdentifier: this.modelIdentifier,
+          evaluatedAt,
+          reason: 'Model returned an invalid incident assessment',
+          provenance: 'UNAVAILABLE',
+        });
+      }
+      contextAssessment = validation.data;
+    }
 
     if (this.transientFailuresRemaining > 0) {
       this.transientFailuresRemaining--;
@@ -130,6 +153,17 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
           modelIdentifier: this.modelIdentifier,
           evaluatedAt,
           reason: 'Simulated internal server error (HTTP 503)',
+          provenance: 'UNAVAILABLE',
+        });
+
+      case 'invalid-assessment':
+      case 'malicious-assessment':
+        return AutonomousDegradedModelResultSchema.parse({
+          status: 'INVALID_OUTPUT',
+          correlationId: envelope.correlationId,
+          modelIdentifier: this.modelIdentifier,
+          evaluatedAt,
+          reason: 'Model returned an invalid incident assessment',
           provenance: 'UNAVAILABLE',
         });
 
@@ -204,6 +238,7 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
               requestedAt: evaluatedAt,
             },
           ],
+          ...(contextAssessment ? { assessment: contextAssessment } : {}),
           provenance: 'INFERRED',
         });
 
@@ -327,6 +362,7 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
             confidence: 0.95,
             summary: `Baseline evaluation for ${scenarioKind}: no containment needed`,
             toolRequests,
+            ...(contextAssessment ? { assessment: contextAssessment } : {}),
             provenance: 'INFERRED',
           });
         }
@@ -411,6 +447,7 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
           confidence: 0.95,
           summary: `Autonomous security evaluation for ${preset.title}`,
           toolRequests: toolRequests.slice(0, 5),
+          ...(contextAssessment ? { assessment: contextAssessment } : {}),
           provenance: 'INFERRED',
         });
       }
@@ -427,5 +464,34 @@ export class FakeAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
         });
       }
     }
+  }
+
+  private buildAssessment(
+    envelope: IntrusionEventEnvelope,
+    context: IncidentContext,
+  ): IncidentAssessment {
+    const evidenceRef = context.evidence[0]?.evidenceId ?? 'missing';
+    const isNegativeControl = envelope.evidence['isNegativeControl'] === true;
+    const isLowConfidence = this.mode === 'low-confidence';
+    const assessment: IncidentAssessment = {
+      incidentStage: isNegativeControl ? 'INSUFFICIENT_EVIDENCE' : 'RECONNAISSANCE',
+      riskTier: isNegativeControl ? 'LOW' : 'HIGH',
+      confidence: isLowConfidence ? 0.25 : 0.95,
+      hypothesis: isNegativeControl
+        ? 'The supplied signal is insufficient to establish an active incident.'
+        : 'The supplied synthetic signal indicates suspicious activity.',
+      evidenceRefs: [evidenceRef],
+      recommendedActions: isNegativeControl ? ['NO_ACTION'] : ['ALERT_OPERATOR'],
+      rationale: 'Bounded fake assessment for adapter verification.',
+      needsFollowUp: !isNegativeControl,
+    };
+
+    if (this.mode === 'malicious-assessment') {
+      assessment.evidenceRefs = ['attacker-controlled-evidence'];
+    }
+    if (this.mode === 'invalid-assessment') {
+      assessment.rationale = 'x'.repeat(1001);
+    }
+    return assessment;
   }
 }

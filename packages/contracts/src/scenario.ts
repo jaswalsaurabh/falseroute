@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IpAddressSchema } from './primitives.js';
+import { IpAddressSchema, ResponseActionSchema } from './primitives.js';
 
 export const ScenarioKindSchema = z.enum([
   'ENV_FILE_PROBE',
@@ -9,6 +9,9 @@ export const ScenarioKindSchema = z.enum([
   'TOKEN_TAMPER',
   'PATH_TRAVERSAL_PROBE',
   'DECOY_CREDENTIAL_USE',
+  'SQL_INJECTION_PROBE',
+  'CLOUD_METADATA_SSRF_PROBE',
+  'CREDENTIAL_STUFFING_BURST',
 ]);
 
 export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
@@ -219,6 +222,58 @@ export const PathTraversalProbeEvidenceSchema = z
 
 export type PathTraversalProbeEvidence = z.infer<typeof PathTraversalProbeEvidenceSchema>;
 
+export const SqlInjectionProbeEvidenceSchema = z
+  .object({
+    scenarioKind: z.literal('SQL_INJECTION_PROBE').default('SQL_INJECTION_PROBE'),
+    sourceIp: IpAddressSchema,
+    requestedPath: z.string().min(1).max(256),
+    parameterName: z.string().min(1).max(64),
+    detectionSignal: z.enum(['SQL_SYNTAX_MARKER', 'REPEATED_VARIATION', 'ERROR_PATTERN']),
+    isPositiveMatch: z.boolean(),
+    isNegativeControl: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine(requireConsistentControlEvidence);
+export type SqlInjectionProbeEvidence = z.infer<typeof SqlInjectionProbeEvidenceSchema>;
+
+export const CloudMetadataSsrfProbeEvidenceSchema = z
+  .object({
+    scenarioKind: z.literal('CLOUD_METADATA_SSRF_PROBE').default('CLOUD_METADATA_SSRF_PROBE'),
+    sourceIp: IpAddressSchema,
+    requestedPath: z.string().min(1).max(256),
+    destinationClass: z.enum(['CLOUD_METADATA', 'LINK_LOCAL', 'PUBLIC']),
+    httpMethod: z.enum(['GET', 'POST', 'HEAD']),
+    isPositiveMatch: z.boolean(),
+    isNegativeControl: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine(requireConsistentControlEvidence);
+export type CloudMetadataSsrfProbeEvidence = z.infer<typeof CloudMetadataSsrfProbeEvidenceSchema>;
+
+export const CredentialStuffingBurstEvidenceSchema = z
+  .object({
+    scenarioKind: z.literal('CREDENTIAL_STUFFING_BURST').default('CREDENTIAL_STUFFING_BURST'),
+    sourceIp: IpAddressSchema,
+    accountCount: z.number().int().min(1).max(1000),
+    failureCount: z.number().int().min(1).max(50000),
+    windowSeconds: z.number().int().min(1).max(3600),
+    targetEndpoint: z.string().min(1).max(256),
+    isPositiveMatch: z.boolean(),
+    isNegativeControl: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    requireConsistentControlEvidence(evidence, context);
+    if (evidence.failureCount < evidence.accountCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['failureCount'],
+        message: 'failureCount must be at least accountCount',
+      });
+    }
+  });
+export type CredentialStuffingBurstEvidence = z.infer<typeof CredentialStuffingBurstEvidenceSchema>;
+
 export const DecoyCredentialUseEvidenceSchema = z
   .object({
     scenarioKind: z.literal('DECOY_CREDENTIAL_USE').default('DECOY_CREDENTIAL_USE'),
@@ -242,9 +297,45 @@ export const ScenarioEvidenceSchema = z.union([
   TokenTamperEvidenceSchema,
   PathTraversalProbeEvidenceSchema,
   DecoyCredentialUseEvidenceSchema,
+  SqlInjectionProbeEvidenceSchema,
+  CloudMetadataSsrfProbeEvidenceSchema,
+  CredentialStuffingBurstEvidenceSchema,
 ]);
 
 export type ScenarioEvidence = z.infer<typeof ScenarioEvidenceSchema>;
+
+export const ScenarioActionOwnershipSchema = z
+  .object({
+    mandatoryActions: z.array(ResponseActionSchema).max(7),
+    optionalActions: z.array(ResponseActionSchema).max(7),
+    forbiddenActions: z.array(ResponseActionSchema).max(7),
+    degradedFallbackActions: z.array(ResponseActionSchema).max(7),
+  })
+  .strict()
+  .superRefine((ownership, context) => {
+    const groups = [
+      ['mandatoryActions', ownership.mandatoryActions],
+      ['optionalActions', ownership.optionalActions],
+      ['forbiddenActions', ownership.forbiddenActions],
+      ['degradedFallbackActions', ownership.degradedFallbackActions],
+    ] as const;
+    const seen = new Map<string, string>();
+    for (const [groupName, actions] of groups) {
+      for (const action of actions) {
+        const previousGroup = seen.get(action);
+        if (previousGroup) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [groupName],
+            message: `${action} cannot be in both ${previousGroup} and ${groupName}`,
+          });
+        } else {
+          seen.set(action, groupName);
+        }
+      }
+    }
+  });
+export type ScenarioActionOwnership = z.infer<typeof ScenarioActionOwnershipSchema>;
 
 export interface ScenarioPreset {
   readonly kind: ScenarioKind;
@@ -252,6 +343,7 @@ export interface ScenarioPreset {
   readonly description: string;
   readonly expectedPolicy: string;
   readonly allowedActions: readonly string[];
+  readonly actionOwnership: ScenarioActionOwnership;
   readonly decoyTemplate?: string | undefined;
   readonly maxRiskScore: number;
   readonly defaultTtlSeconds: number;
@@ -270,6 +362,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
     description: 'Adversary probes web root for exposed environment variable files (.env)',
     expectedPolicy: 'POLICY_ENV_PROBE_CONTAINMENT',
     allowedActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      forbiddenActions: ['QUARANTINE_SOURCE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     decoyTemplate: 'mock-admin-decoy',
     maxRiskScore: 85,
     defaultTtlSeconds: 300,
@@ -294,6 +392,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
     description: 'Adversary scans for backup or exposed wp-config.php files',
     expectedPolicy: 'POLICY_WORDPRESS_PROBE_CONTAINMENT',
     allowedActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      forbiddenActions: ['QUARANTINE_SOURCE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     decoyTemplate: 'mock-wordpress-decoy',
     maxRiskScore: 80,
     defaultTtlSeconds: 300,
@@ -318,6 +422,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
     description: 'Volumetric request spike across multiple endpoints from a single source IP',
     expectedPolicy: 'POLICY_IP_BURST_QUARANTINE',
     allowedActions: ['QUARANTINE_SOURCE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['QUARANTINE_SOURCE'],
+      forbiddenActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     maxRiskScore: 90,
     defaultTtlSeconds: 600,
     maxTtlSeconds: 3600,
@@ -341,6 +451,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
       'Volumetric SIP INVITE attack detected in ingress telemetry (autonomous quarantine response)',
     expectedPolicy: 'POLICY_SIP_FLOOD_QUARANTINE',
     allowedActions: ['QUARANTINE_SOURCE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['QUARANTINE_SOURCE'],
+      forbiddenActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     maxRiskScore: 95,
     defaultTtlSeconds: 600,
     maxTtlSeconds: 3600,
@@ -363,6 +479,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
     description: 'Bearer token signature manipulation or privilege escalation attempt detected',
     expectedPolicy: 'POLICY_TOKEN_TAMPER_REJECT_AND_ALERT',
     allowedActions: ['QUARANTINE_SOURCE', 'ALERT_OPERATOR', 'REJECT_ACCESS'],
+    actionOwnership: {
+      mandatoryActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+      optionalActions: ['QUARANTINE_SOURCE'],
+      forbiddenActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      degradedFallbackActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+    },
     maxRiskScore: 95,
     defaultTtlSeconds: 900,
     maxTtlSeconds: 3600,
@@ -385,6 +507,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
     description: 'Dot-dot-slash or system file traversal probe in URL path parameter',
     expectedPolicy: 'POLICY_PATH_TRAVERSAL_CONTAINMENT',
     allowedActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      forbiddenActions: ['QUARANTINE_SOURCE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     decoyTemplate: 'mock-admin-decoy',
     maxRiskScore: 85,
     defaultTtlSeconds: 300,
@@ -409,6 +537,12 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
       'Use of known canary decoy credentials triggers deterministic false-route diversion',
     expectedPolicy: 'POLICY_DECOY_CREDENTIAL_DIVERSION',
     allowedActions: ['ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR'],
+    actionOwnership: {
+      mandatoryActions: ['ASSIGN_FALSE_ROUTE', 'ALERT_OPERATOR'],
+      optionalActions: [],
+      forbiddenActions: ['DEPLOY_DECOY', 'QUARANTINE_SOURCE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
     decoyTemplate: 'mock-admin-decoy',
     maxRiskScore: 100,
     defaultTtlSeconds: 300,
@@ -424,6 +558,92 @@ export const SCENARIO_CATALOG: Record<ScenarioKind, ScenarioPreset> = {
       decoyIdentifier: 'mock-admin-decoy',
       targetAsset: 'admin-portal',
       failedLoginCount: 1,
+      isPositiveMatch: true,
+    },
+  },
+  SQL_INJECTION_PROBE: {
+    kind: 'SQL_INJECTION_PROBE',
+    title: 'SQL Injection Probe',
+    description: 'Synthetic input probe with bounded SQL detection evidence',
+    expectedPolicy: 'POLICY_SQL_PROBE_ALERT',
+    allowedActions: ['ALERT_OPERATOR', 'DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+    actionOwnership: {
+      mandatoryActions: ['ALERT_OPERATOR'],
+      optionalActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      forbiddenActions: ['QUARANTINE_SOURCE', 'REJECT_ACCESS'],
+      degradedFallbackActions: ['ALERT_OPERATOR'],
+    },
+    decoyTemplate: 'mock-admin-decoy',
+    maxRiskScore: 85,
+    defaultTtlSeconds: 300,
+    maxTtlSeconds: 1800,
+    negativeControl: {
+      isNegativeControl: false,
+      description: 'Ordinary parameter returns no SQL signal',
+    },
+    defaultEvidence: {
+      scenarioKind: 'SQL_INJECTION_PROBE',
+      sourceIp: '198.51.100.32',
+      requestedPath: '/search',
+      parameterName: 'query',
+      detectionSignal: 'SQL_SYNTAX_MARKER',
+      isPositiveMatch: true,
+    },
+  },
+  CLOUD_METADATA_SSRF_PROBE: {
+    kind: 'CLOUD_METADATA_SSRF_PROBE',
+    title: 'Cloud Metadata SSRF Probe',
+    description: 'Synthetic request targeting a prohibited cloud metadata destination class',
+    expectedPolicy: 'POLICY_METADATA_SSRF_REJECT_AND_ALERT',
+    allowedActions: ['REJECT_ACCESS', 'ALERT_OPERATOR', 'QUARANTINE_SOURCE'],
+    actionOwnership: {
+      mandatoryActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+      optionalActions: ['QUARANTINE_SOURCE'],
+      forbiddenActions: ['DEPLOY_DECOY', 'ASSIGN_FALSE_ROUTE'],
+      degradedFallbackActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+    },
+    maxRiskScore: 95,
+    defaultTtlSeconds: 600,
+    maxTtlSeconds: 3600,
+    negativeControl: {
+      isNegativeControl: false,
+      description: 'Public documentation endpoint is not metadata',
+    },
+    defaultEvidence: {
+      scenarioKind: 'CLOUD_METADATA_SSRF_PROBE',
+      sourceIp: '198.51.100.33',
+      requestedPath: '/fetch?url=http://metadata.google.internal',
+      destinationClass: 'CLOUD_METADATA',
+      httpMethod: 'GET',
+      isPositiveMatch: true,
+    },
+  },
+  CREDENTIAL_STUFFING_BURST: {
+    kind: 'CREDENTIAL_STUFFING_BURST',
+    title: 'Credential Stuffing Burst',
+    description: 'Synthetic burst correlating accounts, failures, source, and time window',
+    expectedPolicy: 'POLICY_CREDENTIAL_STUFFING_REJECT_AND_ALERT',
+    allowedActions: ['REJECT_ACCESS', 'ALERT_OPERATOR', 'QUARANTINE_SOURCE'],
+    actionOwnership: {
+      mandatoryActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+      optionalActions: ['QUARANTINE_SOURCE'],
+      forbiddenActions: [],
+      degradedFallbackActions: ['REJECT_ACCESS', 'ALERT_OPERATOR'],
+    },
+    maxRiskScore: 95,
+    defaultTtlSeconds: 600,
+    maxTtlSeconds: 3600,
+    negativeControl: {
+      isNegativeControl: false,
+      description: 'One failed login does not indicate stuffing',
+    },
+    defaultEvidence: {
+      scenarioKind: 'CREDENTIAL_STUFFING_BURST',
+      sourceIp: '198.51.100.34',
+      accountCount: 20,
+      failureCount: 80,
+      windowSeconds: 60,
+      targetEndpoint: '/login',
       isPositiveMatch: true,
     },
   },
@@ -468,6 +688,15 @@ export function validateScenarioEvidence(
         break;
       case 'DECOY_CREDENTIAL_USE':
         parsed = DecoyCredentialUseEvidenceSchema.parse(withKind);
+        break;
+      case 'SQL_INJECTION_PROBE':
+        parsed = SqlInjectionProbeEvidenceSchema.parse(withKind);
+        break;
+      case 'CLOUD_METADATA_SSRF_PROBE':
+        parsed = CloudMetadataSsrfProbeEvidenceSchema.parse(withKind);
+        break;
+      case 'CREDENTIAL_STUFFING_BURST':
+        parsed = CredentialStuffingBurstEvidenceSchema.parse(withKind);
         break;
       default: {
         const exhaustiveCheck: never = kind;
