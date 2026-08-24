@@ -1,6 +1,10 @@
 <div align="center">
 
-# FalseRoute
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/branding/false-route-fox-logo-reversed.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="assets/branding/false-route-fox-logo.svg" />
+  <img src="assets/branding/false-route-fox-logo.svg" alt="FalseRoute" width="420" />
+</picture>
 
 ### Safe, explainable cyber deception for testing intrusion response—without touching real systems.
 
