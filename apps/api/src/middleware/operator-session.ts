@@ -22,13 +22,19 @@ export function createOperatorSession(
 ): { readonly value: string; readonly csrfToken: string; readonly maxAge: number } {
   const expiresAt = Math.floor(nowMs / 1000) + OPERATOR_SESSION_TTL_SECONDS;
   const payload = `${expiresAt}.${randomBytes(32).toString('base64url')}`;
-  const csrfNonce = randomBytes(32).toString('base64url');
-  const csrfPayload = `csrf.${payload}.${csrfNonce}`;
   return {
     value: `${payload}.${sign(payload, secret)}`,
-    csrfToken: `${csrfNonce}.${sign(csrfPayload, secret)}`,
+    csrfToken: createOperatorCsrfToken(`${payload}.${sign(payload, secret)}`, secret),
     maxAge: OPERATOR_SESSION_TTL_SECONDS,
   };
+}
+
+/** Creates a fresh readable CSRF token bound to an already authenticated session. */
+export function createOperatorCsrfToken(sessionValue: string, secret: string): string {
+  const separator = sessionValue.lastIndexOf('.');
+  const payload = separator > 0 ? sessionValue.slice(0, separator) : '';
+  const csrfNonce = randomBytes(32).toString('base64url');
+  return `${csrfNonce}.${sign(`csrf.${payload}.${csrfNonce}`, secret)}`;
 }
 
 export function verifyOperatorSession(
@@ -103,6 +109,11 @@ export function sessionCookieHeaders(
     `${OPERATOR_SESSION_COOKIE}=${encodeURIComponent(session.value)}; ${security}`,
     `${OPERATOR_CSRF_COOKIE}=${encodeURIComponent(session.csrfToken)}; ${csrfSecurity}`,
   ];
+}
+
+export function csrfCookieHeader(csrfToken: string, secure: boolean): string {
+  const security = `Max-Age=${OPERATOR_SESSION_TTL_SECONDS}; Path=/; SameSite=Lax${secure ? '; Secure' : ''}`;
+  return `${OPERATOR_CSRF_COOKIE}=${encodeURIComponent(csrfToken)}; ${security}`;
 }
 
 export function clearedSessionCookieHeaders(secure: boolean): string[] {

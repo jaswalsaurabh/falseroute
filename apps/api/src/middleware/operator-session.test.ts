@@ -3,6 +3,7 @@ import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
   OPERATOR_SESSION_TTL_SECONDS,
+  createOperatorCsrfToken,
   createOperatorSession,
   readCookie,
   sessionCookieHeaders,
@@ -61,5 +62,13 @@ describe('operator session helpers', () => {
     ).toBe(false);
     expect(operatorCsrfTokensMatch(session.csrfToken, session.csrfToken)).toBe(true);
     expect(operatorCsrfTokensMatch(session.csrfToken, otherSession.csrfToken)).toBe(false);
+  });
+
+  it('creates a fresh CSRF token for an existing valid session', () => {
+    const session = createOperatorSession(sessionSecret, nowMs);
+    const refreshedToken = createOperatorCsrfToken(session.value, sessionSecret);
+
+    expect(refreshedToken).not.toBe(session.csrfToken);
+    expect(verifyOperatorCsrfToken(session.value, refreshedToken, sessionSecret, nowMs)).toBe(true);
   });
 });

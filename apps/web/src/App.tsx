@@ -82,12 +82,20 @@ export const App: React.FC = () => {
       setAuthChecked(true);
       return;
     }
+    let cancelled = false;
     const client = new ApiClient(null);
     void client
       .validateCredentials()
-      .then(() => setOperatorToken(''))
+      .then(() => {
+        if (!cancelled) setOperatorToken((current) => current ?? '');
+      })
       .catch(() => undefined)
-      .finally(() => setAuthChecked(true));
+      .finally(() => {
+        if (!cancelled) setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadEvents = useCallback(async () => {

@@ -11,7 +11,9 @@ import {
 import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
+  createOperatorCsrfToken,
   createOperatorSession,
+  csrfCookieHeader,
   operatorCsrfTokensMatch,
   readCookie,
   sessionCookieHeaders,
@@ -95,6 +97,24 @@ export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
         });
         return;
       }
+    }
+
+    // A restored cookie session may outlive or lose its readable CSRF cookie
+    // during local proxy/reload cycles. Refresh it on safe authenticated reads
+    // so the next mutation has a token bound to this exact session.
+    if (
+      authenticatedBySession &&
+      !authenticatedByBearer &&
+      options.sessionSecret &&
+      ['GET', 'HEAD'].includes(req.method)
+    ) {
+      res.append(
+        'Set-Cookie',
+        csrfCookieHeader(
+          createOperatorCsrfToken(sessionCookie!, options.sessionSecret),
+          options.secureCookies ?? false,
+        ),
+      );
     }
 
     // Verified non-secret principal fingerprint used as the rate-limit identity base.
