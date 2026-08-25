@@ -78,12 +78,59 @@ model IntrusionEvent {
   replayAttempts     ReplayAttempt[]
   deadLetters        DeadLetterRecord[]
   budgetReservations BudgetReservationRecord[]
+  campaignStep       CampaignStepRun?
 
   @@index([occurredAt])
   @@index([status])
   @@index([correlationId])
   @@index([status, processingLeaseExpiresAt])
   @@map("intrusion_events")
+}
+
+model CampaignRun {
+  id                String   @id @default(uuid()) @db.Uuid
+  definitionId      String   @unique @map("definition_id") @db.VarChar(64)
+  definitionVersion String   @map("definition_version") @db.VarChar(32)
+  status            String   @db.VarChar(32)
+  currentStep       Int      @map("current_step")
+  totalSteps        Int      @map("total_steps")
+  correlationId     String   @unique @map("correlation_id") @db.VarChar(64)
+  claimOwner        String?  @map("claim_owner") @db.VarChar(128)
+  claimExpiresAt    DateTime? @map("claim_expires_at")
+  startedAt         DateTime? @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  failureReason     String?  @map("failure_reason") @db.VarChar(512)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  steps CampaignStepRun[]
+
+  @@index([status, claimExpiresAt])
+  @@map("campaign_runs")
+}
+
+model CampaignStepRun {
+  id             String    @id @default(uuid()) @db.Uuid
+  campaignId     String    @map("campaign_id") @db.Uuid
+  step           Int
+  scenarioKind   String    @map("scenario_kind") @db.VarChar(64)
+  label          String    @db.VarChar(100)
+  eventId        String    @unique @map("event_id") @db.Uuid
+  status         String    @db.VarChar(32)
+  claimOwner     String?   @map("claim_owner") @db.VarChar(128)
+  claimExpiresAt DateTime? @map("claim_expires_at")
+  publishedAt    DateTime? @map("published_at")
+  completedAt    DateTime? @map("completed_at")
+  failureReason  String?   @map("failure_reason") @db.VarChar(512)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  campaign CampaignRun   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  event    IntrusionEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, step])
+  @@index([status, claimExpiresAt])
+  @@map("campaign_step_runs")
 }
 
 model DeceptionDecision {

@@ -15,6 +15,7 @@ packages/database/src/generated/
 
 # Coverage and test artifacts
 coverage/
+.ai-value-results/
 test-results/
 playwright-report/
 blob-report/

@@ -340,7 +340,10 @@ describe('LiveGeminiAdapter', () => {
     expect(gate.granted).toBe(2);
     expect(result.provenance).toBe('UNAVAILABLE');
     if (result.provenance === 'UNAVAILABLE') {
-      expect(result.reason).toContain('Durable Gemini attempt budget exhausted');
+      expect(result.reason).toContain(
+        'Gemini attempt budget exhausted after unavailable provider attempts',
+      );
+      expect(result.reason).toContain('Transient upstream server error');
     }
   });
 

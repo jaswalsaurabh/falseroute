@@ -38,7 +38,8 @@ describe('Database client factory', () => {
 
   it('instantiates the client without performing immediate network I/O', () => {
     // Standard mock PostgreSQL connection string with fictional local test credentials
-    const fictionalUrl = 'postgresql://test_user:test_pass@127.0.0.1:54321/fictional_db';
+    const fictionalUrl =
+      'postgresql://not-a-real-user:not-a-real-password@127.0.0.1:54321/fictional_db';
     const client = createDatabaseClient({ connectionString: fictionalUrl });
 
     expect(client).toBeDefined();
@@ -65,26 +66,34 @@ describe('validateTestDatabaseUrl', () => {
 
   it('rejects development, staging, production, or non-test databases', () => {
     expect(() =>
-      validateTestDatabaseUrl('postgresql://user:pass@localhost:5434/falseroute_dev?schema=public'),
-    ).toThrowError(/CRITICAL/);
-    expect(() =>
       validateTestDatabaseUrl(
-        'postgresql://user:pass@localhost:5434/falseroute_prod?schema=public',
+        'postgresql://not-a-real-user:not-a-real-password@localhost:5434/falseroute_dev?schema=public',
       ),
     ).toThrowError(/CRITICAL/);
     expect(() =>
-      validateTestDatabaseUrl('postgresql://user:pass@localhost:5434/postgres?schema=public'),
+      validateTestDatabaseUrl(
+        'postgresql://not-a-real-user:not-a-real-password@localhost:5434/falseroute_prod?schema=public',
+      ),
     ).toThrowError(/CRITICAL/);
     expect(() =>
-      validateTestDatabaseUrl('postgresql://user:pass@localhost:5434/myapp?schema=public'),
+      validateTestDatabaseUrl(
+        'postgresql://not-a-real-user:not-a-real-password@localhost:5434/postgres?schema=public',
+      ),
+    ).toThrowError(/CRITICAL/);
+    expect(() =>
+      validateTestDatabaseUrl(
+        'postgresql://not-a-real-user:not-a-real-password@localhost:5434/myapp?schema=public',
+      ),
     ).toThrowError(/CRITICAL/);
   });
 
   it('accepts dedicated test database names ending with _test', () => {
-    const validUrl = 'postgresql://user:pass@localhost:5434/falseroute_test?schema=public';
+    const validUrl =
+      'postgresql://not-a-real-user:not-a-real-password@localhost:5434/falseroute_test?schema=public';
     expect(validateTestDatabaseUrl(validUrl)).toBe(validUrl);
 
-    const isolatedSuiteUrl = 'postgresql://user:pass@localhost:5434/suite_integration_test';
+    const isolatedSuiteUrl =
+      'postgresql://not-a-real-user:not-a-real-password@localhost:5434/suite_integration_test';
     expect(validateTestDatabaseUrl(isolatedSuiteUrl)).toBe(isolatedSuiteUrl);
   });
 });

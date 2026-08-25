@@ -3,9 +3,12 @@ import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
   OPERATOR_SESSION_TTL_SECONDS,
+  createOperatorCsrfToken,
   createOperatorSession,
   readCookie,
   sessionCookieHeaders,
+  operatorCsrfTokensMatch,
+  verifyOperatorCsrfToken,
   verifyOperatorSession,
 } from './operator-session.js';
 
@@ -45,5 +48,27 @@ describe('operator session helpers', () => {
     expect(headers[0]).toContain('Secure');
     expect(headers[1]).toContain(`${OPERATOR_CSRF_COOKIE}=`);
     expect(headers[1]).not.toContain('HttpOnly');
+  });
+
+  it('binds CSRF tokens to the exact session and compares them in constant time', () => {
+    const session = createOperatorSession(sessionSecret, nowMs);
+    const otherSession = createOperatorSession(sessionSecret, nowMs);
+
+    expect(verifyOperatorCsrfToken(session.value, session.csrfToken, sessionSecret, nowMs)).toBe(
+      true,
+    );
+    expect(
+      verifyOperatorCsrfToken(otherSession.value, session.csrfToken, sessionSecret, nowMs),
+    ).toBe(false);
+    expect(operatorCsrfTokensMatch(session.csrfToken, session.csrfToken)).toBe(true);
+    expect(operatorCsrfTokensMatch(session.csrfToken, otherSession.csrfToken)).toBe(false);
+  });
+
+  it('creates a fresh CSRF token for an existing valid session', () => {
+    const session = createOperatorSession(sessionSecret, nowMs);
+    const refreshedToken = createOperatorCsrfToken(session.value, sessionSecret);
+
+    expect(refreshedToken).not.toBe(session.csrfToken);
+    expect(verifyOperatorCsrfToken(session.value, refreshedToken, sessionSecret, nowMs)).toBe(true);
   });
 });

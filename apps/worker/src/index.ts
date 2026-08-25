@@ -39,11 +39,24 @@ export {
   type ProcessResult,
 } from './processor/event-processor.js';
 export { WorkerOrchestrator, type OrchestratorOptions } from './processor/worker-orchestrator.js';
+export {
+  IncidentContextService,
+  type IncidentContextBuildResult,
+  type IncidentContextRecordPort,
+  type IncidentContextRequest,
+  type RelatedIncidentSignal,
+} from './services/incident-context-service.js';
+export {
+  FakeAutonomousGeminiAdapter,
+  type FakeAutonomousMode,
+  type FakeAutonomousAdapterOptions,
+} from './adapters/fake-autonomous-gemini-adapter.js';
 
 export {
   AutonomousWorkflowOrchestrator,
   type AutonomousWorkflowResult,
 } from './orchestration/autonomous-workflow.js';
+export { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
 export { ToolGateway, type ToolGatewayOptions } from './tools/tool-gateway.js';
 export {
   PubSubPushHandler,

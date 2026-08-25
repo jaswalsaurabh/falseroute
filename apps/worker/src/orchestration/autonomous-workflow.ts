@@ -3,6 +3,7 @@ import {
   type IntrusionEventEnvelope,
   type AutonomousModelAnalysisResult,
   type AutonomousDegradedModelResult,
+  type IncidentContext,
   IntrusionEventEnvelopeSchema,
   AutonomousDegradedModelResultSchema,
   validateScenarioEvidence,
@@ -11,6 +12,10 @@ import {
   type AutonomousWorkflowRepository,
   type ActivityEventRepository,
 } from '@false-route/database';
+import {
+  IncidentContextService,
+  type RelatedIncidentSignal,
+} from '../services/incident-context-service.js';
 import { ToolGateway } from '../tools/tool-gateway.js';
 import { type AutonomousGeminiAdapter } from '../adapters/autonomous-gemini-adapter.js';
 import { FakeAutonomousGeminiAdapter } from '../adapters/fake-autonomous-gemini-adapter.js';
@@ -38,13 +43,18 @@ export class AutonomousWorkflowOrchestrator {
     geminiAdapter?: AutonomousGeminiAdapter,
     budgetService?: GeminiBudgetService,
     workerId?: string,
+    incidentContextService?: IncidentContextService,
   ) {
     this.workerId = workerId ?? `worker-${randomUUID()}`;
     this.toolGateway =
       toolGateway ?? new ToolGateway(workflowRepo, activityRepo, { workerId: this.workerId });
     this.geminiAdapter = geminiAdapter ?? new FakeAutonomousGeminiAdapter('unavailable');
     this.budgetService = budgetService ?? new GeminiBudgetService({ budgetRepo: workflowRepo });
+    this.incidentContextService =
+      incidentContextService ?? createActivityContextService(activityRepo);
   }
+
+  private readonly incidentContextService: IncidentContextService | undefined;
 
   async processEventEnvelope(
     envelope: IntrusionEventEnvelope,
@@ -96,7 +106,45 @@ export class AutonomousWorkflowOrchestrator {
       payload: { scenarioKind, sourceIp },
     });
 
-    // 3. Emit GEMINI_ANALYSIS_REQUESTED activity event
+    // 3. Build a bounded, provenance-preserving context before asking Gemini to assess the event.
+    let incidentContext: IncidentContext | undefined;
+    if (this.incidentContextService) {
+      const contextResult = await this.incidentContextService.build({
+        currentEvent: validatedEnvelope,
+        syntheticSource: validatedEnvelope.source,
+        currentSummary: `Observed ${scenarioKind} from ${sourceIp}`,
+      });
+      if (contextResult.status === 'SUCCESS') {
+        incidentContext = contextResult.context;
+        await this.activityRepo.recordActivityEvent({
+          eventId,
+          correlationId,
+          stage: 'RECEIVED',
+          eventType: 'INCIDENT_CONTEXT_BUILT',
+          summary: `Built bounded incident context (${incidentContext.contextCompleteness})`,
+          provenance: 'DERIVED',
+          payload: {
+            contextSchemaVersion: incidentContext.contextSchemaVersion,
+            signalCount: incidentContext.signals.length,
+            evidenceCount: incidentContext.evidence.length,
+            completeness: incidentContext.contextCompleteness,
+            context: incidentContext,
+          },
+        });
+      } else {
+        await this.activityRepo.recordActivityEvent({
+          eventId,
+          correlationId,
+          stage: 'RECEIVED',
+          eventType: 'INCIDENT_CONTEXT_DEGRADED',
+          summary: `Incident context degraded: ${contextResult.reason}`,
+          provenance: 'UNAVAILABLE',
+          payload: { reason: contextResult.reason },
+        });
+      }
+    }
+
+    // 4. Emit GEMINI_ANALYSIS_REQUESTED activity event
     await this.activityRepo.recordActivityEvent({
       eventId,
       correlationId,
@@ -107,12 +155,18 @@ export class AutonomousWorkflowOrchestrator {
       payload: { scenarioKind, sourceIp },
     });
 
-    // 4. Bounded Gemini analysis with atomic durable token budget reservation
+    // 5. Bounded Gemini analysis with atomic durable token budget reservation
     let modelResult: AutonomousModelAnalysisResult | AutonomousDegradedModelResult;
     try {
       modelResult = await this.budgetService.executeWithBudget({
         eventId,
-        execute: () => this.geminiAdapter.analyzeEnvelope(validatedEnvelope),
+        execute: (attemptGate) =>
+          this.geminiAdapter.analyzeEnvelope(
+            validatedEnvelope,
+            undefined,
+            incidentContext,
+            attemptGate,
+          ),
       });
     } catch (budgetErr) {
       const reason = budgetErr instanceof Error ? budgetErr.message : String(budgetErr);
@@ -138,6 +192,7 @@ export class AutonomousWorkflowOrchestrator {
           confidence: modelResult.confidence,
           modelIdentifier: modelResult.modelIdentifier,
           requestedToolsCount: modelResult.toolRequests.length,
+          ...(modelResult.assessment ? { assessment: modelResult.assessment } : {}),
         },
       });
 
@@ -176,7 +231,7 @@ export class AutonomousWorkflowOrchestrator {
       });
     }
 
-    // 5. Evaluate deterministic policy against model output and authoritative catalog
+    // 6. Evaluate deterministic policy against model output and authoritative catalog
     const policyEval = evaluateAutonomousPolicy(validatedEnvelope, modelResult);
 
     // Record policy outcomes for model requests (rejections + recommend_response_plan decisions)
@@ -235,7 +290,7 @@ export class AutonomousWorkflowOrchestrator {
       });
     }
 
-    // 6. Execute authorized canonical tool actions through deterministic gateway
+    // 7. Execute authorized canonical tool actions through deterministic gateway
     let hasFailure = false;
     const executedActions: string[] = [];
     const failedActions: string[] = [];
@@ -323,4 +378,59 @@ export class AutonomousWorkflowOrchestrator {
       acknowledged: true,
     };
   }
+}
+
+function createActivityContextService(
+  activityRepo: ActivityEventRepository,
+): IncidentContextService | undefined {
+  if (typeof activityRepo.getLatestEvents !== 'function') return undefined;
+
+  return new IncidentContextService({
+    findRelatedSignals: async ({ correlationId, syntheticSource, excludeEventId }) => {
+      const records = await activityRepo.getLatestEvents(100);
+      const byEvent = new Map<string, RelatedIncidentSignal>();
+      for (const record of records) {
+        if (record.correlationId !== correlationId || record.eventId === excludeEventId) continue;
+        if (byEvent.has(record.eventId)) continue;
+        byEvent.set(record.eventId, {
+          signalId: record.eventId,
+          correlationId,
+          syntheticSource,
+          scenarioKind: deriveScenarioKind(record.payload),
+          summary: record.summary,
+          observedAt: record.occurredAt.toISOString(),
+          evidence: [
+            {
+              evidenceId: `${record.eventId}:activity:${record.cursor}`,
+              evidenceType: record.eventType,
+              observedAt: record.occurredAt.toISOString(),
+              provenance: record.provenance,
+            },
+          ],
+        });
+      }
+      return [...byEvent.values()];
+    },
+  });
+}
+
+function deriveScenarioKind(
+  payload: Record<string, unknown> | null | undefined,
+): RelatedIncidentSignal['scenarioKind'] {
+  const candidate = payload?.['scenarioKind'];
+  const allowed = [
+    'ENV_FILE_PROBE',
+    'WORDPRESS_CONFIG_PROBE',
+    'SUSPICIOUS_IP_BURST',
+    'SIP_INVITE_FLOOD',
+    'TOKEN_TAMPER',
+    'PATH_TRAVERSAL_PROBE',
+    'DECOY_CREDENTIAL_USE',
+    'SQL_INJECTION_PROBE',
+    'CLOUD_METADATA_SSRF_PROBE',
+    'CREDENTIAL_STUFFING_BURST',
+  ] as const;
+  return allowed.includes(candidate as (typeof allowed)[number])
+    ? (candidate as RelatedIncidentSignal['scenarioKind'])
+    : 'ENV_FILE_PROBE';
 }

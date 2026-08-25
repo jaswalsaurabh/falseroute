@@ -4,6 +4,7 @@ import cors from 'cors';
 import {
   ActivityEventRepository,
   AutonomousWorkflowRepository,
+  CampaignRepository,
   PrismaClient,
   type DatabaseClient,
 } from '@false-route/database';
@@ -30,6 +31,9 @@ import { EmergencyReleaseService } from './services/emergency-release-service.js
 import { EmergencyReleaseController } from './controllers/emergency-release-controller.js';
 import { OperatorController } from './controllers/operator-controller.js';
 import { createEmergencyReleaseRouter } from './routes/emergency-release-routes.js';
+import { CampaignService } from './services/campaign-service.js';
+import { CampaignController } from './controllers/campaign-controller.js';
+import { createCampaignRouter } from './routes/campaign-routes.js';
 import {
   InMemoryEventPublisher,
   LocalHttpEventPublisher,
@@ -45,6 +49,7 @@ export interface AppOptions {
   readonly activityRepo?: ActivityEventRepository | undefined;
   readonly streamService?: ActivityStreamService | undefined;
   readonly workflowRepo?: AutonomousWorkflowRepository | undefined;
+  readonly campaignRepo?: CampaignRepository | undefined;
   readonly deadLetterService?: DeadLetterService | undefined;
   readonly emergencyReleaseService?: EmergencyReleaseService | undefined;
   readonly eventPublisher?: EventPublisher | undefined;
@@ -141,6 +146,7 @@ export function createApp(options: AppOptions): Express {
   const activityRepo = options.activityRepo ?? new ActivityEventRepository(db as PrismaClient);
   const streamService = options.streamService ?? new ActivityStreamService(activityRepo);
   const workflowRepo = options.workflowRepo ?? new AutonomousWorkflowRepository(db as PrismaClient);
+  const campaignRepo = options.campaignRepo ?? new CampaignRepository(db as PrismaClient);
   const deadLetterService =
     options.deadLetterService ?? new DeadLetterService(workflowRepo, eventPublisher);
 
@@ -218,6 +224,14 @@ export function createApp(options: AppOptions): Express {
   });
   app.use('/api/v1/operator/emergency-release', authMiddleware, emergencyReleaseRouter);
   app.use('/api/v1/emergency-release', authMiddleware, emergencyReleaseRouter);
+
+  const campaignService = new CampaignService(campaignRepo, eventPublisher);
+  const campaignController = new CampaignController(campaignService);
+  app.use(
+    '/api/v1/campaigns',
+    authMiddleware,
+    createCampaignRouter({ controller: campaignController, readLimiter, writeLimiter }),
+  );
 
   // Unmatched Route Boundary
   app.use((req, _res, next) => {
