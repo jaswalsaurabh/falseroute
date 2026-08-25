@@ -6,6 +6,7 @@ import {
 } from './pubsub-push-handler.js';
 import { type AutonomousWorkflowOrchestrator } from '../orchestration/autonomous-workflow.js';
 import { type AutonomousWorkflowRepository } from '@false-route/database';
+import { type Logger } from '@false-route/observability';
 
 describe('PubSubPushHandler', () => {
   const localSecret = 'not-a-real-local-push-secret';
@@ -381,11 +382,16 @@ describe('GoogleOidcTokenVerifier', () => {
 
   it('fails closed for missing or unverifiable tokens', async () => {
     const client = { verifyIdToken: vi.fn().mockRejectedValue(new Error('invalid token')) };
-    const verifier = new GoogleOidcTokenVerifier(client);
+    const logger = { warn: vi.fn() };
+    const verifier = new GoogleOidcTokenVerifier(client, logger as unknown as Logger);
 
     await expect(verifier.verifyToken(undefined, {})).resolves.toEqual({ valid: false });
     await expect(verifier.verifyToken('Bearer not-a-real-invalid-token', {})).resolves.toEqual({
       valid: false,
     });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { reason: 'GOOGLE_OIDC_VERIFY_FAILED', errorType: 'Error' },
+      'Google OIDC push token verification failed',
+    );
   });
 });

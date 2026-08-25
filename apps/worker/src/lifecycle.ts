@@ -282,7 +282,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       } else if (config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR') {
         verifier = new PubSubEmulatorTokenVerifier();
       } else {
-        verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
+        verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier(undefined, logger);
       }
 
       pushHandler =
@@ -390,7 +390,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
           return;
         }
 
-        const verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
+        const verifier =
+          options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier(undefined, logger);
         let authResult;
         try {
           authResult = await withTimeout(

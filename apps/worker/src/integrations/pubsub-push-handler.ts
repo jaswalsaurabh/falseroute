@@ -9,6 +9,7 @@ import { type AutonomousWorkflowOrchestrator } from '../orchestration/autonomous
 import { type CampaignOrchestrator } from '../orchestration/campaign-orchestrator.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { type Logger } from '@false-route/observability';
 
 export interface OidcTokenVerifier {
   verifyToken(
@@ -26,7 +27,10 @@ interface IdTokenClient {
 
 /** Verifies Google-signed service-account ID tokens and returns bounded identity claims. */
 export class GoogleOidcTokenVerifier implements OidcTokenVerifier {
-  constructor(private readonly client: IdTokenClient = new OAuth2Client()) {}
+  constructor(
+    private readonly client: IdTokenClient = new OAuth2Client(),
+    private readonly logger?: Logger,
+  ) {}
 
   async verifyToken(
     authHeader: string | undefined,
@@ -47,7 +51,14 @@ export class GoogleOidcTokenVerifier implements OidcTokenVerifier {
         ...(payload.email ? { email: payload.email } : {}),
         audience: payload.aud,
       };
-    } catch {
+    } catch (error) {
+      this.logger?.warn(
+        {
+          reason: 'GOOGLE_OIDC_VERIFY_FAILED',
+          errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+        },
+        'Google OIDC push token verification failed',
+      );
       return { valid: false };
     }
   }

@@ -12,8 +12,10 @@ import {
   OPERATOR_CSRF_COOKIE,
   OPERATOR_SESSION_COOKIE,
   createOperatorSession,
+  operatorCsrfTokensMatch,
   readCookie,
   sessionCookieHeaders,
+  verifyOperatorCsrfToken,
   verifyOperatorSession,
 } from './operator-session.js';
 
@@ -77,7 +79,15 @@ export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
     ) {
       const csrfCookie = readCookie(req.headers.cookie, OPERATOR_CSRF_COOKIE);
       const csrfHeader = req.header('X-CSRF-Token');
-      if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
+      if (
+        !operatorCsrfTokensMatch(csrfCookie, csrfHeader) ||
+        !verifyOperatorCsrfToken(
+          sessionCookie,
+          csrfHeader,
+          options.sessionSecret!,
+          options.clock?.() ?? Date.now(),
+        )
+      ) {
         res.status(403).json({
           error: 'CSRF_REQUIRED',
           message: 'A valid CSRF token is required for cookie-authenticated requests',
