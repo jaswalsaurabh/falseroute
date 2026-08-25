@@ -13,6 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.json ./
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/typescript-config/ ./packages/typescript-config/
 COPY apps/web/ ./apps/web/
+COPY assets/branding/ ./assets/branding/
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/database/package.json ./packages/database/package.json
 COPY packages/observability/package.json ./packages/observability/package.json
