@@ -8,9 +8,23 @@ import {
   formatLimiterKey,
   resolveLimiterIdentity,
 } from './principal.js';
+import {
+  OPERATOR_CSRF_COOKIE,
+  OPERATOR_SESSION_COOKIE,
+  createOperatorCsrfToken,
+  createOperatorSession,
+  csrfCookieHeader,
+  operatorCsrfTokensMatch,
+  readCookie,
+  sessionCookieHeaders,
+  verifyOperatorCsrfToken,
+  verifyOperatorSession,
+} from './operator-session.js';
 
 export interface AuthMiddlewareOptions {
   readonly expectedToken: string;
+  readonly sessionSecret?: string | undefined;
+  readonly secureCookies?: boolean | undefined;
   readonly clock?: (() => number) | undefined;
 }
 
@@ -28,8 +42,13 @@ export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const bearerToken = extractBearerToken(req.headers.authorization);
+    const sessionCookie = readCookie(req.headers.cookie, OPERATOR_SESSION_COOKIE);
+    const authenticatedByBearer = verifyOperatorToken(bearerToken, options.expectedToken);
+    const authenticatedBySession = options.sessionSecret
+      ? verifyOperatorSession(sessionCookie, options.sessionSecret, options.clock?.() ?? Date.now())
+      : false;
 
-    if (!verifyOperatorToken(bearerToken, options.expectedToken) || bearerToken === null) {
+    if ((!authenticatedByBearer || bearerToken === null) && !authenticatedBySession) {
       const key = formatLimiterKey(resolveLimiterIdentity(req), 'ip');
       const attempt = failureBudget.consume(key);
 
@@ -55,10 +74,61 @@ export function operatorAuthMiddleware(options: AuthMiddlewareOptions) {
       return;
     }
 
+    if (
+      authenticatedBySession &&
+      !authenticatedByBearer &&
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+    ) {
+      const csrfCookie = readCookie(req.headers.cookie, OPERATOR_CSRF_COOKIE);
+      const csrfHeader = req.header('X-CSRF-Token');
+      if (
+        !operatorCsrfTokensMatch(csrfCookie, csrfHeader) ||
+        !verifyOperatorCsrfToken(
+          sessionCookie,
+          csrfHeader,
+          options.sessionSecret!,
+          options.clock?.() ?? Date.now(),
+        )
+      ) {
+        res.status(403).json({
+          error: 'CSRF_REQUIRED',
+          message: 'A valid CSRF token is required for cookie-authenticated requests',
+          correlationId: req.correlationId,
+        });
+        return;
+      }
+    }
+
+    // A restored cookie session may outlive or lose its readable CSRF cookie
+    // during local proxy/reload cycles. Refresh it on safe authenticated reads
+    // so the next mutation has a token bound to this exact session.
+    if (
+      authenticatedBySession &&
+      !authenticatedByBearer &&
+      options.sessionSecret &&
+      ['GET', 'HEAD'].includes(req.method)
+    ) {
+      res.append(
+        'Set-Cookie',
+        csrfCookieHeader(
+          createOperatorCsrfToken(sessionCookie!, options.sessionSecret),
+          options.secureCookies ?? false,
+        ),
+      );
+    }
+
     // Verified non-secret principal fingerprint used as the rate-limit identity base.
     // The raw bearer token is never stored, logged, or used as a limiter key.
-    if (!req.principalId) {
+    if (!req.principalId && bearerToken) {
       req.principalId = computeCredentialFingerprint(bearerToken, 'operator');
+    } else if (!req.principalId && authenticatedBySession) {
+      req.principalId = 'operator:session';
+    }
+    if (authenticatedByBearer && !authenticatedBySession && options.sessionSecret) {
+      const session = createOperatorSession(options.sessionSecret, options.clock?.() ?? Date.now());
+      for (const cookie of sessionCookieHeaders(session, options.secureCookies ?? false)) {
+        res.append('Set-Cookie', cookie);
+      }
     }
     next();
   };

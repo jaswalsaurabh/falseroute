@@ -19,7 +19,7 @@ export class ActivityStreamConsumer {
   private reconnectDelayMs = 3000;
 
   constructor(
-    private readonly token: string,
+    private readonly token: string | null,
     private readonly baseUrl = '',
     private readonly callbacks: ActivityStreamCallbacks = { onEvent: () => {} },
   ) {}
@@ -52,13 +52,14 @@ export class ActivityStreamConsumer {
       if (!this.isRunning) return;
 
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${this.token}`,
         Accept: 'text/event-stream',
       };
+      if (this.token) headers.Authorization = `Bearer ${this.token}`;
       if (this.lastEventId > 0) headers['Last-Event-ID'] = String(this.lastEventId);
 
       const response = await fetch(`${this.baseUrl}/api/v1/activity/stream`, {
         headers,
+        credentials: 'include',
         signal: this.abortController.signal,
       });
       if (!response.ok || !response.body) {
@@ -131,11 +132,13 @@ export class ActivityStreamConsumer {
   }
 
   private async fetchSnapshot(url: string, signal: AbortSignal) {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+    };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
     const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: 'application/json',
-      },
+      headers,
+      credentials: 'include',
       signal,
     });
     if (!response.ok) throw new Error(`Activity snapshot failed: HTTP ${response.status}`);

@@ -10,6 +10,9 @@ import {
   TokenTamperEvidenceSchema,
   PathTraversalProbeEvidenceSchema,
   DecoyCredentialUseEvidenceSchema,
+  SqlInjectionProbeEvidenceSchema,
+  CloudMetadataSsrfProbeEvidenceSchema,
+  CredentialStuffingBurstEvidenceSchema,
 } from './scenario.js';
 
 describe('Scenario Catalog & Evidence Validation', () => {
@@ -21,6 +24,9 @@ describe('Scenario Catalog & Evidence Validation', () => {
     'TOKEN_TAMPER',
     'PATH_TRAVERSAL_PROBE',
     'DECOY_CREDENTIAL_USE',
+    'SQL_INJECTION_PROBE',
+    'CLOUD_METADATA_SSRF_PROBE',
+    'CREDENTIAL_STUFFING_BURST',
   ];
 
   it('contains valid catalog entries for every scenario kind', () => {
@@ -190,6 +196,24 @@ describe('Scenario Catalog & Evidence Validation', () => {
       };
       expect(PathTraversalProbeEvidenceSchema.safeParse(invalid).success).toBe(false);
     });
+  });
+
+  it('accepts the three bounded AI reasoning scenario fixtures', () => {
+    expect(
+      SqlInjectionProbeEvidenceSchema.safeParse(
+        SCENARIO_CATALOG.SQL_INJECTION_PROBE.defaultEvidence,
+      ).success,
+    ).toBe(true);
+    expect(
+      CloudMetadataSsrfProbeEvidenceSchema.safeParse(
+        SCENARIO_CATALOG.CLOUD_METADATA_SSRF_PROBE.defaultEvidence,
+      ).success,
+    ).toBe(true);
+    expect(
+      CredentialStuffingBurstEvidenceSchema.safeParse(
+        SCENARIO_CATALOG.CREDENTIAL_STUFFING_BURST.defaultEvidence,
+      ).success,
+    ).toBe(true);
   });
 
   describe('DECOY_CREDENTIAL_USE', () => {

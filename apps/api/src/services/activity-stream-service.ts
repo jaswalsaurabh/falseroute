@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { ActivityEvent } from '@false-route/contracts';
+import type { ActivityEvent, SystemMode } from '@false-route/contracts';
 import { type ActivityEventRepository } from '@false-route/database';
 import {
   deepRedactSensitiveData,
@@ -13,13 +13,14 @@ export interface ActivityStreamServiceOptions {
   readonly maxClientBufferBytes?: number;
   readonly pollIntervalMs?: number;
   readonly pageSize?: number;
+  readonly systemMode?: SystemMode;
 }
 
 export interface ActivitySnapshot {
   readonly events: readonly ActivityEvent[];
   readonly latestCursor: number;
   readonly totalCount: number;
-  readonly systemMode: 'LOCAL_FAKE';
+  readonly systemMode: SystemMode;
 }
 
 interface StreamClient {
@@ -40,6 +41,7 @@ export class ActivityStreamService {
   private readonly maxConnections: number;
   private readonly maxClientBufferBytes: number;
   private readonly pageSize: number;
+  private readonly systemMode: SystemMode;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private pollInFlight = false;
@@ -52,6 +54,7 @@ export class ActivityStreamService {
     this.maxConnections = options.maxConnections ?? 50;
     this.maxClientBufferBytes = options.maxClientBufferBytes ?? 65536;
     this.pageSize = Math.min(options.pageSize ?? 100, 100);
+    this.systemMode = options.systemMode ?? 'LOCAL_FAKE';
     this.startHeartbeat(options.heartbeatIntervalMs ?? 15000);
     if (activityRepo) this.startPolling(options.pollIntervalMs ?? 1000);
   }
@@ -62,7 +65,7 @@ export class ActivityStreamService {
         events: [],
         latestCursor: 0,
         totalCount: 0,
-        systemMode: 'LOCAL_FAKE',
+        systemMode: this.systemMode,
       };
     }
 
@@ -77,7 +80,7 @@ export class ActivityStreamService {
       events: records.map((record) => toSafeActivityEvent(record)),
       latestCursor,
       totalCount,
-      systemMode: 'LOCAL_FAKE',
+      systemMode: this.systemMode,
     };
   }
 
@@ -110,7 +113,7 @@ export class ActivityStreamService {
       !this.safeWrite(
         client,
         this.formatNamedEvent('system_mode', {
-          mode: 'LOCAL_FAKE',
+          mode: this.systemMode,
           connectedAt: new Date().toISOString(),
         }),
       )

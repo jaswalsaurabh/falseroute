@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type IntrusionEventEnvelope } from '@false-route/contracts';
+import { type IncidentContext } from '@false-route/contracts';
 import { LiveAutonomousGeminiAdapter } from './autonomous-gemini-adapter.js';
 
 const mockEnvelope: IntrusionEventEnvelope = {
@@ -21,6 +22,34 @@ const mockEnvelope: IntrusionEventEnvelope = {
     isPositiveMatch: true,
   },
   provenance: 'OBSERVED',
+};
+
+const mockContext: IncidentContext = {
+  contextSchemaVersion: '1.0.0',
+  currentEventId: mockEnvelope.eventId,
+  correlationId: mockEnvelope.correlationId,
+  scenarioKind: mockEnvelope.scenarioKind,
+  syntheticSource: 'adapter-test',
+  signals: [
+    {
+      signalId: 'signal-1',
+      scenarioKind: mockEnvelope.scenarioKind,
+      summary: 'Synthetic configuration probe observed',
+      observedAt: mockEnvelope.occurredAt,
+      evidenceRefs: ['evidence-1'],
+    },
+  ],
+  evidence: [
+    {
+      evidenceId: 'evidence-1',
+      evidenceType: 'ENV_FILE_PROBE',
+      observedAt: mockEnvelope.occurredAt,
+      provenance: 'OBSERVED',
+    },
+  ],
+  priorPolicyOutcomes: [],
+  activeLeases: [],
+  contextCompleteness: 'COMPLETE',
 };
 
 describe('LiveAutonomousGeminiAdapter', () => {
@@ -63,6 +92,11 @@ describe('LiveAutonomousGeminiAdapter', () => {
     const result = await adapter.analyzeEnvelope(mockEnvelope);
 
     expect(result.status).toBe('SUCCESS');
+    const callArgs = generateContentMock.mock.calls[0]?.[0];
+    const modelInput = JSON.parse(callArgs.contents[0].parts[0].text as string) as {
+      eventId?: string;
+    };
+    expect(modelInput.eventId).toBe(mockEnvelope.eventId);
     if (result.status === 'SUCCESS') {
       expect(result.confidence).toBe(0.94);
       // Raw model text must NOT appear in summary
@@ -295,5 +329,112 @@ describe('LiveAutonomousGeminiAdapter', () => {
 
     expect(result.status).toBe('UNAVAILABLE');
     expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates a bounded incident assessment against supplied context', async () => {
+    const adapter = new LiveAutonomousGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-2.5-flash',
+    });
+    const generateContentMock = vi.fn().mockResolvedValue({
+      text: JSON.stringify({
+        incidentStage: 'RECONNAISSANCE',
+        riskTier: 'HIGH',
+        confidence: 0.82,
+        hypothesis: 'A synthetic configuration probe is in progress.',
+        evidenceRefs: ['evidence-1'],
+        recommendedActions: ['ALERT_OPERATOR'],
+        rationale: 'The observed probe matches the fixed scenario evidence.',
+        needsFollowUp: true,
+      }),
+      functionCalls: [
+        {
+          name: 'recommend_response_plan',
+          args: {
+            eventId: mockEnvelope.eventId,
+            recommendedActions: ['ALERT_OPERATOR'],
+            rationale: 'Bounded response plan',
+            confidence: 0.82,
+          },
+        },
+      ],
+    });
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const result = await adapter.analyzeEnvelope(mockEnvelope, undefined, mockContext);
+
+    expect(result.status).toBe('SUCCESS');
+    expect(
+      JSON.parse(generateContentMock.mock.calls[0]?.[0].contents[0].parts[0].text as string),
+    ).toMatchObject({ context: mockContext });
+  });
+
+  it('accepts a bounded assessment wrapped in a JSON markdown fence', async () => {
+    const adapter = new LiveAutonomousGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-2.5-flash',
+    });
+    const assessment = {
+      incidentStage: 'RECONNAISSANCE',
+      riskTier: 'HIGH',
+      confidence: 0.82,
+      hypothesis: 'A synthetic configuration probe is in progress.',
+      evidenceRefs: ['evidence-1'],
+      recommendedActions: ['ALERT_OPERATOR'],
+      rationale: 'The observed probe matches the fixed scenario evidence.',
+      needsFollowUp: true,
+    };
+    const generateContentMock = vi.fn().mockResolvedValue({
+      text: `\`\`\`json\n${JSON.stringify(assessment)}\n\`\`\``,
+      functionCalls: [
+        {
+          name: 'recommend_response_plan',
+          args: {
+            eventId: mockEnvelope.eventId,
+            recommendedActions: ['ALERT_OPERATOR'],
+            rationale: 'The observed probe matches the fixed scenario evidence.',
+            confidence: 0.82,
+          },
+        },
+      ],
+    });
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const result = await adapter.analyzeEnvelope(mockEnvelope, undefined, mockContext);
+
+    expect(result.status).toBe('SUCCESS');
+    if (result.status === 'SUCCESS') expect(result.assessment).toEqual(assessment);
+  });
+
+  it('degrades the complete result when assessment evidence is absent from context', async () => {
+    const adapter = new LiveAutonomousGeminiAdapter({
+      apiKey: 'test-api-key',
+      modelName: 'gemini-2.5-flash',
+    });
+    const generateContentMock = vi.fn().mockResolvedValue({
+      text: JSON.stringify({
+        incidentStage: 'RECONNAISSANCE',
+        riskTier: 'HIGH',
+        confidence: 0.82,
+        hypothesis: 'Untrusted provider output.',
+        evidenceRefs: ['not-in-context'],
+        recommendedActions: ['ALERT_OPERATOR'],
+        rationale: 'This must not be accepted.',
+        needsFollowUp: true,
+      }),
+      functionCalls: [],
+    });
+    Object.defineProperty(adapter, 'client', {
+      value: { models: { generateContent: generateContentMock } },
+    });
+
+    const result = await adapter.analyzeEnvelope(mockEnvelope, undefined, mockContext);
+
+    expect(result.status).toBe('INVALID_OUTPUT');
+    expect(result).not.toHaveProperty('toolRequests');
   });
 });

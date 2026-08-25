@@ -42,12 +42,12 @@ variable "incident_contact_email" {
 
 variable "adr_0005_accepted" {
   type        = bool
-  description = "Explicit human acceptance gate for ADR-0005 live cloud infrastructure mutation. Must be true to apply live staging infrastructure."
+  description = "Records acceptance of ADR-0005 before staging infrastructure is provisioned. Runtime live effects additionally require activation evidence and an operator activation record."
   default     = false
 
   validation {
     condition     = var.adr_0005_accepted == true
-    error_message = "ADR-0005 is currently in 'Proposed' status. Explicit human acceptance is required before live cloud infrastructure mutation is enabled. Set adr_0005_accepted = true in terraform.tfvars once formal review is accepted."
+    error_message = "ADR-0005 is accepted, but runtime live effects remain disabled until activation evidence and an operator activation record are complete. Set adr_0005_accepted = true in terraform.tfvars to record decision acceptance."
   }
 }
 

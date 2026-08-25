@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status: Approved for initial implementation**  
+> **Status: Approved architecture; ADR-0005 accepted; live activation pending**
 > **Approved:** August 21, 2026
 
 FalseRoute begins as a TypeScript monorepo with separate Web, API, and Worker applications. Shared packages own contracts, persistence, configuration, security, and observability concerns. The first architecture proves one simulated intrusion-to-deception workflow without introducing a real network agent.
@@ -21,7 +21,7 @@ flowchart LR
     SSE -->|Authenticated Fetch Stream| Dashboard[React Operator Console]
 ```
 
-Under proposed ADR-0005, FalseRoute establishes a controlled autonomous foundation. Pub/Sub provides asynchronous transport with deduplication and dead-letter handling. Gemini interacts strictly through a closed five-tool catalog, with all execution decisions owned by deterministic application policy. All live cloud mutations remain disabled by default until ADR-0005 is accepted.
+Under accepted ADR-0005, FalseRoute establishes a controlled autonomous foundation. Pub/Sub provides asynchronous transport with deduplication and dead-letter handling. Gemini interacts strictly through a closed five-tool catalog, with all execution decisions owned by deterministic application policy. All live cloud mutations remain disabled until the ADR-0005 activation evidence and operator activation record are complete.
 
 ## Component Boundaries
 
@@ -93,6 +93,6 @@ Use of a known decoy credential deterministically produces an `ASSIGN_FALSE_ROUT
 
 ## Deferred Architecture
 
-The initial implementation excludes a privileged deception agent, real traffic routing, host access, packet processing, Redis, distributed cross-instance rate limits, and an automatically selected queue. In-memory rate limiting and overload shedding remain process-local safeguards requiring single-instance deployment until a distributed state layer is introduced. Browser-based Playwright end-to-end verification remains deferred in the local backlog.
+The current release excludes a privileged deception agent, real traffic routing, host access, packet processing, Redis, distributed cross-instance rate limits, and an automatically selected queue. In-memory rate limiting and overload shedding remain process-local safeguards requiring single-instance deployment until a distributed state layer is introduced. Browser-based Playwright end-to-end verification remains deferred in the local backlog. The accepted ADR defines a future bounded live mode, but no live effects are verified or enabled by this release.
 
 Security boundaries and non-goals are detailed in the [initial threat model](threat-model.md). Repository-wide boundaries and commenting rules are defined in the [engineering principles](engineering-principles.md), quality gate activations are listed in [quality gates](quality-gates.md), and Web-specific organization is defined in the [frontend architecture](frontend.md).

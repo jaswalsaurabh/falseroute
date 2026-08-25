@@ -10,13 +10,16 @@ import {
 } from '@false-route/contracts';
 import {
   type DatabaseClient,
-  type EventType,
+  EventType,
   type ContainmentMode,
   type ProcessingStatus,
   type DeceptionAction,
   type ProvenanceClassification,
   Prisma,
 } from '@false-route/database';
+import { isIP } from 'node:net';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface ApiRepository {
   createEvent(
@@ -90,14 +93,40 @@ export class PrismaApiRepository implements ApiRepository {
   async listEvents(
     query: ListIntrusionEventsQuery,
   ): Promise<{ events: IntrusionEvent[]; total: number }> {
-    const where = query.status ? { status: query.status as ProcessingStatus } : {};
+    const normalizedEventType = query.search
+      ?.trim()
+      .toUpperCase()
+      .replaceAll(/[^A-Z0-9]+/g, '_');
+    const matchingEventType = normalizedEventType
+      ? Object.values(EventType).find((eventType) => eventType === normalizedEventType)
+      : undefined;
+    const searchFilters: Prisma.IntrusionEventWhereInput[] | undefined = query.search
+      ? [
+          { correlationId: { contains: query.search, mode: 'insensitive' } },
+          { targetAsset: { contains: query.search, mode: 'insensitive' } },
+          { scenarioKind: { contains: query.search, mode: 'insensitive' } },
+          ...(UUID_PATTERN.test(query.search) ? [{ id: { equals: query.search } }] : []),
+          ...(isIP(query.search) ? [{ sourceIp: { equals: query.search } }] : []),
+          ...(matchingEventType ? [{ eventType: matchingEventType }] : []),
+        ]
+      : undefined;
+    const where: Prisma.IntrusionEventWhereInput = {
+      ...(query.status ? { status: query.status as ProcessingStatus } : {}),
+      ...(searchFilters ? { OR: searchFilters } : {}),
+    };
+    const sortBy = query.sortBy ?? 'receivedAt';
+    const sortDirection = query.sortDirection ?? 'desc';
+    const orderBy: Prisma.IntrusionEventOrderByWithRelationInput[] = [
+      { [sortBy]: sortDirection },
+      { id: sortDirection },
+    ];
 
     const [rows, total] = await Promise.all([
       this.db.intrusionEvent.findMany({
         where,
         take: query.limit,
         skip: query.offset,
-        orderBy: { receivedAt: 'desc' },
+        orderBy,
       }),
       this.db.intrusionEvent.count({ where }),
     ]);

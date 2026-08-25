@@ -63,7 +63,8 @@ describe('LiveGeminiAdapter', () => {
     const callArgs = generateContentMock.mock.calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs?.config?.abortSignal).toBeInstanceOf(AbortSignal);
-    expect(callArgs?.config?.maxOutputTokens).toBe(1024);
+    expect(callArgs?.config?.temperature).toBe(0);
+    expect(callArgs?.config?.maxOutputTokens).toBe(2048);
 
     expect(result.correlationId).toBe(mockEvent.correlationId);
     expect(result.provenance).toBe('INFERRED');
@@ -339,7 +340,10 @@ describe('LiveGeminiAdapter', () => {
     expect(gate.granted).toBe(2);
     expect(result.provenance).toBe('UNAVAILABLE');
     if (result.provenance === 'UNAVAILABLE') {
-      expect(result.reason).toContain('Durable Gemini attempt budget exhausted');
+      expect(result.reason).toContain(
+        'Gemini attempt budget exhausted after unavailable provider attempts',
+      );
+      expect(result.reason).toContain('Transient upstream server error');
     }
   });
 

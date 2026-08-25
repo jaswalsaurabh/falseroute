@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { App } from './App.js';
+import { App, readThemePreference } from './App.js';
 import { DecisionCard } from './features/events/DecisionCard.js';
 import { type IntrusionEvent, type DeceptionDecision } from '@false-route/contracts';
 
@@ -11,6 +11,15 @@ describe('Web Dashboard Unit Tests', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    delete document.documentElement.dataset['theme'];
+  });
+
+  it('restores the persisted theme preference after a reload', () => {
+    document.documentElement.dataset['theme'] = 'light';
+    window.localStorage.setItem('falseroute-theme', 'dark');
+
+    expect(readThemePreference()).toBe('dark');
   });
 
   it('renders controlled demonstration unlock screen by default', () => {
@@ -97,7 +106,7 @@ describe('Web Dashboard Unit Tests', () => {
       expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
       expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
       expect(screen.getByText('3. Active Deception & Quarantine State')).toBeDefined();
-      expect(screen.getByText('Intrusion Events Feed')).toBeDefined();
+      expect(screen.getByLabelText('Recent intrusion signals')).toBeDefined();
     });
 
     // Ensure raw secret token is NOT exposed anywhere in DOM text
@@ -191,7 +200,7 @@ describe('Web Dashboard Unit Tests', () => {
     expect(screen.getAllByText(/PROVENANCE:\s*UNAVAILABLE/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('refreshes open event detail modal when a pending event transitions to decided on refresh', async () => {
+  it('refreshes event detail when a pending event is selected after transitioning to decided', async () => {
     const pendingEvent: IntrusionEvent = {
       id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       occurredAt: '2026-08-22T00:00:00.000Z',
@@ -328,14 +337,16 @@ describe('Web Dashboard Unit Tests', () => {
     fireEvent.change(input, { target: { value: 'demo-secret-token-123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Unlock Dashboard' }));
 
-    // Wait for events table to load with pending event
+    // Wait for the dashboard telemetry feed to load with the pending event
     await waitFor(() => {
-      expect(screen.getByText('Intrusion Events Feed')).toBeDefined();
+      expect(screen.getByLabelText('Recent intrusion signals')).toBeDefined();
       expect(screen.getByText('PENDING')).toBeDefined();
     });
 
     // Inspect the pending event
-    const inspectButton = screen.getByRole('button', { name: 'Inspect' });
+    const inspectButton = screen.getByRole('button', {
+      name: 'Inspect unauthorized access attempt event',
+    });
     fireEvent.click(inspectButton);
 
     // Verify modal is open showing pending status and waiting message
@@ -350,9 +361,8 @@ describe('Web Dashboard Unit Tests', () => {
     // Simulate backend worker transition to DECIDED
     eventStatus = 'DECIDED';
 
-    // Trigger refresh
-    const refreshButton = screen.getByRole('button', { name: 'Refresh' });
-    fireEvent.click(refreshButton);
+    // Re-select the observed event to load the authoritative current detail.
+    fireEvent.click(inspectButton);
 
     // Verify modal automatically re-renders with the decision card and truthful recorded evidence
     await waitFor(() => {

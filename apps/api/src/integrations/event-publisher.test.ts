@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IntrusionEventEnvelope } from '@false-route/contracts';
-import { GooglePubSubEventPublisher, LocalHttpEventPublisher } from './event-publisher.js';
+import {
+  GooglePubSubEventPublisher,
+  LocalHttpEventPublisher,
+  PubSubEmulatorEventPublisher,
+} from './event-publisher.js';
 
 const envelope: IntrusionEventEnvelope = {
   eventId: '11111111-1111-4111-8111-111111111111',
@@ -103,5 +107,40 @@ describe('GooglePubSubEventPublisher', () => {
     });
 
     await expect(publisher.publish(envelope)).rejects.toThrow('did not contain a message ID');
+  });
+});
+
+describe('PubSubEmulatorEventPublisher', () => {
+  it('publishes the envelope without Google authentication', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ messageIds: ['emulator-message-1'] }), { status: 200 }),
+      );
+    const publisher = new PubSubEmulatorEventPublisher({
+      projectId: 'falseroute-local',
+      topicId: 'falseroute-events',
+      emulatorHost: '127.0.0.1:8085',
+      fetchImpl,
+    });
+
+    await expect(publisher.publish(envelope)).resolves.toEqual({
+      transportId: 'emulator-message-1',
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:8085/v1/projects/falseroute-local/topics/falseroute-events:publish',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('rejects a production Pub/Sub endpoint', () => {
+    expect(
+      () =>
+        new PubSubEmulatorEventPublisher({
+          projectId: 'falseroute-local',
+          topicId: 'falseroute-events',
+          emulatorHost: 'pubsub.googleapis.com',
+        }),
+    ).toThrow('local emulator endpoint');
   });
 });

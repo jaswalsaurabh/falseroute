@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ActivityEventRepository,
   AutonomousWorkflowRepository,
+  CampaignRepository,
   BudgetRepository,
   PrismaClient,
   createDatabaseClient,
@@ -26,6 +27,7 @@ import {
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
+import { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
 import {
   type AutonomousGeminiAdapter,
   LiveAutonomousGeminiAdapter,
@@ -33,6 +35,7 @@ import {
 import { FakeAutonomousGeminiAdapter } from './adapters/fake-autonomous-gemini-adapter.js';
 import {
   LocalSharedSecretOidcTokenVerifier,
+  PubSubEmulatorTokenVerifier,
   GoogleOidcTokenVerifier,
   PubSubPushHandler,
   type OidcTokenVerifier,
@@ -186,7 +189,10 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
 
     const simulatedAgent = options.simulatedAgent ?? new DeterministicSimulatedDeceptionAdapter();
     const budgetRepo = new BudgetRepository(db as PrismaClient);
-    const budgetService = new GeminiBudgetService({ budgetRepo });
+    const budgetService = new GeminiBudgetService({
+      budgetRepo,
+      dailyTokenLimit: config.GEMINI_DAILY_TOKEN_LIMIT,
+    });
 
     const sharedCloudRunAdapter = new FakeCloudRunAdapter();
     const sharedFalseRouteAdapter = new FakeFalseRouteAdapter();
@@ -250,21 +256,51 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
           workerProcessId,
         );
 
+      let campaignOrchestrator: CampaignOrchestrator | undefined;
+      if (
+        config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET' ||
+        config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR'
+      ) {
+        const campaignRepository = new CampaignRepository(db as PrismaClient);
+        campaignOrchestrator = new CampaignOrchestrator(
+          campaignRepository,
+          activityRepo,
+          {
+            publish: async (envelope) => {
+              const transportId = `campaign-${randomUUID()}`;
+              await campaignOrchestrator!.process(envelope, transportId);
+              return { transportId };
+            },
+          },
+          autonomousOrchestrator,
+        );
+      }
+
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
         verifier = new LocalSharedSecretOidcTokenVerifier(config.AUTONOMOUS_LOCAL_PUSH_TOKEN!);
+      } else if (config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR') {
+        verifier = new PubSubEmulatorTokenVerifier();
       } else {
-        verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
+        verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier(undefined, logger);
       }
 
       pushHandler =
         options.pushHandler ??
-        new PubSubPushHandler(autonomousOrchestrator, verifier, workflowRepo, {
-          ...(config.PUBSUB_OIDC_AUDIENCE ? { expectedAudience: config.PUBSUB_OIDC_AUDIENCE } : {}),
-          ...(config.PUBSUB_OIDC_SERVICE_ACCOUNT
-            ? { expectedServiceAccount: config.PUBSUB_OIDC_SERVICE_ACCOUNT }
-            : {}),
-        });
+        new PubSubPushHandler(
+          autonomousOrchestrator,
+          verifier,
+          workflowRepo,
+          {
+            ...(config.PUBSUB_OIDC_AUDIENCE
+              ? { expectedAudience: config.PUBSUB_OIDC_AUDIENCE }
+              : {}),
+            ...(config.PUBSUB_OIDC_SERVICE_ACCOUNT
+              ? { expectedServiceAccount: config.PUBSUB_OIDC_SERVICE_ACCOUNT }
+              : {}),
+          },
+          campaignOrchestrator,
+        );
     }
 
     orchestrator = new WorkerOrchestrator({
@@ -354,7 +390,8 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
           return;
         }
 
-        const verifier = options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier();
+        const verifier =
+          options.oidcTokenVerifier ?? new GoogleOidcTokenVerifier(undefined, logger);
         let authResult;
         try {
           authResult = await withTimeout(

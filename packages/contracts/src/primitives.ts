@@ -43,6 +43,18 @@ export const DeceptionActionSchema = z.enum([
 ]);
 export type DeceptionAction = z.infer<typeof DeceptionActionSchema>;
 
+/** Closed vocabulary for policy-owned response actions. */
+export const ResponseActionSchema = z.enum([
+  'RECOMMEND_PLAN',
+  'DEPLOY_DECOY',
+  'ASSIGN_FALSE_ROUTE',
+  'QUARANTINE_SOURCE',
+  'ALERT_OPERATOR',
+  'REJECT_ACCESS',
+  'NO_ACTION',
+]);
+export type ResponseAction = z.infer<typeof ResponseActionSchema>;
+
 /**
  * Application-defined protected asset identifiers.
  * Phase 3A defines the fictional internal administrative portal.

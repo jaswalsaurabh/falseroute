@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CreateAutonomousScenarioRequestSchema,
   CreateIntrusionEventResponseSchema,
+  ListIntrusionEventsQuerySchema,
   ListIntrusionEventsResponseSchema,
   GetIntrusionEventResponseSchema,
   GetDeceptionDecisionResponseSchema,
@@ -70,6 +71,34 @@ describe('API Contract Schemas', () => {
       offset: 0,
     };
     expect(ListIntrusionEventsResponseSchema.parse(valid)).toEqual(valid);
+  });
+
+  it('normalizes and defaults a bounded intrusion-event list query', () => {
+    expect(
+      ListIntrusionEventsQuerySchema.parse({
+        limit: '25',
+        offset: '50',
+        search: '  configuration probe  ',
+        status: 'DECIDED',
+      }),
+    ).toEqual({
+      limit: 25,
+      offset: 50,
+      search: 'configuration probe',
+      status: 'DECIDED',
+    });
+  });
+
+  it('rejects unbounded search and unsupported intrusion-event sorting', () => {
+    expect(ListIntrusionEventsQuerySchema.safeParse({ search: 'a'.repeat(101) }).success).toBe(
+      false,
+    );
+    expect(ListIntrusionEventsQuerySchema.safeParse({ sortBy: 'riskIndicators' }).success).toBe(
+      false,
+    );
+    expect(ListIntrusionEventsQuerySchema.safeParse({ sortDirection: 'sideways' }).success).toBe(
+      false,
+    );
   });
 
   it('validates GetIntrusionEventResponse with pending event without decision/effect', () => {

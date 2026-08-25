@@ -27,6 +27,14 @@ export {
 export { LeaseRepository, type UnsettledLeasesResult } from './repositories/lease-repository.js';
 
 export {
+  CampaignRepository,
+  type CampaignRunRecord,
+  type CampaignStepInput,
+  type CampaignPublication,
+  type CampaignAdvanceResult,
+} from './repositories/campaign-repository.js';
+
+export {
   classifyEmergencyLease,
   summarizeEmergencyLeases,
   deriveEmergencyReleaseStatus,

@@ -6,6 +6,7 @@ import {
 } from './pubsub-push-handler.js';
 import { type AutonomousWorkflowOrchestrator } from '../orchestration/autonomous-workflow.js';
 import { type AutonomousWorkflowRepository } from '@false-route/database';
+import { type Logger } from '@false-route/observability';
 
 describe('PubSubPushHandler', () => {
   const localSecret = 'not-a-real-local-push-secret';
@@ -91,6 +92,45 @@ describe('PubSubPushHandler', () => {
         data: Buffer.from(JSON.stringify(validEnvelope)).toString('base64'),
         messageId: 'msg-valid-1',
         publishTime: '2026-08-22T10:00:01.000Z',
+      },
+      subscription: 'projects/dummy/subscriptions/worker-sub',
+    };
+
+    const res = await handler.handlePushRequest(`Bearer ${localSecret}`, rawBody);
+    expect(res.statusCode).toBe(200);
+    expect(res.body['status']).toBe('COMPLETED');
+  });
+
+  it('normalizes emulator snake_case Pub/Sub aliases before strict parsing', async () => {
+    const handler = new PubSubPushHandler(mockOrchestrator, verifier, mockRepo);
+    const validEnvelope = {
+      eventId: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-emulator-1',
+      schemaVersion: '1.0.0',
+      source: 'PUB_SUB',
+      scenarioKind: 'ENV_FILE_PROBE',
+      occurredAt: '2026-08-22T10:00:00.000Z',
+      publishedAt: '2026-08-22T10:00:01.000Z',
+      sourceIp: '198.51.100.25',
+      evidence: {
+        scenarioKind: 'ENV_FILE_PROBE',
+        requestedPath: '/.env',
+        httpMethod: 'GET',
+        userAgent: 'not-a-real-scanner/1.0',
+        sourceIp: '198.51.100.25',
+        matchedString: '.env',
+        isPositiveMatch: true,
+      },
+      provenance: 'OBSERVED',
+    };
+    const rawBody = {
+      message: {
+        data: Buffer.from(JSON.stringify(validEnvelope)).toString('base64'),
+        messageId: 'msg-emulator-1',
+        message_id: 'msg-emulator-1',
+        publishTime: '2026-08-22T10:00:01.000Z',
+        publish_time: '2026-08-22T10:00:01.000Z',
+        attributes: {},
       },
       subscription: 'projects/dummy/subscriptions/worker-sub',
     };
@@ -342,11 +382,16 @@ describe('GoogleOidcTokenVerifier', () => {
 
   it('fails closed for missing or unverifiable tokens', async () => {
     const client = { verifyIdToken: vi.fn().mockRejectedValue(new Error('invalid token')) };
-    const verifier = new GoogleOidcTokenVerifier(client);
+    const logger = { warn: vi.fn() };
+    const verifier = new GoogleOidcTokenVerifier(client, logger as unknown as Logger);
 
     await expect(verifier.verifyToken(undefined, {})).resolves.toEqual({ valid: false });
     await expect(verifier.verifyToken('Bearer not-a-real-invalid-token', {})).resolves.toEqual({
       valid: false,
     });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { reason: 'GOOGLE_OIDC_VERIFY_FAILED', errorType: 'Error' },
+      'Google OIDC push token verification failed',
+    );
   });
 });

@@ -93,4 +93,23 @@ describe('API Configuration Shutdown Budget Validation', () => {
     });
     expect(config.PUBSUB_TOPIC_ID).toBe('falseroute-events');
   });
+
+  it('requires an emulator host for the local Pub/Sub emulator', () => {
+    expect(() =>
+      parseApiConfig({
+        ...validApiEnv,
+        EVENT_PUBLISHER_MODE: 'PUBSUB_EMULATOR',
+        PUBSUB_PROJECT_ID: 'falseroute-local',
+      }),
+    ).toThrow(ConfigurationError);
+
+    const config = parseApiConfig({
+      ...validApiEnv,
+      EVENT_PUBLISHER_MODE: 'PUBSUB_EMULATOR',
+      PUBSUB_PROJECT_ID: 'falseroute-local',
+      PUBSUB_EMULATOR_HOST: '127.0.0.1:8085',
+      SYSTEM_MODE: 'SIMULATED',
+    });
+    expect(config.SYSTEM_MODE).toBe('SIMULATED');
+  });
 });

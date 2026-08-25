@@ -9,7 +9,7 @@ technical_owner            = "Example Owner"
 security_approver          = "Example Approver"
 incident_contact_email     = "alerts@example.com"
 
-# ADR-0005 Human Acceptance Gate (Must be true to apply live staging mutations)
+# ADR-0005 decision acceptance gate (runtime live effects require a separate activation record)
 adr_0005_accepted          = false
 
 # Replace these example values with the resolved Artifact Registry image digests.

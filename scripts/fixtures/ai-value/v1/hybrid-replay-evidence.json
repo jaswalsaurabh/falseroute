@@ -1,0 +1,343 @@
+{
+  "replaySchemaVersion": "1.0.0",
+  "fixtureSetVersion": "ai-value-v1",
+  "source": "hybrid-synthetic",
+  "records": [
+    {
+      "fixtureId": "env-positive",
+      "evidenceIds": ["env-signal"],
+      "assessment": {
+        "incidentStage": "RECONNAISSANCE",
+        "riskTier": "HIGH",
+        "confidence": 0.94,
+        "hypothesis": "A configuration probe is consistent with reconnaissance activity.",
+        "evidenceRefs": ["env-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The observed probe is linked to the supplied synthetic evidence.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "env-negative",
+      "evidenceIds": ["env-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["env-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "wordpress-positive",
+      "evidenceIds": ["wordpress-signal"],
+      "assessment": {
+        "incidentStage": "RECONNAISSANCE",
+        "riskTier": "HIGH",
+        "confidence": 0.93,
+        "hypothesis": "A WordPress configuration probe is consistent with reconnaissance activity.",
+        "evidenceRefs": ["wordpress-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The observed probe is linked to the supplied synthetic evidence.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "wordpress-negative",
+      "evidenceIds": ["wordpress-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["wordpress-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "ip-burst-positive",
+      "evidenceIds": ["burst-signal"],
+      "assessment": {
+        "incidentStage": "CONTAINMENT_CANDIDATE",
+        "riskTier": "CRITICAL",
+        "confidence": 0.96,
+        "hypothesis": "A burst of suspicious requests warrants bounded containment review.",
+        "evidenceRefs": ["burst-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The burst evidence supports operator notification without expanding authority.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "ip-burst-negative",
+      "evidenceIds": ["burst-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["burst-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "sip-positive",
+      "evidenceIds": ["sip-signal"],
+      "assessment": {
+        "incidentStage": "CONTAINMENT_CANDIDATE",
+        "riskTier": "CRITICAL",
+        "confidence": 0.95,
+        "hypothesis": "The synthetic invite flood warrants bounded containment review.",
+        "evidenceRefs": ["sip-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The flood evidence supports operator notification without SIP proxy authority.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "sip-negative",
+      "evidenceIds": ["sip-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["sip-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "token-positive",
+      "evidenceIds": ["token-signal"],
+      "assessment": {
+        "incidentStage": "CREDENTIAL_ATTACK",
+        "riskTier": "CRITICAL",
+        "confidence": 0.97,
+        "hypothesis": "The synthetic token tamper signal indicates a credential attack.",
+        "evidenceRefs": ["token-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The tamper evidence supports operator notification while policy retains authority.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["QUARANTINE_SOURCE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "token-negative",
+      "evidenceIds": ["token-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["token-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "path-positive",
+      "evidenceIds": ["path-signal"],
+      "assessment": {
+        "incidentStage": "RECONNAISSANCE",
+        "riskTier": "HIGH",
+        "confidence": 0.94,
+        "hypothesis": "A path traversal probe is consistent with reconnaissance activity.",
+        "evidenceRefs": ["path-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The observed probe is linked to the supplied synthetic evidence.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "AUTHORIZED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_ACCEPTED"
+        }
+      ],
+      "fallbackOptionalActions": ["DEPLOY_DECOY", "ASSIGN_FALSE_ROUTE"],
+      "finalOptionalActions": ["ALERT_OPERATOR"],
+      "actionOrigins": ["MODEL_REQUEST"]
+    },
+    {
+      "fixtureId": "path-negative",
+      "evidenceIds": ["path-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["path-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [
+        {
+          "action": "ALERT_OPERATOR",
+          "outcome": "REJECTED",
+          "origin": "MODEL_REQUEST",
+          "reasonCode": "MODEL_REQUEST_REJECTED"
+        }
+      ],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "decoy-credential-positive",
+      "evidenceIds": ["credential-signal"],
+      "assessment": {
+        "incidentStage": "CREDENTIAL_ATTACK",
+        "riskTier": "CRITICAL",
+        "confidence": 0.99,
+        "hypothesis": "Synthetic decoy credential use indicates a confirmed intrusion.",
+        "evidenceRefs": ["credential-signal"],
+        "recommendedActions": ["ALERT_OPERATOR"],
+        "rationale": "The credential-use evidence requires operator follow-up under deterministic policy.",
+        "needsFollowUp": true
+      },
+      "policyOutcomes": [],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    },
+    {
+      "fixtureId": "decoy-credential-negative",
+      "evidenceIds": ["credential-control"],
+      "assessment": {
+        "incidentStage": "INSUFFICIENT_EVIDENCE",
+        "riskTier": "LOW",
+        "confidence": 0.98,
+        "hypothesis": "The control signal does not establish malicious activity.",
+        "evidenceRefs": ["credential-control"],
+        "recommendedActions": ["NO_ACTION"],
+        "rationale": "The negative-control evidence does not support a response action.",
+        "needsFollowUp": false
+      },
+      "policyOutcomes": [],
+      "fallbackOptionalActions": [],
+      "finalOptionalActions": [],
+      "actionOrigins": []
+    }
+  ]
+}

@@ -47,6 +47,10 @@ const LINE_LIMIT_ALLOWLIST = new Set([
   'packages/database/src/repositories/lease-repository.ts',
   // Emergency release repository coordinating globally serialized claims, lease fencing, and settlement
   'packages/database/src/repositories/emergency-release-repository.ts',
+  // Scenario catalog and strict evidence schemas remain one contract owner while the AI-value wave adds three bounded scenarios.
+  'packages/contracts/src/scenario.ts',
+  // Policy regression suite covers mandatory, optional, forbidden, degraded, and adversarial action ownership.
+  'apps/worker/src/domain/autonomous-policy.test.ts',
 ]);
 
 // Find first-party source files in apps/*, packages/*, tests/*, scripts/*
