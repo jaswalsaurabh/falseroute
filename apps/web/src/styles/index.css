@@ -246,6 +246,26 @@ button {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
+.metric-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--component-icon-badge-size);
+  height: var(--component-icon-badge-size);
+  flex: 0 0 var(--component-icon-badge-size);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-card-accent);
+}
+.metric-card-icon-success {
+  color: var(--status-success-text);
+}
+.metric-card-icon-warning {
+  color: var(--status-warning-text);
+}
+.metric-card-icon-neutral {
+  color: var(--text-muted);
+}
 .metric-value {
   display: block;
   color: var(--text-main);
@@ -883,6 +903,11 @@ code {
   display: block;
   color: var(--text-muted);
   font-size: 12px;
+}
+.decision-grid-label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
 }
 .decision-grid strong {
   display: block;
@@ -1706,6 +1731,11 @@ code {
   display: block;
   color: var(--text-muted);
   font-size: 11px;
+}
+.telemetry-summary-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
 }
 .telemetry-summary-card strong {
   display: block;

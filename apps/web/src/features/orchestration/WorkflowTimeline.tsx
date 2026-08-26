@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   Radio,
+  Route,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -153,17 +154,23 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
       </div>
       <div className="decision-grid">
         <div>
-          <span>Policy decision</span>
+          <span className="decision-grid-label">
+            <ShieldCheck size={13} aria-hidden="true" /> Policy decision
+          </span>
           <strong>{events[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
           <small>Deterministic authorization</small>
         </div>
         <div>
-          <span>Allowed tools</span>
+          <span className="decision-grid-label">
+            <Route size={13} aria-hidden="true" /> Allowed tools
+          </span>
           <strong>—</strong>
           <small>Closed catalog</small>
         </div>
         <div>
-          <span>State</span>
+          <span className="decision-grid-label">
+            <Activity size={13} aria-hidden="true" /> State
+          </span>
           <strong>{events[0]?.stage ?? 'IDLE'}</strong>
           <small>Recorded workflow state</small>
         </div>

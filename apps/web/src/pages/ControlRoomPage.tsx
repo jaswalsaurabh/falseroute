@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cloud } from 'lucide-react';
+import { Activity, AlertTriangle, Cloud, Clock3, Route } from 'lucide-react';
 import {
   IncidentContextSchema,
   IncidentAssessmentSchema,
@@ -69,24 +69,28 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
           value={String(totalEvents)}
           detail="Authoritative event total"
           tone="success"
+          icon={<Activity size={15} aria-hidden="true" />}
         />
         <MetricCard
           label="Contained routes"
           value="—"
           detail="Lease state unavailable"
           tone="neutral"
+          icon={<Route size={15} aria-hidden="true" />}
         />
         <MetricCard
           label="Median response"
           value="—"
           detail="Timing projection unavailable"
           tone="neutral"
+          icon={<Clock3 size={15} aria-hidden="true" />}
         />
         <MetricCard
           label="Needs attention"
           value={String(needsAttention).padStart(2, '0')}
           detail="Within the latest loaded signals"
           tone={needsAttention > 0 ? 'warning' : 'success'}
+          icon={<AlertTriangle size={15} aria-hidden="true" />}
         />
       </section>
 
@@ -129,11 +133,17 @@ interface MetricCardProps {
   readonly value: string;
   readonly detail: string;
   readonly tone: 'success' | 'warning' | 'neutral';
+  readonly icon: React.ReactNode;
 }
 
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, detail, tone }) => (
+const MetricCard: React.FC<MetricCardProps> = ({ label, value, detail, tone, icon }) => (
   <article className="metric-card">
-    <div className="eyebrow">{label}</div>
+    <div className="metric-heading">
+      <span className={`metric-card-icon metric-card-icon-${tone}`} aria-hidden="true">
+        {icon}
+      </span>
+      <span className="eyebrow">{label}</span>
+    </div>
     <strong className="metric-value">{value}</strong>
     <span className={`metric-detail metric-detail-${tone}`}>{detail}</span>
   </article>

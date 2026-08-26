@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { Activity, CheckCircle2, Radio, Send, TriangleAlert } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  CircleCheck,
+  Clock3,
+  Inbox,
+  Radio,
+  Send,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   CreateAutonomousScenarioRequestSchema,
@@ -135,7 +144,7 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
                   {event.status === 'DECIDED' ? (
                     <CheckCircle2 size={13} aria-hidden="true" />
                   ) : event.status === 'FAILED' ? (
-                    <TriangleAlert size={13} aria-hidden="true" />
+                    <AlertTriangle size={13} aria-hidden="true" />
                   ) : (
                     <Activity size={13} aria-hidden="true" />
                   )}
@@ -165,22 +174,30 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
       </p>
       <div className="telemetry-summary" aria-label="Telemetry summary">
         <article className="telemetry-summary-card">
-          <span>Loaded signals</span>
+          <span className="telemetry-summary-label">
+            <Inbox size={13} aria-hidden="true" /> Loaded signals
+          </span>
           <strong>{events.length}</strong>
           <small>Latest API window</small>
         </article>
         <article className="telemetry-summary-card">
-          <span>Awaiting decision</span>
+          <span className="telemetry-summary-label">
+            <Clock3 size={13} aria-hidden="true" /> Awaiting decision
+          </span>
           <strong>{awaitingDecision}</strong>
           <small>Pending or processing</small>
         </article>
         <article className="telemetry-summary-card">
-          <span>Decided signals</span>
+          <span className="telemetry-summary-label">
+            <CircleCheck size={13} aria-hidden="true" /> Decided signals
+          </span>
           <strong>{decidedSignals}</strong>
           <small>Policy result recorded</small>
         </article>
         <article className="telemetry-summary-card">
-          <span>Failed signals</span>
+          <span className="telemetry-summary-label">
+            <AlertTriangle size={13} aria-hidden="true" /> Failed signals
+          </span>
           <strong>{failedSignals}</strong>
           <small>Requires attention</small>
         </article>
