@@ -2182,3 +2182,257 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Responsive layout contract: every grid item may shrink, controls may wrap,
+   and the dense event table keeps its accessible column structure in a local
+   scroll region on narrow screens. */
+.app-shell,
+.app-container,
+.workspace-grid,
+.intelligence-shell,
+.intrusion-events-page,
+.intrusion-events-card {
+  min-width: 0;
+}
+
+.app-container {
+  width: 100%;
+}
+
+.workspace-grid > *,
+.intelligence-grid > *,
+.metric-grid > * {
+  min-width: 0;
+}
+
+.telemetry-event-heading,
+.telemetry-event-meta,
+.pane-title,
+.events-toolbar,
+.events-toolbar-right,
+.pagination,
+.pagination-controls,
+.pagination-pages {
+  min-width: 0;
+}
+
+.telemetry-event-heading strong,
+.telemetry-event-meta code,
+.events-table td,
+.events-table th,
+.intelligence-card,
+.risk-card,
+.unavailable-card {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1024px) {
+  .app-container {
+    padding-inline: clamp(18px, 3vw, 36px);
+  }
+
+  .workspace-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pane-containment {
+    grid-column: 1 / -1;
+  }
+
+  .events-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .events-toolbar-right {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 820px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 16px;
+    padding-block: 12px;
+  }
+
+  .brand-lockup {
+    min-width: 0;
+  }
+
+  .brand-logo {
+    width: min(190px, 60vw);
+  }
+
+  .topbar-nav,
+  .topbar-right {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .topbar-nav {
+    order: initial;
+  }
+
+  .topbar-right {
+    order: initial;
+    justify-content: stretch;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .route-links {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .route-toggle-button {
+    min-height: 44px;
+    flex: 1 0 auto;
+  }
+
+  .workspace-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pane-containment {
+    grid-column: auto;
+  }
+
+  .hero-panel,
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hero-status {
+    justify-content: flex-start;
+  }
+
+  .intelligence-shell {
+    padding: clamp(16px, 4vw, 24px);
+  }
+
+  .intelligence-grid,
+  .intelligence-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .intelligence-card-wide {
+    grid-column: auto;
+  }
+
+  .intelligence-heading,
+  .intelligence-card-heading,
+  .campaign-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .events-toolbar-right,
+  .pagination,
+  .pagination-controls,
+  .pagination-pages {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .events-toolbar-actions,
+  .pagination-numbers {
+    flex-wrap: wrap;
+  }
+
+  .events-toolbar-actions .btn,
+  .pagination-direction {
+    flex: 1 1 auto;
+  }
+
+  .pagination-summary {
+    width: 100%;
+  }
+
+  .pagination-page-size,
+  .pagination-page-size-select {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-container {
+    padding: 16px 14px 12px;
+  }
+
+  .topbar {
+    padding-inline: 14px;
+  }
+
+  .topbar-actions {
+    justify-content: stretch;
+  }
+
+  .topbar-actions .btn:not(.icon-button) {
+    flex: 1 1 auto;
+  }
+
+  .topbar-actions .btn {
+    min-height: 44px;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(30px, 10vw, 38px);
+  }
+
+  .hero-copy p {
+    font-size: 14px;
+  }
+
+  .pane-header,
+  .injector-form {
+    padding-inline: 16px;
+  }
+
+  .telemetry-feed,
+  .telemetry-summary,
+  .scenario-footer,
+  .workflow-steps {
+    padding-inline: 14px;
+  }
+
+  .telemetry-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-submit-row,
+  .decision-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-submit-row .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .event-detail-metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .events-table {
+    min-width: 760px;
+  }
+
+  .events-table th,
+  .events-table td {
+    padding-inline: 12px;
+  }
+
+  .events-table-scroll {
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+}
