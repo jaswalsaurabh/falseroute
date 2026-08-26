@@ -1,7 +1,7 @@
 # Repository Quality Gates
 
 > **Status: Active engineering specification**  
-> **Last verified:** August 22, 2026
+> **Last verified:** August 25, 2026
 
 This document defines the automated quality gates and activation schedule for FalseRoute. It implements the public requirements in the [Repository Engineering Principles](engineering-principles.md).
 
@@ -27,15 +27,16 @@ This document defines the automated quality gates and activation schedule for Fa
 | **Database & Repositories**            | `pnpm --filter @false-route/database test:integration` | **Active**      | PostgreSQL integration tests                        | Yes                 |
 | **Observability & Log Redaction**      | `pnpm --filter @false-route/observability test`        | **Active**      | Secret and credential redaction                     | Yes                 |
 | **Constant-Time Token Verification**   | `pnpm --filter @false-route/security test`             | **Active**      | Operator token verification                         | Yes                 |
-| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit & integration                    | Yes                 |
+| **API Application & Routes**           | `pnpm --filter @false-route/api test`                  | **Active**      | Express 5 API unit and route behavior               | Yes                 |
 | **Worker Service & Policy Engine**     | `pnpm --filter @false-route/worker test`               | **Active**      | Worker orchestration & policy determinism           | Yes                 |
 | **Web Dashboard & Component States**   | `pnpm --filter @false-route/web test`                  | **Active**      | React component & session state tests               | Yes                 |
 | **CI Automation Quality Gates**        | `.github/workflows/ci.yml`                             | **Active**      | GitHub Actions automated validation                 | Yes                 |
 | **Container Security & Verification**  | `pnpm verify:containers`                               | **Active**      | Non-root, read-only FS, probe verification          | Yes                 |
 | **Cloud Run Template Validation**      | `pnpm check:templates`                                 | **Active**      | Knative schema, zero-secret, single-instance        | Yes                 |
-| **Browser End-to-End Suite**           | `pnpm --filter @false-route/e2e test`                  | **Deferred**    | Local backlog (reconsider before public deploy)     | No                  |
+| **Browser End-to-End Suite**           | Not configured                                         | **Deferred**    | Local backlog (reconsider before public deploy)     | No                  |
 | **Feature Security Review**            | Review checklist plus relevant automated tests         | **Active**      | Every changed trust or side-effect boundary         | Yes                 |
 | **Abuse & Rate-Limit Verification**    | `pnpm --filter @false-route/api test`                  | **Active**      | Process-local token bucket & overload controls      | Yes                 |
+| **Session & CSRF Verification**        | `pnpm --filter @false-route/api test`                  | **Active**      | Signed operator session and CSRF token behavior     | Yes                 |
 | **Dependency Failure Isolation**       | Relevant application integration tests                 | **Incremental** | When a remote/deployable dependency is added        | Yes when applicable |
 
 ---
@@ -206,6 +207,13 @@ When a remote or separately deployable dependency is introduced or its behavior 
   - Prohibits plaintext credentials; sensitive environment variables must resolve via `secretKeyRef`.
   - Prohibits local filesystem path references.
 
+### 20. Session and CSRF Verification
+
+- **Command:** `pnpm --filter @false-route/api test`
+- **Scope:** Validates short-lived signed operator sessions, secure cookie attributes, session-bound CSRF token creation and verification, and constant-time token matching.
+- **Rules Enforced:** Cookie-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requests require the readable CSRF cookie and matching `X-CSRF-Token` header. Bearer-authenticated requests do not rely on ambient browser credentials.
+- **Boundary:** This is a single-operator demonstration credential. Production identity, account lifecycle, and tenant isolation remain outside the current claim.
+
 ---
 
 ## Deferred Quality Gates
@@ -216,4 +224,3 @@ The following quality gates remain deferred in the local backlog and will be act
 - **Outbound HTTP Security Checks:** Enforcement of scheme policy, DNS/IP validation, and streaming byte limits for outbound HTTP adapters.
 - **Distributed Rate and Concurrency Enforcement:** Atomic cross-instance quotas, endpoint-class budgets, trusted-proxy behavior, retry guidance, and load-shedding verification before public or horizontally scaled deployment.
 - **Infrastructure DDoS and Capacity Verification:** Evidence that edge filtering, connection/request limits, autoscaling bounds, provider quotas, and overload behavior match load-tested application capacity before public exposure.
-- **CSRF Verification:** Activate when the browser uses cookies or another ambient credential for state-changing requests; verify cookie policy, origin handling, and anti-CSRF token behavior where required.
