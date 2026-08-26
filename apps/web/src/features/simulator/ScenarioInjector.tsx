@@ -103,7 +103,7 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
   };
   return (
     <section
-      className="pane pane-telemetry"
+      className="pane pane-layer pane-layer-teal pane-telemetry"
       id="scenario-injector"
       aria-labelledby="scenario-injector-heading"
     >

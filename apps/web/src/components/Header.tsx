@@ -13,6 +13,7 @@ export interface HeaderProps {
   readonly theme?: 'light' | 'dark';
   readonly onToggleTheme?: () => void;
   readonly onInject?: () => void;
+  readonly eventCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   theme = 'light',
   onToggleTheme,
   onInject,
+  eventCount = 0,
 }) => {
   return (
     <header className="topbar">
@@ -43,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
       {isUnlocked && (
         <>
           <nav className="topbar-nav" aria-label="Primary navigation">
-            <RouteToggle route={route} onNavigate={onNavigate} />
+            <RouteToggle route={route} onNavigate={onNavigate} eventCount={eventCount} />
           </nav>
           <div className="topbar-right">
             <div className="topbar-actions">

@@ -250,6 +250,7 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
         onInject={focusScenarioInjector}
+        eventCount={totalEvents}
       />
       <main className="app-container">
         {!authChecked ? (

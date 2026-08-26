@@ -50,7 +50,7 @@ button {
 @media (min-width: 1181px) {
   .topbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 224px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
 .brand-lockup,
@@ -71,31 +71,28 @@ button {
 .topbar-nav {
   display: flex;
   align-items: center;
-  width: 224px;
+  width: auto;
 }
-.route-toggle {
-  display: grid;
-  width: 100%;
-  grid-template-columns: 1fr 1fr;
-  padding: 3px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-button);
-  background: var(--surface-raised);
+.route-links {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
 }
 .route-toggle-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-button);
+  min-height: 42px;
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 700;
   background: transparent;
   white-space: nowrap;
+  text-decoration: none;
 }
 .route-toggle-button:hover {
   color: var(--text-main);
@@ -106,9 +103,21 @@ button {
 }
 .route-toggle-button.is-active {
   color: var(--text-main);
-  background: var(--action-secondary-bg);
-  border-color: var(--border-subtle);
-  box-shadow: var(--elevation-control);
+  border-bottom-color: var(--accent-teal);
+}
+.route-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-badge);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 .topbar-actions,
 .event-actions {
@@ -296,10 +305,10 @@ button {
 }
 .intelligence-shell {
   margin-top: 16px;
-  padding: 20px;
+  padding: 24px;
   background: var(--surface-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
+  border-radius: 16px;
   box-shadow: var(--elevation-card);
 }
 .intelligence-heading,
@@ -316,7 +325,8 @@ button {
   color: var(--text-main);
 }
 .intelligence-heading h2 {
-  font-size: 18px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
 }
 .intelligence-card-heading h3 {
   font-size: 15px;
@@ -328,34 +338,47 @@ button {
   color: var(--text-muted);
   font-size: 12px;
 }
+.intelligence-heading {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
 .intelligence-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-unit-md);
-  margin-top: var(--space-unit-lg);
+  gap: 12px;
+  margin-top: 12px;
 }
 .intelligence-card {
   min-width: 0;
-  padding: var(--space-unit-md);
+  padding: 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
+  border-radius: 12px;
   background: var(--surface-raised);
+  box-shadow: var(--elevation-card);
+}
+.intelligence-card:first-child {
+  border-top: 2px solid var(--accent-indigo);
+}
+.intelligence-card:nth-child(2) {
+  border-top: 2px solid var(--accent-teal);
 }
 .intelligence-card-wide {
   grid-column: 1 / -1;
+  border-top: 2px solid var(--status-simulated-text);
 }
 .intelligence-facts {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-unit-sm);
-  margin-top: var(--space-unit-md);
+  gap: 18px;
+  margin-top: 20px;
 }
 .intelligence-facts div,
 .decision-comparison-row {
-  padding: var(--space-unit-sm);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
+  padding: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 .intelligence-facts span,
 .intelligence-facts strong {
@@ -371,10 +394,10 @@ button {
   font-size: 13px;
 }
 .intelligence-hypothesis {
-  margin: var(--space-unit-md) 0 var(--space-unit-sm);
+  margin: 20px 0 8px;
   color: var(--text-body);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
 }
 .intelligence-detail {
   margin: 0;
@@ -408,13 +431,13 @@ button {
 .decision-comparison {
   display: grid;
   gap: var(--space-unit-xs);
-  margin-top: var(--space-unit-md);
+  margin-top: 14px;
 }
 .decision-comparison-row {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr;
   align-items: center;
-  gap: var(--space-unit-sm);
+  gap: 16px;
   color: var(--text-secondary);
   font-size: 12px;
 }
@@ -423,7 +446,7 @@ button {
   font-size: 12px;
 }
 .decision-comparison-header {
-  padding: 0 var(--space-unit-sm) var(--space-unit-xs);
+  padding: 0 0 8px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
@@ -433,8 +456,8 @@ button {
   text-transform: uppercase;
 }
 .campaign-progress {
-  height: 10px;
-  margin-top: var(--space-unit-lg);
+  height: 6px;
+  margin-top: 20px;
   overflow: hidden;
   border-radius: var(--radius-badge);
   background: var(--surface-card);
@@ -447,7 +470,7 @@ button {
   transition: width var(--motion-fast);
 }
 .campaign-summary {
-  margin-top: var(--space-unit-sm);
+  margin-top: 12px;
   align-items: center;
   color: var(--text-secondary);
   font-size: 12px;
@@ -463,7 +486,9 @@ button {
   font-size: 12px;
 }
 .intelligence-source {
-  margin-top: var(--space-unit-md);
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
 }
 .pane {
   overflow: visible;
@@ -1549,7 +1574,7 @@ code {
   color: var(--status-warning-text);
 }
 .topbar-nav {
-  justify-self: center;
+  justify-self: start;
 }
 .icon-button {
   width: var(--control-height);
@@ -1624,6 +1649,18 @@ code {
 }
 .pane {
   border-radius: var(--radius-pane);
+}
+.pane-layer {
+  border-top-width: 2px;
+}
+.pane-layer-teal {
+  border-top-color: var(--accent-teal);
+}
+.pane-layer-indigo {
+  border-top-color: var(--accent-indigo);
+}
+.pane-layer-warning {
+  border-top-color: var(--status-warning-text);
 }
 .pane-header {
   padding: 19px var(--pane-padding);
@@ -1813,6 +1850,7 @@ code {
 .risk-card {
   margin-top: 8px;
   padding: 17px;
+  border-left: 3px solid var(--accent-indigo);
   background: linear-gradient(135deg, var(--status-model-bg), var(--status-info-bg));
 }
 .risk-card p {
@@ -1836,6 +1874,7 @@ code {
 }
 .unavailable-card {
   background: var(--surface-card-accent);
+  border-left: 3px solid var(--status-warning-text);
 }
 
 /* Intrusion-events route. */
@@ -2065,7 +2104,7 @@ code {
   .topbar-nav {
     grid-column: 2;
     grid-row: 1;
-    justify-self: center;
+    justify-self: start;
   }
   .topbar-right {
     grid-column: 3;
@@ -2089,6 +2128,14 @@ code {
     order: 2;
     width: 100%;
     margin-left: 0;
+  }
+
+  .route-links {
+    width: 100%;
+  }
+
+  .route-toggle-button {
+    flex: 0 1 auto;
   }
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

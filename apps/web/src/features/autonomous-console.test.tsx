@@ -188,7 +188,7 @@ describe('Autonomous Console Components', () => {
   it('keeps assessment, decision ownership, and campaign state unavailable without authoritative payloads', () => {
     render(<AutonomousIntelligencePanel activityEvents={[]} />);
 
-    expect(screen.getByRole('heading', { name: 'Assessment & decision comparison' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Decision intelligence' })).toBeDefined();
     expect(screen.getByText(/No model output is inferred/)).toBeDefined();
     expect(screen.getByText(/No authoritative campaign payload is loaded/)).toBeDefined();
     expect(screen.getByText(/fake executed/i)).toBeDefined();

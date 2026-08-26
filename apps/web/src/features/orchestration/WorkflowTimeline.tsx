@@ -86,7 +86,10 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
   };
 
   return (
-    <section className="pane pane-orchestrator" aria-labelledby="timeline-heading">
+    <section
+      className="pane pane-layer pane-layer-indigo pane-orchestrator"
+      aria-labelledby="timeline-heading"
+    >
       <div className="pane-header">
         <div>
           <h2 id="timeline-heading">

@@ -121,8 +121,8 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
           <span className="section-kicker">
             <Sparkles size={14} aria-hidden="true" /> AI-7 operator intelligence
           </span>
-          <h2 id="intelligence-heading">Assessment &amp; decision comparison</h2>
-          <p>Model interpretation is shown separately from deterministic policy ownership.</p>
+          <h2 id="intelligence-heading">Decision intelligence</h2>
+          <p>Inference, policy authority, and campaign state in one operator view.</p>
         </div>
         <Badge variant={state === 'degraded' || state === 'failure' ? 'warning' : 'neutral'}>
           {state === 'ready' ? 'READY TO INSPECT' : state.toUpperCase()}
@@ -202,7 +202,7 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                 <span className="section-kicker">
                   <CheckCircle2 size={13} aria-hidden="true" /> Decision ownership
                 </span>
-                <h3 id="comparison-heading">Recommendation vs policy</h3>
+                <h3 id="comparison-heading">Policy decision</h3>
               </div>
               <Badge variant="derived">DERIVED VIEW</Badge>
             </div>
@@ -251,7 +251,7 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                 <span className="section-kicker">
                   <Clock3 size={13} aria-hidden="true" /> Campaign
                 </span>
-                <h3 id="campaign-heading">Autonomous campaign progress</h3>
+                <h3 id="campaign-heading">Campaign execution</h3>
               </div>
               <Badge
                 variant={
