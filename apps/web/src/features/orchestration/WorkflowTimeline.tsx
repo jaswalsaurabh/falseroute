@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
   Check,
@@ -22,6 +22,7 @@ export interface WorkflowTimelineProps {
   readonly streamStatus: 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
   readonly onClear?: () => void;
 }
+const TERMINAL_LOG_PAGE_SIZE = 8;
 const stageVariant = (
   stage: string,
 ): 'info' | 'warning' | 'success' | 'danger' | 'simulated' | 'neutral' =>
@@ -55,6 +56,10 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
   streamStatus,
   onClear,
 }) => {
+  const [visibleLogCount, setVisibleLogCount] = useState(TERMINAL_LOG_PAGE_SIZE);
+  useEffect(() => {
+    if (events.length === 0) setVisibleLogCount(TERMINAL_LOG_PAGE_SIZE);
+  }, [events.length]);
   const stages = new Set(events.map((event) => event.stage));
   const completedSteps = events.length
     ? stages.has('COMPLETED') || stages.has('EXECUTED') || stages.has('FAKE_EXECUTED')
@@ -67,6 +72,17 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             ? 2
             : 1
     : 0;
+  const visibleEvents = events.slice(0, visibleLogCount);
+  const hasMoreLogs = visibleEvents.length < events.length;
+  const loadMoreLogs = () => {
+    setVisibleLogCount((current) => Math.min(current + TERMINAL_LOG_PAGE_SIZE, events.length));
+  };
+  const handleLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (hasMoreLogs && element.scrollTop + element.clientHeight >= element.scrollHeight - 32) {
+      loadMoreLogs();
+    }
+  };
 
   return (
     <section className="pane pane-orchestrator" aria-labelledby="timeline-heading">
@@ -183,60 +199,70 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             // Inject a fixed synthetic scenario to observe the bounded workflow
           </div>
         ) : (
-          <ol className="terminal-log" aria-live="polite">
-            {events.slice(0, 8).map((event) => (
-              <li key={`${event.cursor}-${event.eventId}`}>
-                <time>{new Date(event.occurredAt).toLocaleTimeString()}</time>
-                <IconBadge
-                  tone={stageVariant(event.stage)}
-                  size="compact"
-                  label={stageLabel(event.stage, event.eventType)}
-                  tooltip={stageLabel(event.stage, event.eventType)}
-                >
-                  {event.stage === 'COMPLETED' ? (
-                    <CheckCircle2 size={12} aria-hidden="true" />
-                  ) : event.stage === 'EXECUTED' ? (
-                    <CheckCircle2 size={12} aria-hidden="true" />
-                  ) : event.stage === 'FAKE_EXECUTED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : event.stage === 'AUTHORIZED' ? (
-                    <ShieldCheck size={12} aria-hidden="true" />
-                  ) : event.stage === 'NARROWED' ? (
-                    <SlidersHorizontal size={12} aria-hidden="true" />
-                  ) : event.stage === 'FAILED' || event.stage === 'REJECTED' ? (
-                    <TriangleAlert size={12} aria-hidden="true" />
-                  ) : event.stage === 'REQUESTED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : (
-                    <Activity size={12} aria-hidden="true" />
-                  )}
-                </IconBadge>
-                <span>{event.summary}</span>
-                <IconBadge
-                  tone={
-                    event.provenance === 'UNAVAILABLE'
-                      ? 'warning'
-                      : event.provenance === 'OBSERVED'
-                        ? 'info'
-                        : 'model'
-                  }
-                  size="compact"
-                  label={event.provenance.toLowerCase()}
-                  tooltip={event.provenance.toLowerCase()}
-                >
-                  {event.provenance === 'OBSERVED' ? (
-                    <Eye size={12} aria-hidden="true" />
-                  ) : event.provenance === 'UNAVAILABLE' ? (
-                    <TriangleAlert size={12} aria-hidden="true" />
-                  ) : event.provenance === 'INFERRED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : (
-                    <WandSparkles size={12} aria-hidden="true" />
-                  )}
-                </IconBadge>
-              </li>
-            ))}
-          </ol>
+          <>
+            <div
+              className="terminal-log-scroll"
+              role="region"
+              aria-label="Execution trace log"
+              tabIndex={0}
+              onScroll={handleLogScroll}
+            >
+              <ol className="terminal-log" aria-live="polite">
+                {visibleEvents.map((event) => (
+                  <li key={`${event.cursor}-${event.eventId}`}>
+                    <time>{new Date(event.occurredAt).toLocaleTimeString()}</time>
+                    <IconBadge
+                      tone={stageVariant(event.stage)}
+                      size="compact"
+                      label={stageLabel(event.stage, event.eventType)}
+                      tooltip={stageLabel(event.stage, event.eventType)}
+                    >
+                      {event.stage === 'COMPLETED' ? (
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                      ) : event.stage === 'EXECUTED' ? (
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                      ) : event.stage === 'FAKE_EXECUTED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : event.stage === 'AUTHORIZED' ? (
+                        <ShieldCheck size={12} aria-hidden="true" />
+                      ) : event.stage === 'NARROWED' ? (
+                        <SlidersHorizontal size={12} aria-hidden="true" />
+                      ) : event.stage === 'FAILED' || event.stage === 'REJECTED' ? (
+                        <TriangleAlert size={12} aria-hidden="true" />
+                      ) : event.stage === 'REQUESTED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : (
+                        <Activity size={12} aria-hidden="true" />
+                      )}
+                    </IconBadge>
+                    <span>{event.summary}</span>
+                    <IconBadge
+                      tone={
+                        event.provenance === 'UNAVAILABLE'
+                          ? 'warning'
+                          : event.provenance === 'OBSERVED'
+                            ? 'info'
+                            : 'model'
+                      }
+                      size="compact"
+                      label={event.provenance.toLowerCase()}
+                      tooltip={event.provenance.toLowerCase()}
+                    >
+                      {event.provenance === 'OBSERVED' ? (
+                        <Eye size={12} aria-hidden="true" />
+                      ) : event.provenance === 'UNAVAILABLE' ? (
+                        <TriangleAlert size={12} aria-hidden="true" />
+                      ) : event.provenance === 'INFERRED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : (
+                        <WandSparkles size={12} aria-hidden="true" />
+                      )}
+                    </IconBadge>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </>
         )}
       </div>
     </section>

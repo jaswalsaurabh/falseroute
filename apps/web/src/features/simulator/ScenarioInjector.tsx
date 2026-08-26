@@ -8,15 +8,17 @@ import {
   type ScenarioKind,
 } from '@false-route/contracts';
 import { type ApiClient } from '../../api/client.js';
-import { Badge } from '../../components/Badge.js';
 import { Button } from '../../components/Button.js';
 import { IconBadge } from '../../components/IconBadge.js';
+import { eventLabel } from '../../scenario-label.js';
 export interface ScenarioInjectorProps {
   readonly client: ApiClient;
   readonly events?: readonly IntrusionEvent[];
   readonly onSelectEvent?: (event: IntrusionEvent) => void;
+  readonly onViewAllEvents?: () => void;
   readonly onInjected?: () => void;
 }
+const RECENT_SIGNAL_LIMIT = 5;
 const statusVariant = (status: IntrusionEvent['status']) =>
   status === 'DECIDED'
     ? ('success' as const)
@@ -37,14 +39,12 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
   client,
   events = [],
   onSelectEvent,
+  onViewAllEvents,
   onInjected,
 }) => {
   const [selectedScenario, setSelectedScenario] = useState<ScenarioKind>('ENV_FILE_PROBE');
   const [customIp, setCustomIp] = useState('198.51.100.25');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
-    null,
-  );
   const preset = SCENARIO_CATALOG[selectedScenario];
   const awaitingDecision = events.filter(
     (event) => event.status === 'PENDING' || event.status === 'PROCESSING',
@@ -60,13 +60,14 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
     if (typeof sourceIp === 'string') {
       setCustomIp(sourceIp);
     }
-    setFeedback(null);
   };
 
   const handleInject = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSubmitting(true);
-    setFeedback(null);
+    const toastId = toast.loading('Dispatching telemetry', {
+      description: `Sending ${preset.title} to the control room…`,
+    });
     try {
       const payload = CreateAutonomousScenarioRequestSchema.parse({
         id: crypto.randomUUID(),
@@ -78,13 +79,15 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
       });
       const result = await client.createAutonomousScenario(payload);
       const message = `Scenario '${preset.title}': ${result.message}.`;
-      setFeedback({ type: 'success', message });
-      toast.success('Telemetry dispatched', { description: message });
+      toast.success('Telemetry dispatched', { id: toastId, description: message });
       onInjected?.();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to dispatch scenario event';
-      setFeedback({ type: 'error', message });
-      toast.error('Telemetry dispatch failed', { description: message });
+      toast.error('Telemetry dispatch failed', {
+        id: toastId,
+        description: message,
+        duration: 4200,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -113,16 +116,16 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
             No signals recorded. Select a fixed scenario below to begin the bounded workflow.
           </div>
         ) : (
-          events.slice(0, 4).map((event) => (
+          events.slice(0, RECENT_SIGNAL_LIMIT).map((event) => (
             <button
               type="button"
               className="telemetry-event"
               key={event.id}
               onClick={() => onSelectEvent?.(event)}
-              aria-label={`Inspect ${event.eventType.replaceAll('_', ' ').toLowerCase()} event`}
+              aria-label={`Inspect ${eventLabel(event)} event`}
             >
               <span className="telemetry-event-heading">
-                <strong>{event.eventType.replaceAll('_', ' ').toLowerCase()}</strong>
+                <strong>{eventLabel(event)}</strong>
                 <IconBadge
                   tone={statusVariant(event.status)}
                   size="compact"
@@ -148,6 +151,18 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
           ))
         )}
       </div>
+      <p className="telemetry-feed-disclosure">
+        Showing the {RECENT_SIGNAL_LIMIT} most recent signals.{' '}
+        <a
+          href="/events"
+          onClick={(event) => {
+            event.preventDefault();
+            onViewAllEvents?.();
+          }}
+        >
+          View all events
+        </a>
+      </p>
       <div className="telemetry-summary" aria-label="Telemetry summary">
         <article className="telemetry-summary-card">
           <span>Loaded signals</span>
@@ -171,9 +186,6 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
         </article>
       </div>
       <form className="scenario-footer" onSubmit={handleInject}>
-        <label htmlFor="scenario-select" className="scenario-label">
-          Preview a fixed synthetic scenario
-        </label>
         <div className="scenario-select-wrapper">
           <select
             id="scenario-select"
@@ -207,17 +219,6 @@ export const ScenarioInjector: React.FC<ScenarioInjectorProps> = ({
             <Send size={15} /> Inject scenario
           </Button>
         </div>
-        <p className="selected-scenario-copy">
-          <strong>{preset.title}:</strong> {preset.description}
-        </p>
-        {feedback && (
-          <div role="status" className={`feedback feedback-${feedback.type}`}>
-            <Badge variant={feedback.type === 'success' ? 'success' : 'danger'}>
-              {feedback.type}
-            </Badge>
-            <span>{feedback.message}</span>
-          </div>
-        )}
       </form>
     </section>
   );

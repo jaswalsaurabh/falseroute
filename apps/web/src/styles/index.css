@@ -897,6 +897,20 @@ code {
   background: var(--terminal-bg);
   color: var(--terminal-text);
 }
+.pane-orchestrator {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+.pane-orchestrator .terminal {
+  display: flex;
+  min-height: 0;
+  flex: 0 0 clamp(360px, 44vh, 460px);
+  height: clamp(360px, 44vh, 460px);
+  flex-direction: column;
+  overflow: hidden;
+}
 .terminal-heading {
   min-height: 46px;
   justify-content: space-between;
@@ -939,12 +953,31 @@ code {
   font-family: var(--font-family-mono);
   font-size: 12px;
 }
+.terminal-log-scroll {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--terminal-muted) var(--terminal-bg);
+}
+.terminal-log-scroll:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
 .terminal-log li {
   display: grid;
-  grid-template-columns: 72px auto 1fr auto;
+  grid-template-columns: 72px auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 6px 0;
+}
+.terminal-log li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .terminal-log time {
   color: var(--terminal-muted);
@@ -1151,7 +1184,51 @@ code {
   font-size: 12px;
 }
 .app-toast {
+  width: min(380px, calc(100vw - 32px));
+  min-height: 58px;
+  padding: 13px 42px 13px 15px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-modal);
+  color: var(--text-main);
+  box-shadow: var(--elevation-modal);
   font-size: 13px;
+  line-height: 1.4;
+}
+.app-toast[data-type='loading'] {
+  border-color: var(--border-focus);
+}
+.app-toast[data-type='success'] {
+  border-color: var(--status-success-border);
+}
+.app-toast[data-type='error'] {
+  border-color: var(--status-danger-border);
+}
+.app-toast [data-title] {
+  color: var(--text-main);
+  font-weight: 750;
+}
+.app-toast [data-description] {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.app-toast [data-close-button] {
+  top: 50%;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-card-accent);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+.app-toast [data-close-button]:hover {
+  border-color: var(--border-focus);
+  background: var(--surface-input);
+  color: var(--text-main);
 }
 @media (max-width: 1100px) {
   .workspace-grid {
@@ -1246,6 +1323,130 @@ code {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+.event-detail-modal {
+  max-width: 760px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+.event-detail-modal > div:first-child {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 24px 28px 18px;
+  background: var(--surface-modal);
+}
+.event-detail-modal > div:first-child h2 {
+  max-width: calc(100% - 56px);
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(20px, 3vw, 26px) !important;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+.event-detail-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0 28px 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.event-detail-section + .event-detail-section {
+  margin-top: 28px;
+}
+.event-detail-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.event-detail-section h4 {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-size-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.event-detail-badges {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.event-detail-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--border-subtle);
+}
+.event-detail-metadata > div {
+  min-width: 0;
+  padding: 14px;
+  background: var(--surface-card-accent);
+}
+.event-detail-metadata dt {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-size-xs);
+}
+.event-detail-metadata dd {
+  margin: 0;
+  color: var(--text-main);
+  font-size: var(--text-size-sm);
+  overflow-wrap: anywhere;
+}
+.event-detail-metadata code {
+  color: var(--accent-indigo);
+  font-size: var(--text-size-xs);
+  overflow-wrap: anywhere;
+}
+.event-detail-accent {
+  color: var(--status-simulated-text);
+  font-size: var(--text-size-xs);
+  overflow-wrap: anywhere;
+}
+.event-detail-risk-indicators {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.event-detail-pending {
+  padding: 20px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card-accent);
+  color: var(--text-muted);
+  font-size: var(--text-size-sm);
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .event-detail-modal > div:first-child {
+    padding: 20px 18px 14px;
+  }
+  .event-detail-content {
+    padding: 0 18px 20px;
+  }
+  .event-detail-section-heading {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .event-detail-badges {
+    justify-content: flex-start;
+  }
+  .event-detail-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .event-detail-metadata {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .sr-only {
@@ -1432,6 +1633,22 @@ code {
   display: grid;
   gap: 9px;
   padding: 16px;
+}
+.telemetry-feed-disclosure {
+  margin: -8px 18px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-size-xs);
+  line-height: 1.5;
+}
+.telemetry-feed-disclosure a {
+  color: var(--accent-teal);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.telemetry-feed-disclosure a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .telemetry-event {
   width: 100%;

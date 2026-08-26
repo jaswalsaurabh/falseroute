@@ -78,12 +78,10 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!document.cookie.includes('falseroute_operator_csrf=')) {
-      setAuthChecked(true);
-      return;
-    }
     let cancelled = false;
     const client = new ApiClient(null);
+    // The session cookie is HttpOnly, so the browser cannot reliably tell us
+    // whether a valid cookie session exists before asking the API.
     void client
       .validateCredentials()
       .then(() => {
@@ -238,7 +236,12 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-shell">
-      <Toaster position="bottom-right" toastOptions={{ className: 'app-toast' }} />
+      <Toaster
+        position="bottom-right"
+        theme={theme}
+        closeButton
+        toastOptions={{ className: 'app-toast', duration: 2800 }}
+      />
       <Header
         isUnlocked={operatorToken !== null}
         onLock={lockSession}
@@ -265,6 +268,7 @@ export const App: React.FC = () => {
             apiClient={apiClient!}
             onRefresh={loadEvents}
             onSelectEvent={selectEvent}
+            onViewAllEvents={() => navigate('/events')}
             onClearActivity={() => setActivityEvents([])}
             campaign={campaign}
             campaignStarting={campaignStarting}

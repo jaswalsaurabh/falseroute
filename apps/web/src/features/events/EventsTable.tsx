@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, ExternalLink } from 'lucide-react';
 import { type IntrusionEvent, type ProcessingStatus } from '@false-route/contracts';
 import { Badge, type BadgeVariant } from '../../components/Badge.js';
 import { Button } from '../../components/Button.js';
+import { eventLabel } from '../../scenario-label.js';
 
 export type EventSortField = 'eventType' | 'sourceIp' | 'status' | 'receivedAt';
 export type SortDirection = 'asc' | 'desc';
@@ -36,13 +37,6 @@ const statusVariant: Record<ProcessingStatus, BadgeVariant> = {
   DECIDED: 'success',
   FAILED: 'danger',
 };
-
-function formatEventType(eventType: string): string {
-  return eventType
-    .split('_')
-    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
-    .join(' ');
-}
 
 const SortableHeader: React.FC<SortableHeaderProps> = ({ field, label, sort, onSortChange }) => {
   const isActive = sort.field === field;
@@ -115,7 +109,7 @@ export const EventsTable: React.FC<EventsTableProps> = ({
           {events.map((event) => (
             <tr key={event.id}>
               <th scope="row">
-                <span className="events-table-signal">{formatEventType(event.eventType)}</span>
+                <span className="events-table-signal">{eventLabel(event)}</span>
                 <code className="events-table-id">{event.id.slice(0, 8)}</code>
               </th>
               <td>
@@ -138,7 +132,7 @@ export const EventsTable: React.FC<EventsTableProps> = ({
                   type="button"
                   variant="secondary"
                   className="events-table-details"
-                  aria-label={`View details for ${formatEventType(event.eventType)} from ${event.sourceIp}`}
+                  aria-label={`View details for ${eventLabel(event)} from ${event.sourceIp}`}
                   onClick={() => onSelectEvent(event)}
                 >
                   <span>View details</span>

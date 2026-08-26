@@ -24,6 +24,7 @@ export interface ControlRoomPageProps {
   readonly apiClient: ApiClient;
   readonly onRefresh: () => void;
   readonly onSelectEvent: (event: IntrusionEvent) => void;
+  readonly onViewAllEvents: () => void;
   readonly onClearActivity: () => void;
   readonly campaign: import('@false-route/contracts').CampaignRun | null;
   readonly campaignStarting: boolean;
@@ -40,6 +41,7 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
   apiClient,
   onRefresh,
   onSelectEvent,
+  onViewAllEvents,
   onClearActivity,
   campaign,
   campaignStarting,
@@ -93,6 +95,7 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
           client={apiClient}
           events={events}
           onSelectEvent={onSelectEvent}
+          onViewAllEvents={onViewAllEvents}
           onInjected={onRefresh}
         />
         <WorkflowTimeline
