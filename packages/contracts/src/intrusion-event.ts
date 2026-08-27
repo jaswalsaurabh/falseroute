@@ -7,6 +7,7 @@ import {
   TargetAssetIdentifierSchema,
   DecoyIdentifierSchema,
 } from './primitives.js';
+import { ScenarioKindSchema } from './scenario.js';
 
 /**
  * Processing lifecycle status for an intrusion event.
@@ -50,6 +51,7 @@ const BaseSimulatedEventInputSchema = z.object({
   sourceIp: IpAddressSchema,
   targetAsset: TargetAssetIdentifierSchema,
   eventType: EventTypeSchema,
+  scenarioKind: ScenarioKindSchema.optional(),
   failedLoginCount: z.number().int().min(0).max(1000),
   riskIndicators: z.array(z.string().min(1).max(100)).max(20),
   containmentMode: ContainmentModeSchema,

@@ -81,6 +81,30 @@ variable "web_image_tag" {
   }
 }
 
+variable "worker_gemini_model" {
+  type        = string
+  description = "Gemini model used for worker enrichment; changeable without code changes"
+  default     = "gemini-3.5-flash"
+}
+
+variable "worker_gemini_request_timeout_ms" {
+  type        = number
+  description = "Per-request Gemini timeout in milliseconds"
+  default     = 30000
+}
+
+variable "worker_gemini_operation_deadline_ms" {
+  type        = number
+  description = "Total bounded Gemini operation deadline in milliseconds"
+  default     = 60000
+}
+
+variable "worker_gemini_max_retries" {
+  type        = number
+  description = "Maximum bounded Gemini retries after the initial request"
+  default     = 1
+}
+
 variable "billing_account_id" {
   type        = string
   description = "Google Cloud Billing Account ID for budget alerts (e.g., 012345-6789AB-CDEF01)"

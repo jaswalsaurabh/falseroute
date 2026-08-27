@@ -45,6 +45,8 @@ export const App: React.FC = () => {
   const [campaign, setCampaign] = useState<CampaignRun | null>(null);
   const [campaignStarting, setCampaignStarting] = useState(false);
   const [campaignError, setCampaignError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [eventDetailError, setEventDetailError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<IntrusionEvent | null>(null);
   const [selectedDecision, setSelectedDecision] = useState<DeceptionDecision | null>(null);
   const [selectedEffect, setSelectedEffect] = useState<SimulatedDeceptionEffect | null>(null);
@@ -78,12 +80,10 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!document.cookie.includes('falseroute_operator_csrf=')) {
-      setAuthChecked(true);
-      return;
-    }
     let cancelled = false;
     const client = new ApiClient(null);
+    // The session cookie is HttpOnly, so the browser cannot reliably tell us
+    // whether a valid cookie session exists before asking the API.
     void client
       .validateCredentials()
       .then(() => {
@@ -100,6 +100,7 @@ export const App: React.FC = () => {
 
   const loadEvents = useCallback(async () => {
     if (!apiClient) return;
+    setDashboardError(null);
     try {
       const response = await apiClient.listEvents({ limit: 50, offset: 0 });
       setEvents(response.events);
@@ -120,6 +121,11 @@ export const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to fetch intrusion events:', error);
+      setDashboardError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to refresh recorded signals. The last known view is still shown.',
+      );
     }
   }, [apiClient]);
 
@@ -149,6 +155,7 @@ export const App: React.FC = () => {
       setActivityEvents([]);
       setCampaign(null);
       setCampaignError(null);
+      setDashboardError(null);
       setStreamStatus('DISCONNECTED');
       return;
     }
@@ -197,6 +204,7 @@ export const App: React.FC = () => {
     setSelectedEvent(event);
     setSelectedDecision(null);
     setSelectedEffect(null);
+    setEventDetailError(null);
     if (!apiClient) return;
     try {
       const detail = await apiClient.getEvent(event.id);
@@ -205,6 +213,11 @@ export const App: React.FC = () => {
       setSelectedEffect(detail.simulatedEffect ?? null);
     } catch (error) {
       console.error('Failed to load event details:', error);
+      setEventDetailError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load the complete event record. The summary is still available.',
+      );
     }
   };
 
@@ -222,6 +235,7 @@ export const App: React.FC = () => {
     setActivityEvents([]);
     setCampaign(null);
     setCampaignError(null);
+    setEventDetailError(null);
     clearSelection();
   };
 
@@ -238,7 +252,12 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-shell">
-      <Toaster position="bottom-right" toastOptions={{ className: 'app-toast' }} />
+      <Toaster
+        position="bottom-right"
+        theme={theme}
+        closeButton
+        toastOptions={{ className: 'app-toast', duration: 2800 }}
+      />
       <Header
         isUnlocked={operatorToken !== null}
         onLock={lockSession}
@@ -247,6 +266,9 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
         onInject={focusScenarioInjector}
+        eventCount={totalEvents}
+        streamStatus={streamStatus}
+        systemMode={systemMode}
       />
       <main className="app-container">
         {!authChecked ? (
@@ -265,11 +287,13 @@ export const App: React.FC = () => {
             apiClient={apiClient!}
             onRefresh={loadEvents}
             onSelectEvent={selectEvent}
+            onViewAllEvents={() => navigate('/events')}
             onClearActivity={() => setActivityEvents([])}
             campaign={campaign}
             campaignStarting={campaignStarting}
             onStartCampaign={() => void startCampaign()}
             campaignError={campaignError}
+            dashboardError={dashboardError}
           />
         )}
       </main>
@@ -279,6 +303,8 @@ export const App: React.FC = () => {
         event={selectedEvent}
         decision={selectedDecision}
         simulatedEffect={selectedEffect}
+        detailError={eventDetailError}
+        onRetry={() => selectedEvent && void selectEvent(selectedEvent)}
       />
     </div>
   );

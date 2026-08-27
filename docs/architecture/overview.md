@@ -1,7 +1,6 @@
 # Architecture Overview
 
 > **Status:** Approved architecture; ADR-0005 accepted; live cloud mutation not activated
->
 > **Approved:** August 21, 2026
 >
 > **Last verified:** August 25, 2026
@@ -30,7 +29,7 @@ An operator chooses one of the fixed scenarios exposed by the shared scenario ca
 
 The Worker validates the envelope and its scenario-specific evidence, builds bounded incident context, and asks Gemini for structured analysis when a Gemini key is configured. Gemini can request only the five tools defined by ADR-0005. Deterministic application policy then rejects, narrows, or authorizes those requests. The model never owns the final decision and never receives cloud credentials.
 
-The authorized action path is implemented through a durable tool gateway, but the current Cloud Run decoy, false-route, and Cloud Armor adapters are simulations. They record simulated resources, leases, provider intent, results, and cleanup evidence without changing cloud infrastructure or customer traffic. Live cloud mutation has not been implemented, verified, or activated.
+The authorized action path is implemented through a durable tool gateway, but the current Cloud Run decoy, false-route, and Cloud Armor adapters are simulations. They record simulated resources, leases, provider intent, results, and cleanup evidence without changing cloud infrastructure or customer traffic. Live cloud mutation has not been implemented, verified, or activated. Under accepted ADR-0005, all live cloud mutations remain disabled until activation evidence and an operator activation record are complete.
 
 ## Component Boundaries
 

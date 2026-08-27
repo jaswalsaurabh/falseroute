@@ -12,6 +12,7 @@ const event: IntrusionEvent = {
   sourceIp: '198.51.100.25',
   targetAsset: 'mock-admin-portal',
   eventType: 'UNAUTHORIZED_ACCESS_ATTEMPT',
+  scenarioKind: 'ENV_FILE_PROBE',
   failedLoginCount: 3,
   riskIndicators: ['SYNTHETIC_PROBE'],
   containmentMode: 'SIMULATED',
@@ -35,7 +36,7 @@ describe('EventsTable', () => {
     expect(screen.getByRole('columnheader', { name: /received/i }).getAttribute('aria-sort')).toBe(
       'descending',
     );
-    expect(screen.getByRole('rowheader', { name: /unauthorized access attempt/i })).toBeDefined();
+    expect(screen.getByRole('rowheader', { name: /.env configuration probe/i })).toBeDefined();
   });
 
   it('requests the opposite direction when the active sort is selected', () => {
@@ -66,7 +67,7 @@ describe('EventsTable', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'View details for Unauthorized Access Attempt from 198.51.100.25',
+        name: 'View details for .env Configuration Probe from 198.51.100.25',
       }),
     );
     expect(onSelectEvent).toHaveBeenCalledWith(event);

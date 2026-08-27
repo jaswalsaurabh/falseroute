@@ -40,6 +40,26 @@ Component tokens must derive from semantic tokens (following the primitive -> se
 - Enforce the token boundary with lint rules: raw colors and direct primitive-token use are allowed only in token definition files.
 - Add automated theme-completeness, contrast, and reduced-motion checks as the token surface grows.
 
+## Card Grammar
+
+FalseRoute cards share a common structural treatment, but directional color accents are reserved for
+meaningful hierarchy and state. Do not add an accent merely to make a card more visually prominent.
+
+| Card role   | Treatment                                                       | Use for                                                                                      |
+| ----------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Base card   | Neutral surface, subtle border, shared radius and elevation     | Ordinary metrics, summaries, and supporting content                                          |
+| Layer card  | Base card with a semantic top accent                            | Major product layers such as Telemetry, Orchestrator, Containment, and Decision intelligence |
+| State card  | Base card with a semantic left accent                           | Live event severity, degraded state, warnings, failures, or other status-bearing content     |
+| Metric card | Base card with no directional accent; emphasize value and label | Aggregate counts and operational summaries                                                   |
+| Alert card  | State treatment plus explicit status text and icon              | Operator attention, unavailable data, and failure messages                                   |
+
+Top accents identify what a section is. Left accents identify what state a piece of content is in.
+They are complementary patterns and should not be applied together unless the component has both
+responsibilities. Telemetry event rows retain left accents for event state; their parent workspace
+section may use a top accent for the Telemetry layer. Neutral cards remain the default for content
+without a distinct layer or state. All variants must consume semantic tokens and preserve text or
+icon labels so color is never the only state signal.
+
 ## Component Layers
 
 1. **UI primitives:** Small accessible elements such as Button, Input, Badge, Dialog, and Table foundations.

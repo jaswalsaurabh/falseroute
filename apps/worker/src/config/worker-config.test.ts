@@ -97,6 +97,7 @@ describe('worker configuration claim lease safety margin', () => {
       ...validWorkerEnv,
       NODE_ENV: 'production',
       AUTONOMOUS_PUSH_MODE: 'OIDC',
+      PUBSUB_PROJECT_ID: 'example-project',
       PUBSUB_OIDC_AUDIENCE: 'https://worker.example.com/pubsub/push',
       PUBSUB_OIDC_SERVICE_ACCOUNT: 'pubsub-invoker@example-project.iam.gserviceaccount.com',
       CLEANUP_OIDC_SERVICE_ACCOUNT: 'cleanup@example-project.iam.gserviceaccount.com',

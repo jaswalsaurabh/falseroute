@@ -310,7 +310,7 @@ describe('LiveAutonomousGeminiAdapter', () => {
     }
   });
 
-  it('enforces the one-provider-call limit and does not issue retries on failure', async () => {
+  it('retries transient provider failures with the bounded retry policy', async () => {
     const adapter = new LiveAutonomousGeminiAdapter({
       apiKey: 'test-api-key',
       modelName: 'gemini-2.5-flash',
@@ -328,7 +328,7 @@ describe('LiveAutonomousGeminiAdapter', () => {
     const result = await adapter.analyzeEnvelope(mockEnvelope);
 
     expect(result.status).toBe('UNAVAILABLE');
-    expect(generateContentMock).toHaveBeenCalledTimes(1);
+    expect(generateContentMock).toHaveBeenCalledTimes(3);
   });
 
   it('validates a bounded incident assessment against supplied context', async () => {

@@ -22,16 +22,16 @@ describe('Web Dashboard Unit Tests', () => {
     expect(readThemePreference()).toBe('dark');
   });
 
-  it('renders controlled demonstration unlock screen by default', () => {
+  it('renders controlled demonstration unlock screen by default', async () => {
     render(<App />);
-    expect(screen.getByText('Controlled Demonstration Unlock')).toBeDefined();
-    expect(screen.getByLabelText('Operator Access Token')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Unlock Dashboard' })).toBeDefined();
+    expect(await screen.findByText('Controlled Demonstration Unlock')).toBeDefined();
+    expect(await screen.findByLabelText('Operator Access Token')).toBeDefined();
+    expect(await screen.findByRole('button', { name: 'Unlock Dashboard' })).toBeDefined();
   });
 
   it('unlocks dashboard when valid operator access token is submitted', async () => {
     // Mock global fetch for readiness check and event listing
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (url.endsWith('/api/v1/ready')) {
         return Promise.resolve({
           ok: true,
@@ -69,9 +69,12 @@ describe('Web Dashboard Unit Tests', () => {
         });
       }
       if (url.endsWith('/api/v1/operator/session')) {
+        const hasBearerToken = Boolean(
+          (options?.headers as Record<string, string> | undefined)?.Authorization,
+        );
         return Promise.resolve({
-          ok: true,
-          status: 200,
+          ok: hasBearerToken,
+          status: hasBearerToken ? 200 : 401,
           json: () =>
             Promise.resolve({
               authenticated: true,
@@ -96,7 +99,7 @@ describe('Web Dashboard Unit Tests', () => {
 
     render(<App />);
 
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = await screen.findByLabelText('Operator Access Token');
     fireEvent.change(input, { target: { value: 'demo-secret-token-123' } });
 
     const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
@@ -255,7 +258,7 @@ describe('Web Dashboard Unit Tests', () => {
 
     let eventStatus: 'PENDING' | 'DECIDED' = 'PENDING';
 
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (url.endsWith('/api/v1/ready')) {
         return Promise.resolve({
           ok: true,
@@ -305,9 +308,12 @@ describe('Web Dashboard Unit Tests', () => {
         });
       }
       if (url.endsWith('/api/v1/operator/session')) {
+        const hasBearerToken = Boolean(
+          (options?.headers as Record<string, string> | undefined)?.Authorization,
+        );
         return Promise.resolve({
-          ok: true,
-          status: 200,
+          ok: hasBearerToken,
+          status: hasBearerToken ? 200 : 401,
           json: () =>
             Promise.resolve({
               authenticated: true,
@@ -333,7 +339,7 @@ describe('Web Dashboard Unit Tests', () => {
     render(<App />);
 
     // Unlock dashboard
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = await screen.findByLabelText('Operator Access Token');
     fireEvent.change(input, { target: { value: 'demo-secret-token-123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Unlock Dashboard' }));
 
@@ -345,7 +351,7 @@ describe('Web Dashboard Unit Tests', () => {
 
     // Inspect the pending event
     const inspectButton = screen.getByRole('button', {
-      name: 'Inspect unauthorized access attempt event',
+      name: 'Inspect Unauthorized Access Attempt event',
     });
     fireEvent.click(inspectButton);
 
