@@ -15,6 +15,8 @@ export interface EventDetailModalProps {
   readonly event: IntrusionEvent | null;
   readonly decision: DeceptionDecision | null;
   readonly simulatedEffect?: SimulatedDeceptionEffect | null | undefined;
+  readonly detailError?: string | null;
+  readonly onRetry?: (() => void) | undefined;
 }
 
 export const EventDetailModal: React.FC<EventDetailModalProps> = ({
@@ -23,6 +25,8 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   event,
   decision,
   simulatedEffect,
+  detailError = null,
+  onRetry,
 }) => {
   if (!event) return null;
 
@@ -34,6 +38,22 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
       className="event-detail-modal"
     >
       <div className="event-detail-content">
+        {detailError && (
+          <div className="page-alert page-alert-error" role="alert">
+            <span>
+              <strong>Event details unavailable.</strong> {detailError}
+            </span>
+            {onRetry && (
+              <button
+                type="button"
+                className="btn btn-secondary page-alert-action"
+                onClick={onRetry}
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        )}
         {/* Event Evidence Section */}
         <section className="event-detail-section" aria-labelledby="event-evidence-heading">
           <div className="event-detail-section-heading">

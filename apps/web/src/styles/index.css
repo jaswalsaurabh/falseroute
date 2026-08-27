@@ -1539,6 +1539,9 @@ code {
   flex-wrap: wrap;
   gap: 10px;
 }
+.topbar-status .status-chip:first-child {
+  background: var(--surface-card-accent);
+}
 .status-chip {
   display: inline-flex;
   align-items: center;
@@ -1847,6 +1850,12 @@ code {
   height: 18px;
   background: var(--surface-card);
 }
+.workflow-step.is-current {
+  color: var(--text-main);
+}
+.workflow-step.is-current > span {
+  box-shadow: 0 0 0 3px var(--connection-success-halo);
+}
 .risk-card {
   margin-top: 8px;
   padding: 17px;
@@ -1874,6 +1883,12 @@ code {
 }
 .unavailable-card {
   background: var(--surface-card-accent);
+  border-left: 3px solid var(--status-warning-text);
+}
+.pane-containment .containment-stats {
+  opacity: 0.78;
+}
+.pane-containment .unavailable-card {
   border-left: 3px solid var(--status-warning-text);
 }
 
@@ -2183,6 +2198,59 @@ code {
   }
 }
 
+/* Shared feedback primitives keep form and async states consistent across routes. */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-unit-xs);
+}
+.form-field-label {
+  color: var(--text-body);
+  font-size: var(--text-size-sm);
+  font-weight: 500;
+}
+.form-field-helper,
+.form-field-error {
+  font-size: var(--text-size-xs);
+}
+.form-field-helper {
+  color: var(--text-muted);
+}
+.form-field-error {
+  color: var(--status-danger-text);
+}
+.input-field-error {
+  border-color: var(--border-danger);
+}
+.page-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-danger);
+  border-radius: var(--radius-control);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+.page-alert > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.page-alert-action {
+  flex: none;
+}
+
+@media (max-width: 560px) {
+  .page-alert {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .page-alert-action {
+    width: 100%;
+  }
+}
+
 /* Responsive layout contract: every grid item may shrink, controls may wrap,
    and the dense event table keeps its accessible column structure in a local
    scroll region on narrow screens. */
@@ -2434,5 +2502,10 @@ code {
   .events-table-scroll {
     overscroll-behavior-inline: contain;
     scrollbar-width: thin;
+  }
+
+  /* Keep the action meaning visible even when the table needs horizontal scrolling. */
+  .events-table-details span {
+    display: inline;
   }
 }

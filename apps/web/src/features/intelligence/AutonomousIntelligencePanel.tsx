@@ -65,8 +65,12 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
   campaignStarting = false,
   campaignError = null,
 }) => {
-  const latestActivity = activityEvents[0];
-  const hasDegradedActivity = activityEvents.some(
+  const activeCorrelationId = activityEvents[0]?.correlationId;
+  const currentActivityEvents = activeCorrelationId
+    ? activityEvents.filter((event) => event.correlationId === activeCorrelationId)
+    : [];
+  const latestActivity = currentActivityEvents[0];
+  const hasDegradedActivity = currentActivityEvents.some(
     (event) => event.provenance === 'UNAVAILABLE' || event.eventType === 'GEMINI_ANALYSIS_DEGRADED',
   );
   const state = loading
@@ -76,7 +80,7 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
       : hasDegradedActivity
         ? 'degraded'
         : 'ready';
-  const policyProjections = activityEvents
+  const policyProjections = currentActivityEvents
     .filter(
       (event) =>
         event.eventType === 'TOOL_AUTHORIZED' ||

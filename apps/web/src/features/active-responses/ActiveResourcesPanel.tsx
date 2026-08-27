@@ -12,7 +12,7 @@ export const ActiveResourcesPanel: React.FC = () => (
           <span className="pane-step">03</span>Containment
           <span className="sr-only">3. Active Deception &amp; Quarantine State</span>
         </h2>
-        <p>Owned decoys, routes, and TTL leases</p>
+        <p>Owned decoys, routes, and TTL leases · status unavailable</p>
       </div>
       <IconBadge tone="warning" label="Unavailable" tooltip="Unavailable">
         <TriangleAlert size={13} aria-hidden="true" />

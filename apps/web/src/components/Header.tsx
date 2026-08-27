@@ -14,6 +14,8 @@ export interface HeaderProps {
   readonly onToggleTheme?: () => void;
   readonly onInject?: () => void;
   readonly eventCount?: number;
+  readonly streamStatus?: 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
+  readonly systemMode?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,7 +27,23 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   onInject,
   eventCount = 0,
+  streamStatus = 'DISCONNECTED',
+  systemMode = 'LOCAL_FAKE',
 }) => {
+  const streamLabel =
+    streamStatus === 'CONNECTED'
+      ? 'Live stream'
+      : streamStatus === 'DISCONNECTED'
+        ? 'Stream offline'
+        : streamStatus === 'RECONNECTING'
+          ? 'Reconnecting'
+          : 'Connecting';
+  const streamTone =
+    streamStatus === 'CONNECTED'
+      ? 'live'
+      : streamStatus === 'DISCONNECTED'
+        ? 'warning'
+        : 'observed';
   return (
     <header className="topbar">
       <div className="brand-lockup" role="img" aria-label="FalseRoute">
@@ -48,6 +66,15 @@ export const Header: React.FC<HeaderProps> = ({
             <RouteToggle route={route} onNavigate={onNavigate} eventCount={eventCount} />
           </nav>
           <div className="topbar-right">
+            <div className="topbar-status" aria-label="System status">
+              <span className="status-chip status-chip-compact">
+                <span className={`status-dot status-dot-${streamTone}`} aria-hidden="true" />
+                <strong>{streamLabel}</strong>
+              </span>
+              <span className="status-chip status-chip-compact">
+                <strong>{systemMode.replaceAll('_', ' ')}</strong>
+              </span>
+            </div>
             <div className="topbar-actions">
               <Button
                 variant="secondary"

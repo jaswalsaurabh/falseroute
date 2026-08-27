@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Button } from './Button.js';
 
@@ -11,13 +11,51 @@ export interface ModalProps {
 }
 
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, className, children }) => {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!isOpen) return;
 
+    triggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    const panel = panelRef.current;
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    const focusTimer = window.setTimeout(
+      () => panel?.querySelector<HTMLElement>(focusableSelector)?.focus(),
+      0,
+    );
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab' || !panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute('disabled'),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
     return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
+      triggerRef.current?.focus();
     };
   }, [isOpen]);
 
@@ -27,7 +65,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, className,
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
       style={{
         position: 'fixed',
         inset: 0,
@@ -44,6 +82,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, className,
       }}
     >
       <div
+        ref={panelRef}
         className={`modal-panel${className ? ` ${className}` : ''}`}
         style={{
           backgroundColor: 'var(--surface-modal)',
@@ -70,10 +109,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, className,
             paddingBottom: 'var(--space-unit-sm)',
           }}
         >
-          <h2
-            id="modal-title"
-            style={{ fontSize: 'var(--text-size-xl)', color: 'var(--text-main)' }}
-          >
+          <h2 id={titleId} style={{ fontSize: 'var(--text-size-xl)', color: 'var(--text-main)' }}>
             {title}
           </h2>
           <Button variant="secondary" onClick={onClose} aria-label="Close dialog">

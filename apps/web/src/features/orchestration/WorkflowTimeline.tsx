@@ -61,8 +61,13 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
   useEffect(() => {
     if (events.length === 0) setVisibleLogCount(TERMINAL_LOG_PAGE_SIZE);
   }, [events.length]);
-  const stages = new Set(events.map((event) => event.stage));
-  const completedSteps = events.length
+  // Progress belongs to the newest correlation, not the whole audit stream.
+  const activeCorrelationId = events[0]?.correlationId;
+  const workflowEvents = activeCorrelationId
+    ? events.filter((event) => event.correlationId === activeCorrelationId)
+    : [];
+  const stages = new Set(workflowEvents.map((event) => event.stage));
+  const completedSteps = workflowEvents.length
     ? stages.has('COMPLETED') || stages.has('EXECUTED') || stages.has('FAKE_EXECUTED')
       ? 5
       : stages.has('AUTHORIZED') || stages.has('NARROWED') || stages.has('REJECTED')
@@ -73,6 +78,7 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             ? 2
             : 1
     : 0;
+  const currentStepIndex = completedSteps > 0 ? Math.min(completedSteps - 1, 5) : -1;
   const visibleEvents = events.slice(0, visibleLogCount);
   const hasMoreLogs = visibleEvents.length < events.length;
   const loadMoreLogs = () => {
@@ -124,7 +130,9 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
       <div className="workflow-steps" aria-label="Workflow stages">
         {['Ingest', 'Dedupe', 'Analyze', 'Policy', 'Execute', 'Lease'].map((step, index) => (
           <div
-            className={`workflow-step ${index < completedSteps ? 'is-complete' : ''}`}
+            className={`workflow-step ${index < completedSteps ? 'is-complete' : ''} ${index === currentStepIndex ? 'is-current' : ''}`}
+            aria-current={index === currentStepIndex ? 'step' : undefined}
+            aria-label={`${step}: ${index < completedSteps ? (index === currentStepIndex ? 'current' : 'complete') : 'not started'}`}
             key={step}
           >
             <span>{index < completedSteps ? <Check size={13} /> : <CircleDot size={13} />}</span>
@@ -160,7 +168,7 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
           <span className="decision-grid-label">
             <ShieldCheck size={13} aria-hidden="true" /> Policy decision
           </span>
-          <strong>{events[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
+          <strong>{workflowEvents[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
           <small>Deterministic authorization</small>
         </div>
         <div>
@@ -174,7 +182,7 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
           <span className="decision-grid-label">
             <Activity size={13} aria-hidden="true" /> State
           </span>
-          <strong>{events[0]?.stage ?? 'IDLE'}</strong>
+          <strong>{workflowEvents[0]?.stage ?? 'IDLE'}</strong>
           <small>Recorded workflow state</small>
         </div>
       </div>

@@ -30,6 +30,7 @@ export interface ControlRoomPageProps {
   readonly campaignStarting: boolean;
   readonly onStartCampaign: () => void;
   readonly campaignError: string | null;
+  readonly dashboardError: string | null;
 }
 
 export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
@@ -47,16 +48,21 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
   campaignStarting,
   onStartCampaign,
   campaignError,
+  dashboardError,
 }) => {
   const needsAttention = events.filter(
     (event) => event.status === 'FAILED' || event.status === 'PROCESSING',
   ).length;
-  const assessmentActivity = activityEvents.find(
+  const activeCorrelationId = activityEvents[0]?.correlationId;
+  const currentActivityEvents = activeCorrelationId
+    ? activityEvents.filter((event) => event.correlationId === activeCorrelationId)
+    : [];
+  const assessmentActivity = currentActivityEvents.find(
     (event) => event.eventType === 'GEMINI_ANALYSIS_COMPLETED',
   );
   const assessment = assessmentActivity?.payload?.['assessment'];
   const parsedAssessment = IncidentAssessmentSchema.safeParse(assessment);
-  const contextActivity = activityEvents.find(
+  const contextActivity = currentActivityEvents.find(
     (event) => event.eventType === 'INCIDENT_CONTEXT_BUILT',
   );
   const parsedContext = IncidentContextSchema.safeParse(contextActivity?.payload?.['context']);
@@ -94,6 +100,18 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
         />
       </section>
 
+      {dashboardError && (
+        <div className="page-alert page-alert-error" role="alert">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            <strong>Signal refresh failed.</strong> {dashboardError}
+          </span>
+          <button type="button" className="btn btn-secondary page-alert-action" onClick={onRefresh}>
+            Try again
+          </button>
+        </div>
+      )}
+
       <section className="workspace-grid" aria-label="FalseRoute workflow">
         <ScenarioInjector
           client={apiClient}
@@ -111,7 +129,7 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
       </section>
 
       <AutonomousIntelligencePanel
-        activityEvents={activityEvents}
+        activityEvents={currentActivityEvents}
         context={parsedContext.success ? parsedContext.data : null}
         assessment={parsedAssessment.success ? parsedAssessment.data : null}
         campaign={campaign}
