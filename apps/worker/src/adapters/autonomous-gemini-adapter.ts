@@ -12,10 +12,12 @@ import {
 } from '@false-route/contracts';
 import { classifyProviderError, type ClassifiedProviderError } from './error-classifier.js';
 import { ConcurrencyLimiter } from './concurrency-limiter.js';
+import { RetryPolicy, type RetryPolicyOptions } from './retry-policy.js';
 import { GEMINI_TOOL_DECLARATIONS } from '../tools/tool-declarations.js';
 import { type GeminiAttemptGate } from '../services/gemini-budget-service.js';
+import { type GeminiMetrics } from '../observability/gemini-metrics.js';
 
-export interface AutonomousGeminiAdapterOptions {
+export interface AutonomousGeminiAdapterOptions extends RetryPolicyOptions {
   readonly apiKey: string;
   readonly modelName: string;
   readonly requestTimeoutMs?: number;
@@ -23,6 +25,7 @@ export interface AutonomousGeminiAdapterOptions {
   readonly maxRetries?: number;
   readonly maxConcurrency?: number;
   readonly maxQueueSize?: number;
+  readonly metrics?: GeminiMetrics;
 }
 
 export interface AutonomousGeminiAdapter {
@@ -47,13 +50,17 @@ export class LiveAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
   private readonly operationDeadlineMs: number;
   private readonly maxRetries: number;
   private readonly limiter: ConcurrencyLimiter;
+  private readonly retryPolicy: RetryPolicy;
+  private readonly metrics: GeminiMetrics | undefined;
 
   constructor(options: AutonomousGeminiAdapterOptions) {
     this.client = new GoogleGenAI({ apiKey: options.apiKey });
     this.modelName = options.modelName;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 3000;
     this.operationDeadlineMs = options.operationDeadlineMs ?? 8000;
-    this.maxRetries = Math.min(Math.max(options.maxRetries ?? 0, 0), 1);
+    this.retryPolicy = new RetryPolicy(options);
+    this.maxRetries = this.retryPolicy.maxRetries;
+    this.metrics = options.metrics;
     this.limiter = new ConcurrencyLimiter({
       maxConcurrency: options.maxConcurrency ?? 2,
       maxQueueSize: options.maxQueueSize ?? 0,
@@ -94,6 +101,7 @@ export class LiveAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
       let result: AutonomousModelAnalysisResult | AutonomousDegradedModelResult | undefined;
       for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
         // Provider retries must remain sequential so the durable attempt gate accounts for each dispatch.
+        const operationStartedAt = Date.now();
         // eslint-disable-next-line no-await-in-loop
         result = await this.limiter.execute(
           async (limiterSignal) =>
@@ -108,10 +116,19 @@ export class LiveAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
             ),
           operationController.signal,
         );
+        this.metrics?.recordOperation({
+          model: this.modelName,
+          status: result.status,
+          latencyMs: Date.now() - operationStartedAt,
+        });
         if (result.status === 'SUCCESS' || result.status === 'INVALID_OUTPUT') return result;
         // Keep the backoff bounded and ordered with the next durable attempt.
-        // eslint-disable-next-line no-await-in-loop
-        if (attempt < this.maxRetries) await new Promise((resolve) => setTimeout(resolve, 250));
+        if (attempt < this.maxRetries) {
+          const delay = this.retryPolicy.calculateDelay(attempt);
+          if (delay >= deadlineAt - Date.now()) return result;
+          // eslint-disable-next-line no-await-in-loop
+          await this.retryPolicy.sleep(delay, operationController.signal);
+        }
       }
       return result!;
     } catch (err) {

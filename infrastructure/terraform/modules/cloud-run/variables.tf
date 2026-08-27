@@ -106,3 +106,23 @@ variable "worker_gemini_key_secret_id" {
   default     = null
   nullable    = true
 }
+
+variable "worker_gemini_model" {
+  type        = string
+  description = "Gemini model used for worker enrichment"
+}
+
+variable "worker_gemini_request_timeout_ms" {
+  type        = number
+  description = "Per-request Gemini timeout in milliseconds"
+}
+
+variable "worker_gemini_operation_deadline_ms" {
+  type        = number
+  description = "Total bounded Gemini operation deadline in milliseconds"
+}
+
+variable "worker_gemini_max_retries" {
+  type        = number
+  description = "Maximum bounded Gemini retries after the initial request"
+}

@@ -10,6 +10,7 @@ import { classifyProviderError, type ClassifiedProviderError } from './error-cla
 import { ConcurrencyLimiter } from './concurrency-limiter.js';
 import { RetryPolicy, type RetryPolicyOptions } from './retry-policy.js';
 import { type GeminiAttemptGate } from '../services/gemini-budget-service.js';
+import { type GeminiMetrics } from '../observability/gemini-metrics.js';
 
 /** Signals that the durable per-event attempt ceiling refused this dispatch. */
 class AttemptBudgetExhaustedError extends Error {}
@@ -21,6 +22,7 @@ export interface GeminiAdapterOptions extends RetryPolicyOptions {
   readonly operationDeadlineMs?: number;
   readonly maxConcurrency?: number;
   readonly maxQueueSize?: number;
+  readonly metrics?: GeminiMetrics;
 }
 
 export interface GeminiEnrichmentAdapter {
@@ -56,6 +58,7 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
   private readonly operationDeadlineMs: number;
   private readonly limiter: ConcurrencyLimiter;
   private readonly retryPolicy: RetryPolicy;
+  private readonly metrics: GeminiMetrics | undefined;
 
   constructor(options: GeminiAdapterOptions) {
     this.client = new GoogleGenAI({ apiKey: options.apiKey });
@@ -67,6 +70,7 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
       maxQueueSize: options.maxQueueSize ?? 0,
     });
     this.retryPolicy = new RetryPolicy(options);
+    this.metrics = options.metrics;
   }
 
   async enrichEvent(
@@ -99,7 +103,8 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
     }
 
     try {
-      return await this.limiter.execute(async (limiterSignal) => {
+      const operationStartedAt = Date.now();
+      const result = await this.limiter.execute(async (limiterSignal) => {
         return this.executeWithRetries(
           event,
           evaluatedAt,
@@ -109,6 +114,12 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
           attemptGate,
         );
       }, operationController.signal);
+      this.metrics?.recordOperation({
+        model: this.modelName,
+        status: 'status' in result ? result.status : 'SUCCESS',
+        latencyMs: Date.now() - operationStartedAt,
+      });
+      return result;
     } catch (err) {
       const classified = classifyProviderError(err);
       return this.buildDegradedResult(event.correlationId, classified, evaluatedAt);

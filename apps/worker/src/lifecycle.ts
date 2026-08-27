@@ -45,6 +45,7 @@ import {
 } from './integrations/pubsub-push-handler.js';
 import { LeaseCleanupService } from './cleanup/lease-cleanup.js';
 import { GeminiBudgetService } from './services/gemini-budget-service.js';
+import { createGeminiMetrics } from './observability/gemini-metrics.js';
 import { ToolGateway } from './tools/tool-gateway.js';
 import {
   FakeCloudRunAdapter,
@@ -143,6 +144,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       environment: config.NODE_ENV,
       enabled: config.ENABLE_TELEMETRY,
     });
+  const geminiMetrics = createGeminiMetrics(telemetry.meter);
 
   let isReadyState = false;
   let isStopping = false;
@@ -185,8 +187,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
         operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
         maxRetries: config.GEMINI_MAX_RETRIES,
+        initialDelayMs: config.GEMINI_RETRY_INITIAL_DELAY_MS,
+        maxDelayMs: config.GEMINI_RETRY_MAX_DELAY_MS,
+        backoffMultiplier: config.GEMINI_RETRY_BACKOFF_MULTIPLIER,
         maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
         maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+        metrics: geminiMetrics,
       });
     } else {
       logger.warn('No GEMINI_API_KEY provided; AI enrichment is unavailable (degraded state)');
@@ -238,8 +244,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
               requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
               operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
               maxRetries: config.GEMINI_MAX_RETRIES,
+              initialDelayMs: config.GEMINI_RETRY_INITIAL_DELAY_MS,
+              maxDelayMs: config.GEMINI_RETRY_MAX_DELAY_MS,
+              backoffMultiplier: config.GEMINI_RETRY_BACKOFF_MULTIPLIER,
               maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
               maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+              metrics: geminiMetrics,
             })
           : new FakeAutonomousGeminiAdapter('unavailable'));
 

@@ -96,25 +96,29 @@ module "secrets" {
 module "cloud_run" {
   source = "./modules/cloud-run"
 
-  project_id                    = var.project_id
-  region                        = var.region
-  domain_name                   = var.domain_name
-  api_sa_email                  = module.iam.api_sa_email
-  worker_sa_email               = module.iam.worker_sa_email
-  web_sa_email                  = module.iam.web_sa_email
-  pubsub_push_sa_email          = module.iam.pubsub_push_sa_email
-  cleanup_sa_email              = module.iam.cleanup_sa_email
-  vpc_connector_id              = module.network.vpc_connector_id
-  api_image_tag                 = var.api_image_tag
-  worker_image_tag              = var.worker_image_tag
-  web_image_tag                 = var.web_image_tag
-  api_database_url_secret_id    = module.secrets.api_database_url_secret_id
-  api_operator_token_secret_id  = module.secrets.api_operator_token_secret_id
-  api_replay_token_secret_id    = module.secrets.api_replay_token_secret_id
-  worker_database_url_secret_id = module.secrets.worker_database_url_secret_id
-  worker_gemini_key_secret_id   = module.secrets.worker_gemini_key_secret_id
-  worker_oidc_audience          = local.worker_oidc_audience
-  pubsub_topic_id               = local.pubsub_topic_id
+  project_id                          = var.project_id
+  region                              = var.region
+  domain_name                         = var.domain_name
+  api_sa_email                        = module.iam.api_sa_email
+  worker_sa_email                     = module.iam.worker_sa_email
+  web_sa_email                        = module.iam.web_sa_email
+  pubsub_push_sa_email                = module.iam.pubsub_push_sa_email
+  cleanup_sa_email                    = module.iam.cleanup_sa_email
+  vpc_connector_id                    = module.network.vpc_connector_id
+  api_image_tag                       = var.api_image_tag
+  worker_image_tag                    = var.worker_image_tag
+  web_image_tag                       = var.web_image_tag
+  api_database_url_secret_id          = module.secrets.api_database_url_secret_id
+  api_operator_token_secret_id        = module.secrets.api_operator_token_secret_id
+  api_replay_token_secret_id          = module.secrets.api_replay_token_secret_id
+  worker_database_url_secret_id       = module.secrets.worker_database_url_secret_id
+  worker_gemini_key_secret_id         = module.secrets.worker_gemini_key_secret_id
+  worker_gemini_model                 = var.worker_gemini_model
+  worker_gemini_request_timeout_ms    = var.worker_gemini_request_timeout_ms
+  worker_gemini_operation_deadline_ms = var.worker_gemini_operation_deadline_ms
+  worker_gemini_max_retries           = var.worker_gemini_max_retries
+  worker_oidc_audience                = local.worker_oidc_audience
+  pubsub_topic_id                     = local.pubsub_topic_id
 
   depends_on = [
     module.project_services,

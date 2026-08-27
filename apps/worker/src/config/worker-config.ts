@@ -14,9 +14,12 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     ),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
-  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(15000),
-  GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(30000),
-  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
+  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(30000),
+  GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(60000),
+  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(1),
+  GEMINI_RETRY_INITIAL_DELAY_MS: z.coerce.number().int().min(1).max(10000).default(200),
+  GEMINI_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(1).max(60000).default(1000),
+  GEMINI_RETRY_BACKOFF_MULTIPLIER: z.coerce.number().min(1).max(10).default(2),
   GEMINI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(2),
   GEMINI_MAX_QUEUE_SIZE: z.coerce.number().int().min(0).max(100).default(0),
   GEMINI_DAILY_TOKEN_LIMIT: z.coerce
@@ -39,7 +42,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   // Reserves time for deterministic policy evaluation and the fenced database transaction
   // after the complete Gemini operation deadline has elapsed.
   WORKER_CLAIM_PERSISTENCE_MARGIN_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
-  WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(45000),
+  WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(70000),
   WORKER_MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
   WORKER_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(5000),
