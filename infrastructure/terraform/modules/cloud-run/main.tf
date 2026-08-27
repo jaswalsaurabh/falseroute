@@ -181,6 +181,14 @@ resource "google_cloud_run_v2_service" "worker" {
         value = var.pubsub_push_sa_email
       }
       env {
+        name  = "PUBSUB_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "PUBSUB_TOPIC_ID"
+        value = var.pubsub_topic_id
+      }
+      env {
         name  = "PUBSUB_OIDC_AUDIENCE"
         value = var.worker_oidc_audience
       }
@@ -194,7 +202,7 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       env {
         name  = "WORKER_CLAIM_LEASE_MS"
-        value = "45000"
+        value = "70000"
       }
       env {
         name  = "WORKER_CLAIM_PERSISTENCE_MARGIN_MS"
@@ -202,15 +210,31 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       env {
         name  = "GEMINI_OPERATION_DEADLINE_MS"
-        value = "30000"
+        value = tostring(var.worker_gemini_operation_deadline_ms)
       }
       env {
         name  = "GEMINI_REQUEST_TIMEOUT_MS"
-        value = "15000"
+        value = tostring(var.worker_gemini_request_timeout_ms)
       }
       env {
         name  = "GEMINI_MODEL"
-        value = "gemini-3.5-flash"
+        value = var.worker_gemini_model
+      }
+      env {
+        name  = "GEMINI_MAX_RETRIES"
+        value = tostring(var.worker_gemini_max_retries)
+      }
+      env {
+        name  = "GEMINI_RETRY_INITIAL_DELAY_MS"
+        value = "200"
+      }
+      env {
+        name  = "GEMINI_RETRY_MAX_DELAY_MS"
+        value = "1000"
+      }
+      env {
+        name  = "GEMINI_RETRY_BACKOFF_MULTIPLIER"
+        value = "2"
       }
       env {
         name  = "WORKER_SHUTDOWN_TIMEOUT_MS"

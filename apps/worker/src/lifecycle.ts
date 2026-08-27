@@ -27,7 +27,10 @@ import {
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
-import { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
+import {
+  CampaignOrchestrator,
+  type CampaignEventPublisher,
+} from './orchestration/campaign-orchestrator.js';
 import {
   type AutonomousGeminiAdapter,
   LiveAutonomousGeminiAdapter,
@@ -42,12 +45,14 @@ import {
 } from './integrations/pubsub-push-handler.js';
 import { LeaseCleanupService } from './cleanup/lease-cleanup.js';
 import { GeminiBudgetService } from './services/gemini-budget-service.js';
+import { createGeminiMetrics } from './observability/gemini-metrics.js';
 import { ToolGateway } from './tools/tool-gateway.js';
 import {
   FakeCloudRunAdapter,
   FakeFalseRouteAdapter,
   FakeCloudArmorAdapter,
 } from './tools/fake-cloud-adapters.js';
+import { GooglePubSubEventPublisher } from './integrations/pubsub-event-publisher.js';
 
 export interface StartWorkerOptions {
   readonly config?: WorkerConfig | undefined;
@@ -61,9 +66,11 @@ export interface StartWorkerOptions {
   readonly telemetry?: TelemetryHandle | undefined;
   readonly autonomousOrchestrator?: AutonomousWorkflowOrchestrator | undefined;
   readonly autonomousWorkflowRepository?: AutonomousWorkflowRepository | undefined;
+  readonly campaignRepository?: CampaignRepository | undefined;
   readonly activityEventRepository?: ActivityEventRepository | undefined;
   readonly leaseCleanupService?: LeaseCleanupService | undefined;
   readonly pushHandler?: PubSubPushHandler | undefined;
+  readonly campaignPublisher?: CampaignEventPublisher | undefined;
   readonly oidcTokenVerifier?: OidcTokenVerifier | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
   readonly onShutdownComplete?: ((exitCode: number) => void) | undefined;
@@ -137,6 +144,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       environment: config.NODE_ENV,
       enabled: config.ENABLE_TELEMETRY,
     });
+  const geminiMetrics = createGeminiMetrics(telemetry.meter);
 
   let isReadyState = false;
   let isStopping = false;
@@ -179,8 +187,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
         operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
         maxRetries: config.GEMINI_MAX_RETRIES,
+        initialDelayMs: config.GEMINI_RETRY_INITIAL_DELAY_MS,
+        maxDelayMs: config.GEMINI_RETRY_MAX_DELAY_MS,
+        backoffMultiplier: config.GEMINI_RETRY_BACKOFF_MULTIPLIER,
         maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
         maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+        metrics: geminiMetrics,
       });
     } else {
       logger.warn('No GEMINI_API_KEY provided; AI enrichment is unavailable (degraded state)');
@@ -232,8 +244,12 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
               requestTimeoutMs: config.GEMINI_REQUEST_TIMEOUT_MS,
               operationDeadlineMs: config.GEMINI_OPERATION_DEADLINE_MS,
               maxRetries: config.GEMINI_MAX_RETRIES,
+              initialDelayMs: config.GEMINI_RETRY_INITIAL_DELAY_MS,
+              maxDelayMs: config.GEMINI_RETRY_MAX_DELAY_MS,
+              backoffMultiplier: config.GEMINI_RETRY_BACKOFF_MULTIPLIER,
               maxConcurrency: config.GEMINI_MAX_CONCURRENCY,
               maxQueueSize: config.GEMINI_MAX_QUEUE_SIZE,
+              metrics: geminiMetrics,
             })
           : new FakeAutonomousGeminiAdapter('unavailable'));
 
@@ -257,24 +273,31 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         );
 
       let campaignOrchestrator: CampaignOrchestrator | undefined;
-      if (
-        config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET' ||
-        config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR'
-      ) {
-        const campaignRepository = new CampaignRepository(db as PrismaClient);
-        campaignOrchestrator = new CampaignOrchestrator(
-          campaignRepository,
-          activityRepo,
-          {
-            publish: async (envelope) => {
-              const transportId = `campaign-${randomUUID()}`;
-              await campaignOrchestrator!.process(envelope, transportId);
-              return { transportId };
-            },
-          },
-          autonomousOrchestrator,
-        );
+      const campaignRepository =
+        options.campaignRepository ?? new CampaignRepository(db as PrismaClient);
+      let campaignPublisher = options.campaignPublisher;
+      if (!campaignPublisher && config.AUTONOMOUS_PUSH_MODE === 'OIDC') {
+        if (!config.PUBSUB_PROJECT_ID) {
+          throw new Error('OIDC campaign continuation requires PUBSUB_PROJECT_ID');
+        }
+        campaignPublisher = new GooglePubSubEventPublisher({
+          projectId: config.PUBSUB_PROJECT_ID,
+          topicId: config.PUBSUB_TOPIC_ID,
+        });
       }
+      campaignPublisher ??= {
+        publish: async (envelope) => {
+          const transportId = `campaign-${randomUUID()}`;
+          await campaignOrchestrator!.process(envelope, transportId);
+          return { transportId };
+        },
+      };
+      campaignOrchestrator = new CampaignOrchestrator(
+        campaignRepository,
+        activityRepo,
+        campaignPublisher,
+        autonomousOrchestrator,
+      );
 
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {

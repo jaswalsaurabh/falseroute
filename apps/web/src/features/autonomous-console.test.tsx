@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ScenarioInjector } from './simulator/ScenarioInjector.js';
 import { WorkflowTimeline } from './orchestration/WorkflowTimeline.js';
 import { ActiveResourcesPanel } from './active-responses/ActiveResourcesPanel.js';
@@ -23,6 +23,7 @@ describe('Autonomous Console Components', () => {
 
     expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
     expect(screen.getByRole('combobox', { name: /Select synthetic scenario/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: 'View all events' })).toBeDefined();
 
     // Switch scenario to WordPress probe
     fireEvent.change(screen.getByRole('combobox', { name: /Select synthetic scenario/i }), {
@@ -44,9 +45,10 @@ describe('Autonomous Console Components', () => {
         }),
       }),
     );
+    await waitFor(() => expect(mockClient.createAutonomousScenario).toHaveBeenCalledTimes(1));
     expect(
-      await screen.findByText(/Autonomous scenario accepted and delivered for evaluation/),
-    ).toBeDefined();
+      screen.queryByText(/Autonomous scenario accepted and delivered for evaluation/),
+    ).toBeNull();
   });
 
   it('WorkflowTimeline renders live SSE events with correct truthful badges', () => {
@@ -151,6 +153,29 @@ describe('Autonomous Console Components', () => {
     expect(screen.getAllByRole('img', { name: 'observed' }).length).toBeGreaterThan(0);
   });
 
+  it('WorkflowTimeline progressively reveals long terminal logs', () => {
+    const events = Array.from({ length: 10 }, (_, index) => ({
+      cursor: index + 1,
+      eventId: '11111111-1111-4111-8111-111111111111',
+      correlationId: 'corr-long-log',
+      stage: 'RECEIVED' as const,
+      eventType: 'INTRUSION_INGESTED' as const,
+      summary: `Trace entry ${index + 1}`,
+      provenance: 'OBSERVED' as const,
+      occurredAt: '2026-08-22T10:00:00.000Z',
+    }));
+
+    render(<WorkflowTimeline events={events} streamStatus="CONNECTED" />);
+
+    const logRegion = screen.getByRole('region', { name: 'Execution trace log' });
+    expect(logRegion).toBeDefined();
+    expect(screen.queryByText('Trace entry 10')).toBeNull();
+
+    fireEvent.scroll(logRegion);
+    expect(screen.getByText('Trace entry 10')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Load more logs/ })).toBeNull();
+  });
+
   it('ActiveResourcesPanel does not infer active resources from activity history', () => {
     render(<ActiveResourcesPanel />);
 
@@ -163,7 +188,7 @@ describe('Autonomous Console Components', () => {
   it('keeps assessment, decision ownership, and campaign state unavailable without authoritative payloads', () => {
     render(<AutonomousIntelligencePanel activityEvents={[]} />);
 
-    expect(screen.getByRole('heading', { name: 'Assessment & decision comparison' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Decision intelligence' })).toBeDefined();
     expect(screen.getByText(/No model output is inferred/)).toBeDefined();
     expect(screen.getByText(/No authoritative campaign payload is loaded/)).toBeDefined();
     expect(screen.getByText(/fake executed/i)).toBeDefined();

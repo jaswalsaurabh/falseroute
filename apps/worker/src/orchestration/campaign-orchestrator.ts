@@ -9,7 +9,7 @@ import { AutonomousWorkflowOrchestrator } from './autonomous-workflow.js';
 
 const SOURCE_IP = '192.0.2.10';
 
-interface CampaignEventPublisher {
+export interface CampaignEventPublisher {
   publish(envelope: IntrusionEventEnvelope): Promise<{ readonly transportId: string }>;
 }
 

@@ -14,9 +14,12 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     ),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
-  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(15000),
-  GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(30000),
-  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
+  GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(30000),
+  GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(60000),
+  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(1),
+  GEMINI_RETRY_INITIAL_DELAY_MS: z.coerce.number().int().min(1).max(10000).default(200),
+  GEMINI_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(1).max(60000).default(1000),
+  GEMINI_RETRY_BACKOFF_MULTIPLIER: z.coerce.number().min(1).max(10).default(2),
   GEMINI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(2),
   GEMINI_MAX_QUEUE_SIZE: z.coerce.number().int().min(0).max(100).default(0),
   GEMINI_DAILY_TOKEN_LIMIT: z.coerce
@@ -25,6 +28,8 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     .min(1)
     .max(1_000_000)
     .default(BUDGET_LIMITS.DAILY_GEMINI_TOKENS),
+  PUBSUB_PROJECT_ID: z.string().min(6).optional(),
+  PUBSUB_TOPIC_ID: z.string().min(3).default('falseroute-events'),
   AUTONOMOUS_PUSH_MODE: z
     .enum(['DISABLED', 'LOCAL_SHARED_SECRET', 'PUBSUB_EMULATOR', 'OIDC'])
     .default('DISABLED'),
@@ -37,7 +42,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
   // Reserves time for deterministic policy evaluation and the fenced database transaction
   // after the complete Gemini operation deadline has elapsed.
   WORKER_CLAIM_PERSISTENCE_MARGIN_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
-  WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(45000),
+  WORKER_CLAIM_LEASE_MS: z.coerce.number().int().min(1000).max(300000).default(70000),
   WORKER_MAX_PROCESSING_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   WORKER_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(8000),
   WORKER_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(5000),
@@ -97,6 +102,13 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
         code: z.ZodIssueCode.custom,
         path: ['CLEANUP_OIDC_SERVICE_ACCOUNT'],
         message: 'OIDC push mode requires the cleanup service-account identity',
+      });
+    }
+    if (config.AUTONOMOUS_PUSH_MODE === 'OIDC' && !config.PUBSUB_PROJECT_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBSUB_PROJECT_ID'],
+        message: 'OIDC push mode requires the Pub/Sub project ID for campaign continuation',
       });
     }
   })

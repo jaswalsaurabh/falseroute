@@ -33,3 +33,8 @@ variable "api_sa_email" {
   type        = string
   description = "API service account allowed to publish validated events"
 }
+
+variable "worker_sa_email" {
+  type        = string
+  description = "Worker service account allowed to publish campaign continuation events"
+}

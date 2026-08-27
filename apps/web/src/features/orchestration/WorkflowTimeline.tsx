@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
   Check,
@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   Radio,
+  Route,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -22,6 +23,7 @@ export interface WorkflowTimelineProps {
   readonly streamStatus: 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
   readonly onClear?: () => void;
 }
+const TERMINAL_LOG_PAGE_SIZE = 8;
 const stageVariant = (
   stage: string,
 ): 'info' | 'warning' | 'success' | 'danger' | 'simulated' | 'neutral' =>
@@ -55,8 +57,17 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
   streamStatus,
   onClear,
 }) => {
-  const stages = new Set(events.map((event) => event.stage));
-  const completedSteps = events.length
+  const [visibleLogCount, setVisibleLogCount] = useState(TERMINAL_LOG_PAGE_SIZE);
+  useEffect(() => {
+    if (events.length === 0) setVisibleLogCount(TERMINAL_LOG_PAGE_SIZE);
+  }, [events.length]);
+  // Progress belongs to the newest correlation, not the whole audit stream.
+  const activeCorrelationId = events[0]?.correlationId;
+  const workflowEvents = activeCorrelationId
+    ? events.filter((event) => event.correlationId === activeCorrelationId)
+    : [];
+  const stages = new Set(workflowEvents.map((event) => event.stage));
+  const completedSteps = workflowEvents.length
     ? stages.has('COMPLETED') || stages.has('EXECUTED') || stages.has('FAKE_EXECUTED')
       ? 5
       : stages.has('AUTHORIZED') || stages.has('NARROWED') || stages.has('REJECTED')
@@ -67,9 +78,24 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             ? 2
             : 1
     : 0;
+  const currentStepIndex = completedSteps > 0 ? Math.min(completedSteps - 1, 5) : -1;
+  const visibleEvents = events.slice(0, visibleLogCount);
+  const hasMoreLogs = visibleEvents.length < events.length;
+  const loadMoreLogs = () => {
+    setVisibleLogCount((current) => Math.min(current + TERMINAL_LOG_PAGE_SIZE, events.length));
+  };
+  const handleLogScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (hasMoreLogs && element.scrollTop + element.clientHeight >= element.scrollHeight - 32) {
+      loadMoreLogs();
+    }
+  };
 
   return (
-    <section className="pane pane-orchestrator" aria-labelledby="timeline-heading">
+    <section
+      className="pane pane-layer pane-layer-indigo pane-orchestrator"
+      aria-labelledby="timeline-heading"
+    >
       <div className="pane-header">
         <div>
           <h2 id="timeline-heading">
@@ -104,7 +130,9 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
       <div className="workflow-steps" aria-label="Workflow stages">
         {['Ingest', 'Dedupe', 'Analyze', 'Policy', 'Execute', 'Lease'].map((step, index) => (
           <div
-            className={`workflow-step ${index < completedSteps ? 'is-complete' : ''}`}
+            className={`workflow-step ${index < completedSteps ? 'is-complete' : ''} ${index === currentStepIndex ? 'is-current' : ''}`}
+            aria-current={index === currentStepIndex ? 'step' : undefined}
+            aria-label={`${step}: ${index < completedSteps ? (index === currentStepIndex ? 'current' : 'complete') : 'not started'}`}
             key={step}
           >
             <span>{index < completedSteps ? <Check size={13} /> : <CircleDot size={13} />}</span>
@@ -137,18 +165,24 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
       </div>
       <div className="decision-grid">
         <div>
-          <span>Policy decision</span>
-          <strong>{events[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
+          <span className="decision-grid-label">
+            <ShieldCheck size={13} aria-hidden="true" /> Policy decision
+          </span>
+          <strong>{workflowEvents[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
           <small>Deterministic authorization</small>
         </div>
         <div>
-          <span>Allowed tools</span>
+          <span className="decision-grid-label">
+            <Route size={13} aria-hidden="true" /> Allowed tools
+          </span>
           <strong>—</strong>
           <small>Closed catalog</small>
         </div>
         <div>
-          <span>State</span>
-          <strong>{events[0]?.stage ?? 'IDLE'}</strong>
+          <span className="decision-grid-label">
+            <Activity size={13} aria-hidden="true" /> State
+          </span>
+          <strong>{workflowEvents[0]?.stage ?? 'IDLE'}</strong>
           <small>Recorded workflow state</small>
         </div>
       </div>
@@ -183,60 +217,70 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
             // Inject a fixed synthetic scenario to observe the bounded workflow
           </div>
         ) : (
-          <ol className="terminal-log" aria-live="polite">
-            {events.slice(0, 8).map((event) => (
-              <li key={`${event.cursor}-${event.eventId}`}>
-                <time>{new Date(event.occurredAt).toLocaleTimeString()}</time>
-                <IconBadge
-                  tone={stageVariant(event.stage)}
-                  size="compact"
-                  label={stageLabel(event.stage, event.eventType)}
-                  tooltip={stageLabel(event.stage, event.eventType)}
-                >
-                  {event.stage === 'COMPLETED' ? (
-                    <CheckCircle2 size={12} aria-hidden="true" />
-                  ) : event.stage === 'EXECUTED' ? (
-                    <CheckCircle2 size={12} aria-hidden="true" />
-                  ) : event.stage === 'FAKE_EXECUTED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : event.stage === 'AUTHORIZED' ? (
-                    <ShieldCheck size={12} aria-hidden="true" />
-                  ) : event.stage === 'NARROWED' ? (
-                    <SlidersHorizontal size={12} aria-hidden="true" />
-                  ) : event.stage === 'FAILED' || event.stage === 'REJECTED' ? (
-                    <TriangleAlert size={12} aria-hidden="true" />
-                  ) : event.stage === 'REQUESTED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : (
-                    <Activity size={12} aria-hidden="true" />
-                  )}
-                </IconBadge>
-                <span>{event.summary}</span>
-                <IconBadge
-                  tone={
-                    event.provenance === 'UNAVAILABLE'
-                      ? 'warning'
-                      : event.provenance === 'OBSERVED'
-                        ? 'info'
-                        : 'model'
-                  }
-                  size="compact"
-                  label={event.provenance.toLowerCase()}
-                  tooltip={event.provenance.toLowerCase()}
-                >
-                  {event.provenance === 'OBSERVED' ? (
-                    <Eye size={12} aria-hidden="true" />
-                  ) : event.provenance === 'UNAVAILABLE' ? (
-                    <TriangleAlert size={12} aria-hidden="true" />
-                  ) : event.provenance === 'INFERRED' ? (
-                    <Sparkles size={12} aria-hidden="true" />
-                  ) : (
-                    <WandSparkles size={12} aria-hidden="true" />
-                  )}
-                </IconBadge>
-              </li>
-            ))}
-          </ol>
+          <>
+            <div
+              className="terminal-log-scroll"
+              role="region"
+              aria-label="Execution trace log"
+              tabIndex={0}
+              onScroll={handleLogScroll}
+            >
+              <ol className="terminal-log" aria-live="polite">
+                {visibleEvents.map((event) => (
+                  <li key={`${event.cursor}-${event.eventId}`}>
+                    <time>{new Date(event.occurredAt).toLocaleTimeString()}</time>
+                    <IconBadge
+                      tone={stageVariant(event.stage)}
+                      size="compact"
+                      label={stageLabel(event.stage, event.eventType)}
+                      tooltip={stageLabel(event.stage, event.eventType)}
+                    >
+                      {event.stage === 'COMPLETED' ? (
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                      ) : event.stage === 'EXECUTED' ? (
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                      ) : event.stage === 'FAKE_EXECUTED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : event.stage === 'AUTHORIZED' ? (
+                        <ShieldCheck size={12} aria-hidden="true" />
+                      ) : event.stage === 'NARROWED' ? (
+                        <SlidersHorizontal size={12} aria-hidden="true" />
+                      ) : event.stage === 'FAILED' || event.stage === 'REJECTED' ? (
+                        <TriangleAlert size={12} aria-hidden="true" />
+                      ) : event.stage === 'REQUESTED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : (
+                        <Activity size={12} aria-hidden="true" />
+                      )}
+                    </IconBadge>
+                    <span>{event.summary}</span>
+                    <IconBadge
+                      tone={
+                        event.provenance === 'UNAVAILABLE'
+                          ? 'warning'
+                          : event.provenance === 'OBSERVED'
+                            ? 'info'
+                            : 'model'
+                      }
+                      size="compact"
+                      label={event.provenance.toLowerCase()}
+                      tooltip={event.provenance.toLowerCase()}
+                    >
+                      {event.provenance === 'OBSERVED' ? (
+                        <Eye size={12} aria-hidden="true" />
+                      ) : event.provenance === 'UNAVAILABLE' ? (
+                        <TriangleAlert size={12} aria-hidden="true" />
+                      ) : event.provenance === 'INFERRED' ? (
+                        <Sparkles size={12} aria-hidden="true" />
+                      ) : (
+                        <WandSparkles size={12} aria-hidden="true" />
+                      )}
+                    </IconBadge>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </>
         )}
       </div>
     </section>

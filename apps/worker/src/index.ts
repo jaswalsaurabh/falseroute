@@ -56,7 +56,14 @@ export {
   AutonomousWorkflowOrchestrator,
   type AutonomousWorkflowResult,
 } from './orchestration/autonomous-workflow.js';
-export { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
+export {
+  CampaignOrchestrator,
+  type CampaignEventPublisher,
+} from './orchestration/campaign-orchestrator.js';
+export {
+  GooglePubSubEventPublisher,
+  type GooglePubSubEventPublisherOptions,
+} from './integrations/pubsub-event-publisher.js';
 export { ToolGateway, type ToolGatewayOptions } from './tools/tool-gateway.js';
 export {
   PubSubPushHandler,

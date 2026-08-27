@@ -1,4 +1,4 @@
-import { trace, type Tracer } from '@opentelemetry/api';
+import { metrics, trace, type Meter, type Tracer } from '@opentelemetry/api';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
@@ -11,6 +11,7 @@ export interface TelemetryOptions {
 
 export interface TelemetryHandle {
   readonly tracer: Tracer;
+  readonly meter: Meter;
   readonly isEnabled: boolean;
   init(): Promise<void>;
   shutdown(): Promise<void>;
@@ -27,6 +28,7 @@ export function createTelemetry(options: TelemetryOptions): TelemetryHandle {
   if (!enabled) {
     return {
       tracer: trace.getTracer(serviceName),
+      meter: metrics.getMeter(serviceName),
       isEnabled: false,
       init: async () => {},
       shutdown: async () => {},
@@ -46,6 +48,7 @@ export function createTelemetry(options: TelemetryOptions): TelemetryHandle {
 
   return {
     tracer: trace.getTracer(serviceName),
+    meter: metrics.getMeter(serviceName),
     isEnabled: true,
     async init() {
       if (!isStarted) {

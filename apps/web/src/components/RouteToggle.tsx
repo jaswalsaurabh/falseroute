@@ -4,25 +4,43 @@ import { Radio } from 'lucide-react';
 export interface RouteToggleProps {
   readonly route: 'dashboard' | 'events';
   readonly onNavigate?: ((path: '/' | '/events') => void) | undefined;
+  readonly eventCount?: number;
 }
 
-export const RouteToggle: React.FC<RouteToggleProps> = ({ route, onNavigate }) => (
-  <div className="route-toggle" role="group" aria-label="Primary navigation">
-    <button
+export const RouteToggle: React.FC<RouteToggleProps> = ({ route, onNavigate, eventCount = 0 }) => (
+  <div className="route-links">
+    <a
+      href="/"
       className={`route-toggle-button ${route === 'dashboard' ? 'is-active' : ''}`}
-      type="button"
-      aria-pressed={route === 'dashboard'}
-      onClick={() => onNavigate?.('/')}
+      aria-current={route === 'dashboard' ? 'page' : undefined}
+      onClick={(event) => {
+        if (onNavigate) {
+          event.preventDefault();
+          onNavigate('/');
+        }
+      }}
     >
       Control room
-    </button>
-    <button
+    </a>
+    <a
+      href="/events"
       className={`route-toggle-button ${route === 'events' ? 'is-active' : ''}`}
-      type="button"
-      aria-pressed={route === 'events'}
-      onClick={() => onNavigate?.('/events')}
+      aria-label={eventCount > 0 ? `Events, ${eventCount} total events` : 'Events'}
+      aria-current={route === 'events' ? 'page' : undefined}
+      onClick={(event) => {
+        if (onNavigate) {
+          event.preventDefault();
+          onNavigate('/events');
+        }
+      }}
     >
-      Events <Radio size={14} aria-hidden="true" />
-    </button>
+      Events
+      {eventCount > 0 && (
+        <span className="route-count" aria-label={`${eventCount} events`}>
+          {eventCount}
+        </span>
+      )}
+      <Radio size={14} aria-hidden="true" />
+    </a>
   </div>
 );

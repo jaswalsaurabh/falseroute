@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   readonly label?: string | undefined;
@@ -14,31 +14,31 @@ export const Input: React.FC<InputProps> = ({
   className = '',
   ...props
 }) => {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+  const generatedId = useId();
+  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : generatedId);
+  const feedbackId = `${inputId}-feedback`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-unit-xs)' }}>
+    <div className="form-field">
       {label && (
-        <label
-          htmlFor={inputId}
-          style={{ fontSize: 'var(--text-size-sm)', fontWeight: 500, color: 'var(--text-body)' }}
-        >
+        <label htmlFor={inputId} className="form-field-label">
           {label}
         </label>
       )}
       <input
         id={inputId}
-        className={`input-field ${className}`}
-        style={error ? { borderColor: 'var(--border-danger)' } : undefined}
+        className={`input-field${error ? ' input-field-error' : ''} ${className}`}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error || helperText ? feedbackId : undefined}
         {...props}
       />
       {error && (
-        <span style={{ fontSize: 'var(--text-size-xs)', color: 'var(--status-danger-text)' }}>
+        <span id={feedbackId} className="form-field-error" role="alert">
           {error}
         </span>
       )}
       {helperText && !error && (
-        <span style={{ fontSize: 'var(--text-size-xs)', color: 'var(--text-muted)' }}>
+        <span id={feedbackId} className="form-field-helper">
           {helperText}
         </span>
       )}

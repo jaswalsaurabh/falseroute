@@ -10,6 +10,7 @@ const databaseRow = {
   sourceIp: '198.51.100.25',
   targetAsset: 'mock-admin-portal',
   eventType: 'SUSPICIOUS_LOGIN',
+  scenarioKind: 'SUSPICIOUS_IP_BURST',
   failedLoginCount: 3,
   riskIndicators: ['SUSPICIOUS_UA'],
   containmentMode: 'SIMULATED',
@@ -52,7 +53,10 @@ describe('PrismaApiRepository listEvents', () => {
       orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
     });
     expect(count).toHaveBeenCalledWith({ where });
-    expect(result).toMatchObject({ total: 1, events: [{ id: databaseRow.id }] });
+    expect(result).toMatchObject({
+      total: 1,
+      events: [{ id: databaseRow.id, scenarioKind: databaseRow.scenarioKind }],
+    });
   });
 
   it('searches recognized event types and honors allowlisted ordering', async () => {
