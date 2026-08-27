@@ -34,6 +34,7 @@ describe('scheduled cleanup HTTP route', () => {
           'postgresql://falseroute:falseroute@127.0.0.1:5434/falseroute_dev?schema=public',
         NODE_ENV: 'test',
         AUTONOMOUS_PUSH_MODE: 'OIDC',
+        PUBSUB_PROJECT_ID: 'example-project',
         PUBSUB_OIDC_AUDIENCE: audience,
         PUBSUB_OIDC_SERVICE_ACCOUNT: 'push@example-project.iam.gserviceaccount.com',
         CLEANUP_OIDC_SERVICE_ACCOUNT: cleanupIdentity,

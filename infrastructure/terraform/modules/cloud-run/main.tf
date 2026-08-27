@@ -181,6 +181,14 @@ resource "google_cloud_run_v2_service" "worker" {
         value = var.pubsub_push_sa_email
       }
       env {
+        name  = "PUBSUB_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "PUBSUB_TOPIC_ID"
+        value = var.pubsub_topic_id
+      }
+      env {
         name  = "PUBSUB_OIDC_AUDIENCE"
         value = var.worker_oidc_audience
       }

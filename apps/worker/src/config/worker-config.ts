@@ -25,6 +25,8 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
     .min(1)
     .max(1_000_000)
     .default(BUDGET_LIMITS.DAILY_GEMINI_TOKENS),
+  PUBSUB_PROJECT_ID: z.string().min(6).optional(),
+  PUBSUB_TOPIC_ID: z.string().min(3).default('falseroute-events'),
   AUTONOMOUS_PUSH_MODE: z
     .enum(['DISABLED', 'LOCAL_SHARED_SECRET', 'PUBSUB_EMULATOR', 'OIDC'])
     .default('DISABLED'),
@@ -97,6 +99,13 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
         code: z.ZodIssueCode.custom,
         path: ['CLEANUP_OIDC_SERVICE_ACCOUNT'],
         message: 'OIDC push mode requires the cleanup service-account identity',
+      });
+    }
+    if (config.AUTONOMOUS_PUSH_MODE === 'OIDC' && !config.PUBSUB_PROJECT_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PUBSUB_PROJECT_ID'],
+        message: 'OIDC push mode requires the Pub/Sub project ID for campaign continuation',
       });
     }
   })

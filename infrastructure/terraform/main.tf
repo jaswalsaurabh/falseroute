@@ -136,6 +136,7 @@ module "pubsub" {
   worker_service_url   = module.cloud_run.worker_service_uri
   pubsub_push_sa_email = module.iam.pubsub_push_sa_email
   api_sa_email         = module.iam.api_sa_email
+  worker_sa_email      = module.iam.worker_sa_email
   worker_oidc_audience = local.worker_oidc_audience
   events_topic_id      = local.pubsub_topic_id
 

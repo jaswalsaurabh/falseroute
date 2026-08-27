@@ -19,6 +19,13 @@ resource "google_pubsub_topic_iam_member" "api_events_publisher" {
   member  = "serviceAccount:${var.api_sa_email}"
 }
 
+resource "google_pubsub_topic_iam_member" "worker_events_publisher" {
+  project = var.project_id
+  topic   = google_pubsub_topic.events.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${var.worker_sa_email}"
+}
+
 # -----------------------------------------------------------------------------
 # Worker Authenticated Push Subscription
 # -----------------------------------------------------------------------------

@@ -27,7 +27,10 @@ import {
 import { EventProcessor } from './processor/event-processor.js';
 import { WorkerOrchestrator } from './processor/worker-orchestrator.js';
 import { AutonomousWorkflowOrchestrator } from './orchestration/autonomous-workflow.js';
-import { CampaignOrchestrator } from './orchestration/campaign-orchestrator.js';
+import {
+  CampaignOrchestrator,
+  type CampaignEventPublisher,
+} from './orchestration/campaign-orchestrator.js';
 import {
   type AutonomousGeminiAdapter,
   LiveAutonomousGeminiAdapter,
@@ -48,6 +51,7 @@ import {
   FakeFalseRouteAdapter,
   FakeCloudArmorAdapter,
 } from './tools/fake-cloud-adapters.js';
+import { GooglePubSubEventPublisher } from './integrations/pubsub-event-publisher.js';
 
 export interface StartWorkerOptions {
   readonly config?: WorkerConfig | undefined;
@@ -61,9 +65,11 @@ export interface StartWorkerOptions {
   readonly telemetry?: TelemetryHandle | undefined;
   readonly autonomousOrchestrator?: AutonomousWorkflowOrchestrator | undefined;
   readonly autonomousWorkflowRepository?: AutonomousWorkflowRepository | undefined;
+  readonly campaignRepository?: CampaignRepository | undefined;
   readonly activityEventRepository?: ActivityEventRepository | undefined;
   readonly leaseCleanupService?: LeaseCleanupService | undefined;
   readonly pushHandler?: PubSubPushHandler | undefined;
+  readonly campaignPublisher?: CampaignEventPublisher | undefined;
   readonly oidcTokenVerifier?: OidcTokenVerifier | undefined;
   readonly registerSignalHandlers?: boolean | undefined;
   readonly onShutdownComplete?: ((exitCode: number) => void) | undefined;
@@ -257,24 +263,31 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
         );
 
       let campaignOrchestrator: CampaignOrchestrator | undefined;
-      if (
-        config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET' ||
-        config.AUTONOMOUS_PUSH_MODE === 'PUBSUB_EMULATOR'
-      ) {
-        const campaignRepository = new CampaignRepository(db as PrismaClient);
-        campaignOrchestrator = new CampaignOrchestrator(
-          campaignRepository,
-          activityRepo,
-          {
-            publish: async (envelope) => {
-              const transportId = `campaign-${randomUUID()}`;
-              await campaignOrchestrator!.process(envelope, transportId);
-              return { transportId };
-            },
-          },
-          autonomousOrchestrator,
-        );
+      const campaignRepository =
+        options.campaignRepository ?? new CampaignRepository(db as PrismaClient);
+      let campaignPublisher = options.campaignPublisher;
+      if (!campaignPublisher && config.AUTONOMOUS_PUSH_MODE === 'OIDC') {
+        if (!config.PUBSUB_PROJECT_ID) {
+          throw new Error('OIDC campaign continuation requires PUBSUB_PROJECT_ID');
+        }
+        campaignPublisher = new GooglePubSubEventPublisher({
+          projectId: config.PUBSUB_PROJECT_ID,
+          topicId: config.PUBSUB_TOPIC_ID,
+        });
       }
+      campaignPublisher ??= {
+        publish: async (envelope) => {
+          const transportId = `campaign-${randomUUID()}`;
+          await campaignOrchestrator!.process(envelope, transportId);
+          return { transportId };
+        },
+      };
+      campaignOrchestrator = new CampaignOrchestrator(
+        campaignRepository,
+        activityRepo,
+        campaignPublisher,
+        autonomousOrchestrator,
+      );
 
       let verifier: OidcTokenVerifier;
       if (config.AUTONOMOUS_PUSH_MODE === 'LOCAL_SHARED_SECRET') {
