@@ -164,11 +164,17 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
 
       const attemptTimeoutMs = Math.min(this.requestTimeoutMs, remainingOperationMs);
       const attemptController = new AbortController();
-      const attemptTimerId = setTimeout(() => {
-        attemptController.abort(
-          new Error(`Gemini single-request timeout exceeded (${attemptTimeoutMs}ms)`),
-        );
-      }, attemptTimeoutMs);
+      // Let the operation timer own the boundary when the request timeout is not earlier.
+      // Otherwise both timers can fire at effectively the same deadline and classify a
+      // complete-operation timeout as a retryable single-request timeout.
+      const attemptTimerId =
+        this.requestTimeoutMs < remainingOperationMs
+          ? setTimeout(() => {
+              attemptController.abort(
+                new Error(`Gemini single-request timeout exceeded (${attemptTimeoutMs}ms)`),
+              );
+            }, attemptTimeoutMs)
+          : undefined;
 
       const abortAttempt = () => {
         attemptController.abort(operationSignal.reason ?? new Error('Operation aborted'));
