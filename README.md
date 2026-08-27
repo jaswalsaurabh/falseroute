@@ -6,7 +6,7 @@
   <img src="assets/branding/false-route-fox-logo.svg" alt="FalseRoute" width="420" />
 </picture>
 
-### Safe, explainable cyber deception for testing intrusion response—without touching real systems.
+### A safe, explainable demonstration of intrusion response—without changing customer or production systems.
 
 [Architecture](#architecture) · [Local setup](#local-development) · [Scenarios](#scenario-catalog) · [Security](#security-boundaries) · [Quality gates](#quality-gates)
 
@@ -21,32 +21,19 @@
 
 ---
 
-## Problem and approach
+## Project description
 
-Imagine a security team receives a suspicious signal but does not yet know whether it is harmless, malicious, or part of a larger attack. FalseRoute lets the team safely test that situation with fictional data and a fixed set of scenarios.
+FalseRoute shows how a security team can review a suspicious event and choose a response. It uses fictional attack data, records why each decision was made, and shows the complete process in a dashboard.
 
-Instead of changing a real network or customer system, FalseRoute records what happened, checks the evidence, evaluates possible responses, and shows the result in an operator dashboard. It can also record a simulated deception response, such as presenting a decoy route, so people can study the workflow without putting production systems at risk.
+AI may suggest a response, but the application's own rules make the final decision. Actions such as creating a decoy, redirecting activity, or blocking a source are simulated by default. FalseRoute does not control customer traffic or production systems.
 
-### The problem
+## How it works
 
-Security tools can produce alerts, but an alert alone does not explain what should happen next. Teams need to know:
-
-- What signal was received?
-- Which facts were directly observed, and which were inferred?
-- Why was a response recommended or rejected?
-- What would happen if a dependency failed or the same event arrived twice?
-
-FalseRoute makes those questions visible in one traceable workflow.
-
-### How FalseRoute helps
-
-1. A person chooses a safe, pre-built intrusion scenario.
-2. FalseRoute validates and records the scenario as an event.
-3. Its worker evaluates the evidence using deterministic policy—rules owned by the application—not AI alone.
-4. Gemini may provide additional analysis, but it can only recommend actions from a closed tool catalog.
-5. The dashboard shows the decision, evidence, activity, and simulated effect, including failures or degraded states.
-
-Nothing in this workflow claims to contain a real attacker or redirect real customer traffic.
+1. An operator chooses a fixed synthetic scenario.
+2. The API validates and records the event.
+3. The worker evaluates the evidence using deterministic application policy.
+4. Gemini can add analysis and recommend actions from a closed tool catalog, but it cannot authorize them.
+5. The dashboard shows the evidence, decision, activity, and recorded effect, including failures and degraded states.
 
 ### Terms used in this README
 
@@ -61,28 +48,17 @@ Nothing in this workflow claims to contain a real attacker or redirect real cust
 | **Provenance**             | A record of where a value came from and whether it was observed, calculated, inferred, or unavailable.                    |
 | **At-least-once delivery** | A message may arrive more than once, so the system must safely recognize duplicates.                                      |
 
-## Why FalseRoute?
-
-Security operations often have plenty of alerts and too little context. FalseRoute is a small, observable control plane for exploring what happens when an intrusion signal becomes a bounded response workflow:
-
-1. An operator selects a fixed synthetic scenario.
-2. The API validates and records the event.
-3. A worker evaluates the evidence with deterministic policy and optional Gemini enrichment.
-4. The Web console streams the decision, provenance, activity, and simulated effects.
-
-The result is a traceable workflow that is useful for demonstrations, policy design, failure testing, and security engineering—without pretending to control customer traffic or production infrastructure.
-
 ## What it does
 
-| Capability                  | What you get                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------------- |
-| **Scenario injection**      | Fixed, validated intrusion presets instead of arbitrary payloads                         |
-| **Deterministic policy**    | One application-owned decision for every response action                                 |
-| **Bounded AI assistance**   | Gemini can enrich evidence and recommend from a closed tool catalog                      |
-| **Durable workflow state**  | PostgreSQL-backed events, decisions, retries, leases, and audit records                  |
-| **Live operator console**   | React dashboard with event activity, decisions, and streaming updates                    |
-| **Failure-aware execution** | Timeouts, bounded retries, concurrency limits, degraded states, and redacted diagnostics |
-| **Cloud-shaped deployment** | API, worker, and Web services packaged for Cloud Run with Secret Manager references      |
+| Capability                       | What you get                                                                             |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Scenario injection**           | Fixed, validated intrusion presets instead of arbitrary payloads                         |
+| **Deterministic policy**         | One application-owned decision for every response action                                 |
+| **Bounded AI assistance**        | Gemini can enrich evidence and recommend from a closed tool catalog                      |
+| **Durable workflow state**       | PostgreSQL-backed events, decisions, retries, leases, and audit records                  |
+| **Live operator console**        | React dashboard with event activity, decisions, and streaming updates                    |
+| **Failure-aware execution**      | Timeouts, bounded retries, concurrency limits, degraded states, and redacted diagnostics |
+| **Cloud deployment definitions** | API, worker, and Web services packaged for Cloud Run with Secret Manager references      |
 
 ## What it deliberately does not do
 
@@ -91,7 +67,7 @@ The result is a traceable workflow that is useful for demonstrations, policy des
 - It does not let Gemini choose cloud resources, identities, destinations, or credentials.
 - It does not claim exactly-once message delivery.
 - It does not turn a simulated route assignment into a real containment action.
-- It is not production-ready by default; staging, identity, cost, and threat-model gates remain explicit.
+- It is not production-ready by default; live cloud effects are not implemented or enabled.
 
 ## Architecture
 
@@ -100,8 +76,8 @@ flowchart LR
     Operator[Operator] --> Web[React operator console]
     Web -->|Authenticated scenario| API[Express API]
     API -->|Validated event| Events[(PostgreSQL)]
-    API -->|At-least-once transport| PubSub[Pub/Sub]
-    PubSub --> Worker[Workflow worker]
+    API -->|Validated event| Transport[Local HTTP by default or Pub/Sub]
+    Transport --> Worker[Workflow worker]
     Worker --> Policy[Deterministic policy]
     Worker --> Gemini[Bounded Gemini adapter]
     Gemini -. advisory only .-> Policy
@@ -110,6 +86,8 @@ flowchart LR
     Policy --> Sim[Simulated deception adapters]
     Sim -. recorded effect .-> Audit
 ```
+
+Local development uses authenticated loopback HTTP between the API and worker. This keeps setup small while exercising the same validated push boundary. The staging infrastructure definitions support Google Cloud Pub/Sub with at-least-once delivery.
 
 ### The important boundary
 
@@ -133,6 +111,9 @@ The simulator exposes a fixed catalog. Each preset defines its evidence shape, a
 | Administrative token tamper   | Rejection, alerting, and bounded quarantine behavior      |
 | Path traversal probe          | Evidence validation and web decoy response                |
 | Decoy credential use          | Canonical `mock-admin-decoy` assignment in simulated mode |
+| SQL injection probe           | Bounded detection evidence and an alert decision          |
+| Cloud metadata SSRF probe     | Mandatory rejection and alert decisions                   |
+| Credential stuffing burst     | Correlated login failures, rejection, and alert decisions |
 
 ## Local development
 
@@ -213,9 +194,9 @@ tests/integration/        Cross-application integration coverage
 - **UI:** React 19, Vite, Vitest — builds the operator dashboard and tests the Web experience.
 - **Contracts:** Zod schemas with shared typed boundaries — checks that data has the expected shape before it moves between services.
 - **Persistence:** PostgreSQL, Prisma 7 — stores events, decisions, retries, leases, and audit records durably.
-- **Async transport:** Google Cloud Pub/Sub — moves events between the API and worker without requiring both to run at the same time.
+- **Event transport:** Authenticated loopback HTTP is the local default; Google Cloud Pub/Sub provides at-least-once delivery in the staging configuration.
 - **AI adapter:** Gemini through a bounded provider boundary — adds optional analysis while application policy remains in control.
-- **Deployment:** Cloud Run, Artifact Registry, Cloud SQL, Secret Manager, Terraform — packages, hosts, and configures the services in Google Cloud.
+- **Deployment:** Cloud Run, Artifact Registry, Cloud SQL, Secret Manager, Terraform — defines how the services are packaged and configured for Google Cloud.
 - **Observability:** Pino and OpenTelemetry interfaces — make service activity and failures easier to inspect.
 
 ## Security boundaries
@@ -227,7 +208,7 @@ Security is part of the workflow rather than a later layer. FalseRoute applies:
 - Closed tool catalogs with deterministic authorization.
 - Secret Manager references for deployed runtime secrets.
 - Redacted logs and bounded error details.
-- Rate, size, concurrency, retry, timeout, and spend controls.
+- Application-level rate, size, concurrency, retry, timeout, and spend controls.
 - Non-root, production-oriented container verification.
 - Explicit ownership and provenance for derived decisions.
 
@@ -252,7 +233,10 @@ pnpm check:secrets
 pnpm check:docs
 ```
 
-The repository also runs these checks in GitHub Actions. The staging deployment workflow builds the three service images for `linux/amd64`, publishes immutable image digests, creates a Terraform plan, and applies only the approved plan for the configured staging environment.
+The repository also runs these checks in GitHub Actions. Two separate staging workflows cover deployment:
+
+- The application workflow builds the three `linux/amd64` service images, publishes immutable image digests, runs database migrations, and updates existing Cloud Run services.
+- The manually started infrastructure workflow creates a Terraform plan and applies it only after approval through the configured GitHub environment.
 
 ## Documentation
 
@@ -268,7 +252,7 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Project status
 
-FalseRoute is an active engineering implementation. The local vertical slice, policy engine, event workflow, operator console, contracts, tests, and infrastructure definitions are present; production hardening and browser-level certification remain explicit work rather than implied guarantees.
+FalseRoute is an active engineering implementation. The local workflow, policy engine, event processing, operator console, contracts, tests, and staging infrastructure definitions are present. Real decoy deployment, traffic routing, and source quarantine are not implemented or enabled. Adding them would require separate implementation, activation evidence, and approval. Production hardening and browser-level certification are also unfinished work, not implied guarantees.
 
 If you are evaluating the project, start with the local quickstart and the [architecture overview](docs/architecture/overview.md). If you are changing a trust boundary, provider adapter, persistence rule, or deployment boundary, read the [engineering principles](docs/architecture/engineering-principles.md) and [quality gates](docs/architecture/quality-gates.md) first.
 
