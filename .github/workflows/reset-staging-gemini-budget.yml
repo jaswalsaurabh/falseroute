@@ -85,7 +85,7 @@ jobs:
             --set-env-vars="GCP_PROJECT_ID=${GCP_PROJECT_ID}" \
             --set-secrets="DATABASE_URL=falseroute-worker-database-url:latest" \
             --vpc-connector=fr-staging-vpc-conn \
-            --vpc-egress=PRIVATE_RANGES_ONLY \
+            --vpc-egress=private-ranges-only \
             --tasks=1 \
             --max-retries=0 \
             --task-timeout=10m \
