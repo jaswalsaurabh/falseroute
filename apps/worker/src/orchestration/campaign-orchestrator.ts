@@ -100,7 +100,7 @@ export class CampaignOrchestrator {
   async resume(campaignId: string): Promise<boolean> {
     const publication = await this.campaigns.claimReadyPublication(campaignId, this.ownerId);
     if (!publication) return false;
-    await this.publish(publication.eventId, publication.correlationId, publication);
+    await this.publish(publication.eventId, publication.correlationId, publication, this.ownerId);
     return true;
   }
 
@@ -130,6 +130,7 @@ export class CampaignOrchestrator {
       readonly occurredAt: Date;
       readonly step: number;
     },
+    claimOwner?: string,
   ): Promise<void> {
     const envelope = IntrusionEventEnvelopeSchema.parse({
       eventId: publication.eventId,
@@ -144,7 +145,11 @@ export class CampaignOrchestrator {
       provenance: 'OBSERVED',
     });
     await this.publisher.publish(envelope);
-    await this.campaigns.markPublished(publication.eventId);
+    if (claimOwner) {
+      await this.campaigns.markPublished(publication.eventId, claimOwner);
+    } else {
+      await this.campaigns.markPublished(publication.eventId);
+    }
     await this.activity.recordActivityEvent({
       eventId: currentEventId,
       correlationId,

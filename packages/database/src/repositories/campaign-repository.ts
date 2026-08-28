@@ -266,10 +266,22 @@ export class CampaignRepository {
     });
   }
 
-  async markPublished(eventId: string): Promise<boolean> {
+  async markPublished(eventId: string, claimOwner?: string): Promise<boolean> {
     const result = await this.prisma.campaignStepRun.updateMany({
-      where: { eventId, status: 'READY', publishedAt: null },
-      data: { status: 'PUBLISHED', publishedAt: new Date() },
+      where: {
+        eventId,
+        publishedAt: null,
+        OR: [
+          { status: 'READY', claimOwner: null },
+          ...(claimOwner ? [{ status: 'PUBLISHING', claimOwner }] : []),
+        ],
+      },
+      data: {
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+        claimOwner: null,
+        claimExpiresAt: null,
+      },
     });
     return result.count === 1;
   }

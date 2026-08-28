@@ -129,6 +129,10 @@ describe('CampaignOrchestrator', () => {
       expect.stringMatching(/^campaign-worker-/),
     );
     expect(publisher.publish).toHaveBeenCalledOnce();
+    expect(campaigns.markPublished).toHaveBeenCalledWith(
+      '33333333-3333-4333-8333-333333333333',
+      expect.stringMatching(/^campaign-worker-/),
+    );
     expect(workflow.processEventEnvelope).not.toHaveBeenCalled();
   });
 });
