@@ -155,7 +155,9 @@ jobs:
             --image="$REGISTRY/falseroute-api@$api_digest" --quiet
           gcloud run services update falseroute-worker \
             --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --platform=managed \
-            --image="$REGISTRY/falseroute-worker@$worker_digest" --quiet
+            --image="$REGISTRY/falseroute-worker@$worker_digest" \
+            --update-env-vars="PUBSUB_PROJECT_ID=$GCP_PROJECT_ID,PUBSUB_TOPIC_ID=falseroute-events" \
+            --quiet
           gcloud run services update falseroute-web \
             --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --platform=managed \
             --image="$REGISTRY/falseroute-web@$web_digest" --quiet
