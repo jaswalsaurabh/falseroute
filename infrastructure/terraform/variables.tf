@@ -84,7 +84,7 @@ variable "web_image_tag" {
 variable "worker_gemini_model" {
   type        = string
   description = "Gemini model used for worker enrichment; changeable without code changes"
-  default     = "gemini-3.5-flash"
+  default     = "gemini-3.5-flash-lite"
 }
 
 variable "worker_gemini_request_timeout_ms" {

@@ -217,7 +217,6 @@ export class LiveAutonomousGeminiAdapter implements AutonomousGeminiAdapter {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tools: [{ functionDeclarations: GEMINI_TOOL_DECLARATIONS as any }],
           maxOutputTokens: 1024,
-          temperature: 0,
         },
       });
 

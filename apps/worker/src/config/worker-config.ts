@@ -13,7 +13,7 @@ export const WorkerConfigSchema = BaseEnvironmentSchema.extend({
       'DATABASE_URL must be a valid PostgreSQL connection string',
     ),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
   GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(60000).default(30000),
   GEMINI_OPERATION_DEADLINE_MS: z.coerce.number().int().min(500).max(120000).default(60000),
   GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(1),

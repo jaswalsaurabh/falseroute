@@ -227,7 +227,6 @@ export class LiveGeminiAdapter implements GeminiEnrichmentAdapter {
             responseMimeType: 'application/json',
             // Keep deterministic sampling and leave headroom for the bounded explanation so a
             // valid JSON object is not truncated at the provider boundary.
-            temperature: 0,
             maxOutputTokens: 2048,
           },
         });
