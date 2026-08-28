@@ -1,0 +1,111 @@
+name: Reset staging Gemini budget
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RESET_GEMINI_STAGING to authorize the staging-only reset'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}
+
+jobs:
+  reset-staging-gemini-budget:
+    name: Reset staging Gemini budget
+    if: ${{ inputs.confirmation == 'RESET_GEMINI_STAGING' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Authenticate image publishing
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_APPLICATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_IMAGE_PUBLISHER_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and publish admin image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --file apps/gemini-admin/Dockerfile \
+            --tag "${REGISTRY}/falseroute-gemini-admin:${GITHUB_SHA}" \
+            --metadata-file /tmp/gemini-admin-metadata.json \
+            --push .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          digest = json.loads(Path('/tmp/gemini-admin-metadata.json').read_text())['containerimage.digest']
+          if not digest.startswith('sha256:'):
+              raise SystemExit(f'Unexpected image digest: {digest}')
+          Path('/tmp/gemini-admin-digest').write_text(digest)
+          PY
+
+      - name: Authenticate job deployment
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_APPLICATION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_APPLICATION_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy one-off reset job
+        run: |
+          set -euo pipefail
+          digest="$(cat /tmp/gemini-admin-digest)"
+          gcloud run jobs deploy falseroute-gemini-budget-reset \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="${REGISTRY}/falseroute-gemini-admin@${digest}" \
+            --service-account="falseroute-worker-sa@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+            --command=node \
+            --args='scripts/reset-staging-gemini-budget.ts,--execute,--confirm-staging-gemini-reset' \
+            --set-env-vars="GCP_PROJECT_ID=${GCP_PROJECT_ID}" \
+            --set-secrets="DATABASE_URL=falseroute-worker-database-url:latest" \
+            --vpc-connector=fr-staging-vpc-conn \
+            --vpc-egress=PRIVATE_RANGES_ONLY \
+            --tasks=1 \
+            --max-retries=0 \
+            --task-timeout=10m \
+            --quiet
+
+      - name: Execute reset job
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute falseroute-gemini-budget-reset \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --wait \
+            --quiet
+
+      - name: Show latest execution
+        run: |
+          gcloud run jobs executions list \
+            --job=falseroute-gemini-budget-reset \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --limit=1 \
+            --format='table(name,createTime,completionTime)' \
+            --quiet
