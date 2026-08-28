@@ -104,6 +104,20 @@ export class CampaignOrchestrator {
     return true;
   }
 
+  async resumeReadyCampaigns(): Promise<void> {
+    const campaignIds = await this.campaigns.listResumableCampaignIds();
+    const results = await Promise.allSettled(
+      campaignIds.map((campaignId) => this.resume(campaignId)),
+    );
+    const firstFailure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    // A failed publish leaves the step claim recoverable after its lease expires.
+    // All campaigns were attempted so one broken continuation cannot pause the
+    // worker's normal event loop; surface one failure for sanitized worker logging.
+    if (firstFailure) throw firstFailure.reason;
+  }
+
   private async publish(
     currentEventId: string,
     correlationId: string,

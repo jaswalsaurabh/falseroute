@@ -100,6 +100,17 @@ export class CampaignRepository {
     return campaign ? toCampaignRun(campaign) : null;
   }
 
+  async listResumableCampaignIds(): Promise<readonly string[]> {
+    const campaigns = await this.prisma.campaignRun.findMany({
+      where: {
+        status: 'RUNNING',
+        steps: { some: { status: { in: ['READY', 'PUBLISHING'] } } },
+      },
+      select: { id: true },
+    });
+    return campaigns.map((campaign) => campaign.id);
+  }
+
   async ensureInitialEvent(input: CampaignInitialEventInput): Promise<void> {
     await this.prisma.intrusionEvent.upsert({
       where: { id: input.eventId },

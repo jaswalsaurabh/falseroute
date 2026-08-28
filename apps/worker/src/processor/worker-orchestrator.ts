@@ -8,6 +8,8 @@ export interface OrchestratorOptions {
   readonly pollIntervalMs?: number;
   readonly cleanupService?: LeaseCleanupService | undefined;
   readonly cleanupIntervalMs?: number | undefined;
+  readonly resumeCampaigns?: (() => Promise<void>) | undefined;
+  readonly campaignResumeIntervalMs?: number | undefined;
 }
 
 /**
@@ -19,6 +21,9 @@ export class WorkerOrchestrator {
   private readonly pollIntervalMs: number;
   private readonly cleanupService?: LeaseCleanupService | undefined;
   private readonly cleanupIntervalMs: number;
+  private readonly resumeCampaigns?: (() => Promise<void>) | undefined;
+  private readonly campaignResumeIntervalMs: number;
+  private lastCampaignResumeTime = 0;
   private isRunning = false;
   private activeLoop: Promise<void> | null = null;
   private lastCleanupTime = 0;
@@ -29,6 +34,8 @@ export class WorkerOrchestrator {
     this.pollIntervalMs = options.pollIntervalMs ?? 500;
     this.cleanupService = options.cleanupService;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10_000;
+    this.resumeCampaigns = options.resumeCampaigns;
+    this.campaignResumeIntervalMs = options.campaignResumeIntervalMs ?? 5_000;
   }
 
   /**
@@ -38,7 +45,9 @@ export class WorkerOrchestrator {
     if (this.cleanupService) {
       await this.cleanupService.sweepExpiredLeases().catch(() => {});
     }
-    return this.processor.processNextPending();
+    const result = await this.processor.processNextPending();
+    await this.runCampaignResumeSweep();
+    return result;
   }
 
   /**
@@ -78,6 +87,7 @@ export class WorkerOrchestrator {
         }
 
         const result = await this.processor.processNextPending();
+        await this.runCampaignResumeSweep();
         const nextDelay = result.processed ? 50 : this.pollIntervalMs;
         scheduleNext(nextDelay);
       } catch (err) {
@@ -93,6 +103,21 @@ export class WorkerOrchestrator {
     this.currentStepPromise = stepPromise;
     await stepPromise;
     this.currentStepPromise = null;
+  }
+
+  private async runCampaignResumeSweep(): Promise<void> {
+    if (!this.resumeCampaigns) return;
+    const now = Date.now();
+    if (now - this.lastCampaignResumeTime < this.campaignResumeIntervalMs) return;
+    this.lastCampaignResumeTime = now;
+    try {
+      await this.resumeCampaigns();
+    } catch (resumeErr) {
+      this.logger.warn(
+        { errorType: resumeErr instanceof Error ? resumeErr.constructor.name : 'UnknownError' },
+        'Campaign continuation resume sweep failed; will retry',
+      );
+    }
   }
 
   /**

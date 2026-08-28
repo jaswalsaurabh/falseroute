@@ -21,6 +21,21 @@ function createCapturingLogger() {
 }
 
 describe('WorkerOrchestrator', () => {
+  it('runs the campaign continuation sweep after a processing tick', async () => {
+    const processNextPending = vi.fn().mockResolvedValue({ processed: false });
+    const resumeCampaigns = vi.fn().mockResolvedValue(undefined);
+    const orchestrator = new WorkerOrchestrator({
+      processor: { processNextPending } as unknown as EventProcessor,
+      logger: createCapturingLogger().logger,
+      resumeCampaigns,
+    });
+
+    await orchestrator.tick();
+
+    expect(processNextPending).toHaveBeenCalledOnce();
+    expect(resumeCampaigns).toHaveBeenCalledOnce();
+  });
+
   it('logs only safe error type and category when a processing step rejects', async () => {
     vi.useFakeTimers();
     const { logger, rawLines } = createCapturingLogger();

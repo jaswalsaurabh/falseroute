@@ -219,6 +219,7 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
     });
 
     let cleanupService: LeaseCleanupService | null = null;
+    let campaignOrchestrator: CampaignOrchestrator | undefined;
 
     if (config.AUTONOMOUS_PUSH_MODE !== 'DISABLED') {
       const workflowRepo =
@@ -272,7 +273,6 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
           workerProcessId,
         );
 
-      let campaignOrchestrator: CampaignOrchestrator | undefined;
       const campaignRepository =
         options.campaignRepository ?? new CampaignRepository(db as PrismaClient);
       let campaignPublisher = options.campaignPublisher;
@@ -331,6 +331,9 @@ export async function startWorker(options: StartWorkerOptions = {}): Promise<Wor
       logger,
       pollIntervalMs: config.WORKER_POLL_INTERVAL_MS,
       cleanupService: cleanupService ?? undefined,
+      resumeCampaigns: campaignOrchestrator
+        ? () => campaignOrchestrator!.resumeReadyCampaigns()
+        : undefined,
     });
 
     // 2. Start Cloud Run-compatible HTTP health server
