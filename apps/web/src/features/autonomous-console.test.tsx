@@ -6,6 +6,7 @@ import { ActiveResourcesPanel } from './active-responses/ActiveResourcesPanel.js
 import { type ApiClient } from '../api/client.js';
 import { type ActivityEvent } from '@false-route/contracts';
 import { AutonomousIntelligencePanel } from './intelligence/AutonomousIntelligencePanel.js';
+import { ControlRoomPage } from '../pages/ControlRoomPage.js';
 
 describe('Autonomous Console Components', () => {
   it('ScenarioInjector sends strict evidence and reports configured transport acceptance', async () => {
@@ -82,6 +83,7 @@ describe('Autonomous Console Components', () => {
         summary: 'Deterministic policy authorized request_decoy_deployment',
         provenance: 'DERIVED',
         occurredAt: '2026-08-22T10:00:02.000Z',
+        payload: { toolName: 'request_decoy_deployment', outcome: 'AUTHORIZED' },
       },
       {
         cursor: 4,
@@ -92,6 +94,7 @@ describe('Autonomous Console Components', () => {
         summary: 'Deterministic policy narrowed request_decoy_deployment',
         provenance: 'DERIVED',
         occurredAt: '2026-08-22T10:00:02.500Z',
+        payload: { toolName: 'request_decoy_deployment', outcome: 'NARROWED' },
       },
       {
         cursor: 5,
@@ -102,6 +105,7 @@ describe('Autonomous Console Components', () => {
         summary: 'Deterministic policy rejected request_source_quarantine',
         provenance: 'DERIVED',
         occurredAt: '2026-08-22T10:00:03.000Z',
+        payload: { toolName: 'request_source_quarantine', outcome: 'REJECTED' },
       },
       {
         cursor: 6,
@@ -138,6 +142,8 @@ describe('Autonomous Console Components', () => {
     render(<WorkflowTimeline events={mockEvents} streamStatus="CONNECTED" />);
 
     expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
+    expect(screen.getByText('REJECT')).toBeDefined();
+    expect(screen.getByText('1')).toBeDefined();
     expect(screen.getByText('LIVE SSE STREAM')).toBeDefined();
     expect(screen.getAllByText('RECEIVED').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('REQUESTED (AI)')).toBeDefined();
@@ -174,6 +180,54 @@ describe('Autonomous Console Components', () => {
     fireEvent.scroll(logRegion);
     expect(screen.getByText('Trace entry 14')).toBeDefined();
     expect(screen.queryByRole('button', { name: /Load more logs/ })).toBeNull();
+  });
+
+  it('ControlRoomPage derives median response from terminal activity events', () => {
+    const activityEvents: ActivityEvent[] = [
+      {
+        cursor: 1,
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-response',
+        stage: 'RECEIVED',
+        eventType: 'INTRUSION_INGESTED',
+        summary: 'Ingested signal',
+        provenance: 'OBSERVED',
+        occurredAt: '2026-08-22T10:00:00.000Z',
+      },
+      {
+        cursor: 2,
+        eventId: '11111111-1111-4111-8111-111111111111',
+        correlationId: 'corr-response',
+        stage: 'COMPLETED',
+        eventType: 'WORKFLOW_COMPLETED',
+        summary: 'Workflow completed',
+        provenance: 'DERIVED',
+        occurredAt: '2026-08-22T10:00:01.500Z',
+      },
+    ];
+
+    render(
+      <ControlRoomPage
+        events={[]}
+        totalEvents={0}
+        activityEvents={activityEvents}
+        streamStatus="CONNECTED"
+        systemMode="LOCAL_FAKE"
+        apiClient={{} as ApiClient}
+        onRefresh={() => {}}
+        onSelectEvent={() => {}}
+        onViewAllEvents={() => {}}
+        onClearActivity={() => {}}
+        campaign={null}
+        campaignStarting={false}
+        onStartCampaign={() => {}}
+        campaignError={null}
+        dashboardError={null}
+      />,
+    );
+
+    expect(screen.getByText('1.5 s')).toBeDefined();
+    expect(screen.getByText('Across loaded terminal workflows')).toBeDefined();
   });
 
   it('ActiveResourcesPanel does not infer active resources from activity history', () => {

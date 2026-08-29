@@ -14,6 +14,39 @@ import { AutonomousIntelligencePanel } from '../features/intelligence/Autonomous
 
 type StreamStatus = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
 
+function medianWorkflowResponse(activityEvents: readonly ActivityEvent[]): string | null {
+  const workflows = new Map<string, ActivityEvent[]>();
+  for (const event of activityEvents) {
+    const workflow = workflows.get(event.correlationId) ?? [];
+    workflow.push(event);
+    workflows.set(event.correlationId, workflow);
+  }
+
+  const durations = [...workflows.values()]
+    .map((workflow) => {
+      const terminal = workflow.find(
+        (event) =>
+          event.eventType === 'WORKFLOW_COMPLETED' || event.eventType === 'WORKFLOW_FAILED',
+      );
+      if (!terminal) return null;
+      const startedAt = Math.min(...workflow.map((event) => Date.parse(event.occurredAt)));
+      const endedAt = Date.parse(terminal.occurredAt);
+      return Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
+        ? endedAt - startedAt
+        : null;
+    })
+    .filter((duration): duration is number => duration !== null)
+    .toSorted((left, right) => left - right);
+
+  if (durations.length === 0) return null;
+  const middle = Math.floor(durations.length / 2);
+  const median =
+    durations.length % 2 === 0
+      ? (durations[middle - 1]! + durations[middle]!) / 2
+      : durations[middle]!;
+  return median < 1000 ? `${Math.round(median)} ms` : `${(median / 1000).toFixed(1)} s`;
+}
+
 export interface ControlRoomPageProps {
   readonly events: readonly IntrusionEvent[];
   readonly totalEvents: number;
@@ -52,6 +85,7 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
   const needsAttention = events.filter(
     (event) => event.status === 'FAILED' || event.status === 'PROCESSING',
   ).length;
+  const medianResponse = medianWorkflowResponse(activityEvents);
   const activeCorrelationId = activityEvents[0]?.correlationId;
   const currentActivityEvents = activeCorrelationId
     ? activityEvents.filter((event) => event.correlationId === activeCorrelationId)
@@ -78,8 +112,10 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
         />
         <MetricCard
           label="Median response"
-          value="—"
-          detail="Timing projection unavailable"
+          value={medianResponse ?? '—'}
+          detail={
+            medianResponse ? 'Across loaded terminal workflows' : 'Awaiting a terminal workflow'
+          }
           tone="neutral"
           icon={<Clock3 size={15} aria-hidden="true" />}
         />

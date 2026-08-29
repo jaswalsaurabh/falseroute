@@ -24,6 +24,18 @@ export interface WorkflowTimelineProps {
   readonly onClear?: () => void;
 }
 const TERMINAL_LOG_PAGE_SIZE = 12;
+const POLICY_STAGES = new Set(['AUTHORIZED', 'NARROWED', 'REJECTED']);
+
+const policyDecisionLabel = (event: ActivityEvent | undefined): string => {
+  if (!event) return '—';
+  return event.stage === 'AUTHORIZED' ? 'ALLOW' : event.stage === 'NARROWED' ? 'NARROW' : 'REJECT';
+};
+
+const policyToolName = (event: ActivityEvent): string | undefined => {
+  const toolName = event.payload?.['toolName'];
+  return typeof toolName === 'string' ? toolName : undefined;
+};
+
 const stageVariant = (
   stage: string,
 ): 'info' | 'warning' | 'success' | 'danger' | 'simulated' | 'neutral' =>
@@ -66,6 +78,18 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
   const workflowEvents = activeCorrelationId
     ? events.filter((event) => event.correlationId === activeCorrelationId)
     : [];
+  // Activity events are newest-first. Policy status and tool counts must be
+  // derived from policy records rather than the terminal workflow event.
+  const policyEvents = workflowEvents
+    .filter((event) => POLICY_STAGES.has(event.stage) && event.eventType.startsWith('TOOL_'))
+    .toSorted((left, right) => right.cursor - left.cursor);
+  const latestPolicyEvent = policyEvents[0];
+  const allowedToolCount = new Set(
+    policyEvents
+      .filter((event) => event.stage === 'AUTHORIZED' || event.stage === 'NARROWED')
+      .map(policyToolName)
+      .filter((toolName): toolName is string => toolName !== undefined),
+  ).size;
   const stages = new Set(workflowEvents.map((event) => event.stage));
   const completedSteps = workflowEvents.length
     ? stages.has('COMPLETED') || stages.has('EXECUTED') || stages.has('FAKE_EXECUTED')
@@ -168,14 +192,14 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = ({
           <span className="decision-grid-label">
             <ShieldCheck size={13} aria-hidden="true" /> Policy decision
           </span>
-          <strong>{workflowEvents[0]?.stage === 'AUTHORIZED' ? 'ALLOW' : '—'}</strong>
+          <strong>{policyDecisionLabel(latestPolicyEvent)}</strong>
           <small>Deterministic authorization</small>
         </div>
         <div>
           <span className="decision-grid-label">
             <Route size={13} aria-hidden="true" /> Allowed tools
           </span>
-          <strong>—</strong>
+          <strong>{policyEvents.length > 0 ? String(allowedToolCount) : '—'}</strong>
           <small>Closed catalog</small>
         </div>
         <div>
