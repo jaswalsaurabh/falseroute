@@ -411,6 +411,56 @@ button {
   gap: var(--space-unit-xs);
   margin-top: var(--space-unit-md);
 }
+.intelligence-evidence-tooltip {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  outline: none;
+}
+.intelligence-evidence-badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  justify-content: flex-start;
+}
+.intelligence-evidence-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 6px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  box-shadow: var(--elevation-tooltip);
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  z-index: var(--layer-popover);
+}
+.intelligence-evidence-tooltip:hover::after,
+.intelligence-evidence-tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+.campaign-start-button {
+  flex: 0 1 auto;
+}
 .intelligence-empty,
 .intelligence-state {
   display: flex;

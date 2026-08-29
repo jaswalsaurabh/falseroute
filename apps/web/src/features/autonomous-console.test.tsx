@@ -259,6 +259,7 @@ describe('Autonomous Console Components', () => {
       screen.getByText('The probe is mapping a synthetic configuration surface.'),
     ).toBeDefined();
     expect(screen.getByText('Model request')).toBeDefined();
+    expect(screen.getByLabelText('Evidence refs: evidence-1')).toBeDefined();
     expect(screen.getByText('Step 2 of 4')).toBeDefined();
     expect(screen.getByLabelText('2 of 4 campaign steps complete')).toBeDefined();
   });

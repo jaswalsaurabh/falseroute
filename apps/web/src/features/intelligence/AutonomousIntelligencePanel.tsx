@@ -40,6 +40,9 @@ const originLabel: Record<ActionOrigin, string> = {
 
 const actionLabel = (action: string) => action.replaceAll('_', ' ');
 
+const evidenceRefsLabel = (evidenceRefs: readonly string[]) =>
+  evidenceRefs.map((reference) => `${reference.slice(0, 8)}…`).join(', ');
+
 const toolAction: Record<string, string> = {
   request_decoy_deployment: 'DEPLOY_DECOY',
   request_false_route_assignment: 'ASSIGN_FALSE_ROUTE',
@@ -176,9 +179,16 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                   <strong>Rationale:</strong> {assessment.rationale}
                 </p>
                 <div className="intelligence-meta">
-                  <Badge variant="inferred">
-                    Evidence refs: {assessment.evidenceRefs.join(', ')}
-                  </Badge>
+                  <span
+                    className="intelligence-evidence-tooltip"
+                    tabIndex={0}
+                    aria-label={`Evidence refs: ${assessment.evidenceRefs.join(', ')}`}
+                    data-tooltip={`Evidence refs: ${assessment.evidenceRefs.join(', ')}`}
+                  >
+                    <Badge variant="inferred" className="intelligence-evidence-badge">
+                      Evidence refs: {evidenceRefsLabel(assessment.evidenceRefs)}
+                    </Badge>
+                  </span>
                   {context && (
                     <Badge
                       variant={provenanceVariant(
@@ -294,8 +304,13 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                   establish campaign progress.
                 </span>
                 {onStartCampaign && (
-                  <Button type="button" onClick={onStartCampaign} disabled={campaignStarting}>
-                    {campaignStarting ? 'Starting campaign…' : 'Start autonomous campaign'}
+                  <Button
+                    type="button"
+                    className="campaign-start-button"
+                    onClick={onStartCampaign}
+                    disabled={campaignStarting}
+                  >
+                    {campaignStarting ? 'Starting…' : 'Start campaign'}
                   </Button>
                 )}
                 {campaignError && (
