@@ -120,6 +120,9 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
   const campaignPercent = campaign
     ? Math.round((campaign.currentStep / campaign.totalSteps) * 100)
     : 0;
+  const hasDistinctRationale = assessment
+    ? assessment.rationale.trim() !== assessment.hypothesis.trim()
+    : false;
 
   return (
     <section className="intelligence-shell" aria-labelledby="intelligence-heading">
@@ -175,9 +178,11 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                   </div>
                 </div>
                 <p className="intelligence-hypothesis">{assessment.hypothesis}</p>
-                <p className="intelligence-detail">
-                  <strong>Rationale:</strong> {assessment.rationale}
-                </p>
+                {hasDistinctRationale && (
+                  <p className="intelligence-detail">
+                    <strong>Rationale:</strong> {assessment.rationale}
+                  </p>
+                )}
                 <div className="intelligence-meta">
                   <span
                     className="intelligence-evidence-tooltip"
@@ -234,9 +239,9 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                 {comparison.map(({ action, outcome }) => (
                   <div className="decision-comparison-row" role="row" key={action}>
                     <strong role="cell">{actionLabel(action)}</strong>
-                    <span role="cell">{outcome ? outcome.outcome : 'Not available'}</span>
+                    <span role="cell">{outcome ? outcome.outcome : 'Not evaluated'}</span>
                     <Badge variant={outcome?.origin === 'MODEL_REQUEST' ? 'inferred' : 'derived'}>
-                      {outcome ? originLabel[outcome.origin] : 'Unavailable'}
+                      {outcome ? originLabel[outcome.origin] : 'No policy record'}
                     </Badge>
                   </div>
                 ))}
@@ -252,7 +257,9 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
             )}
             <p className="intelligence-footnote">
               Mandatory actions and deterministic fallbacks remain policy-owned. “Fake executed”
-              means a recorded simulation, not a real infrastructure change.
+              means a recorded simulation, not a real infrastructure change. Actions without an
+              outcome were not evaluated or have no policy record; this view does not report live
+              resource deployment.
             </p>
           </article>
 

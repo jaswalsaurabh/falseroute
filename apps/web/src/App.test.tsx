@@ -108,7 +108,7 @@ describe('Web Dashboard Unit Tests', () => {
     await waitFor(() => {
       expect(screen.getByText('1. Autonomous Scenario Injector')).toBeDefined();
       expect(screen.getByText('2. Autonomous Execution Timeline')).toBeDefined();
-      expect(screen.getByText('3. Active Deception & Quarantine State')).toBeDefined();
+      expect(screen.queryByRole('heading', { name: /Containment/i })).toBeNull();
       expect(screen.getByLabelText('Recent intrusion signals')).toBeDefined();
     });
 
