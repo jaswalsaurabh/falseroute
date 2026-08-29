@@ -307,10 +307,15 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
                   <Button
                     type="button"
                     className="campaign-start-button"
+                    aria-label={
+                      campaignStarting
+                        ? 'Starting autonomous campaign'
+                        : 'Start autonomous campaign'
+                    }
                     onClick={onStartCampaign}
                     disabled={campaignStarting}
                   >
-                    {campaignStarting ? 'Starting…' : 'Start campaign'}
+                    {campaignStarting ? 'Starting…' : 'Start'}
                   </Button>
                 )}
                 {campaignError && (
