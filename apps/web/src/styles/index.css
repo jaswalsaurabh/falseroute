@@ -299,7 +299,7 @@ button {
 }
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(270px, 0.9fr) minmax(400px, 1.35fr) minmax(270px, 0.9fr);
+  grid-template-columns: minmax(270px, 0.9fr) minmax(400px, 1.35fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -1697,7 +1697,7 @@ code {
   color: var(--text-muted);
 }
 .workspace-grid {
-  grid-template-columns: minmax(270px, 0.84fr) minmax(390px, 1.26fr) minmax(290px, 0.9fr);
+  grid-template-columns: minmax(270px, 0.9fr) minmax(400px, 1.35fr);
   align-items: stretch;
 }
 .pane {

@@ -126,7 +126,7 @@ export const AutonomousIntelligencePanel: React.FC<AutonomousIntelligencePanelPr
       <div className="intelligence-heading">
         <div>
           <span className="section-kicker">
-            <Sparkles size={14} aria-hidden="true" /> AI-7 operator intelligence
+            <Sparkles size={14} aria-hidden="true" /> Operator intelligence
           </span>
           <h2 id="intelligence-heading">Decision intelligence</h2>
           <p>Inference, policy authority, and campaign state in one operator view.</p>

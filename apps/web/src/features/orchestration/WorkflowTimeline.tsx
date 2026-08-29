@@ -23,7 +23,7 @@ export interface WorkflowTimelineProps {
   readonly streamStatus: 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
   readonly onClear?: () => void;
 }
-const TERMINAL_LOG_PAGE_SIZE = 8;
+const TERMINAL_LOG_PAGE_SIZE = 12;
 const stageVariant = (
   stage: string,
 ): 'info' | 'warning' | 'success' | 'danger' | 'simulated' | 'neutral' =>

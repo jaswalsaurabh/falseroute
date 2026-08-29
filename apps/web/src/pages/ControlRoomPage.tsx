@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, AlertTriangle, Cloud, Clock3, Route } from 'lucide-react';
+import { Activity, AlertTriangle, Cloud, Clock3 } from 'lucide-react';
 import {
   IncidentContextSchema,
   IncidentAssessmentSchema,
@@ -8,7 +8,6 @@ import {
   type SystemMode,
 } from '@false-route/contracts';
 import type { ApiClient } from '../api/client.js';
-import { ActiveResourcesPanel } from '../features/active-responses/ActiveResourcesPanel.js';
 import { WorkflowTimeline } from '../features/orchestration/WorkflowTimeline.js';
 import { ScenarioInjector } from '../features/simulator/ScenarioInjector.js';
 import { AutonomousIntelligencePanel } from '../features/intelligence/AutonomousIntelligencePanel.js';
@@ -78,13 +77,6 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
           icon={<Activity size={15} aria-hidden="true" />}
         />
         <MetricCard
-          label="Contained routes"
-          value="—"
-          detail="Lease state unavailable"
-          tone="neutral"
-          icon={<Route size={15} aria-hidden="true" />}
-        />
-        <MetricCard
           label="Median response"
           value="—"
           detail="Timing projection unavailable"
@@ -125,7 +117,6 @@ export const ControlRoomPage: React.FC<ControlRoomPageProps> = ({
           streamStatus={streamStatus}
           onClear={onClearActivity}
         />
-        <ActiveResourcesPanel />
       </section>
 
       <AutonomousIntelligencePanel

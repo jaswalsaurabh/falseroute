@@ -154,7 +154,7 @@ describe('Autonomous Console Components', () => {
   });
 
   it('WorkflowTimeline progressively reveals long terminal logs', () => {
-    const events = Array.from({ length: 10 }, (_, index) => ({
+    const events = Array.from({ length: 14 }, (_, index) => ({
       cursor: index + 1,
       eventId: '11111111-1111-4111-8111-111111111111',
       correlationId: 'corr-long-log',
@@ -169,10 +169,10 @@ describe('Autonomous Console Components', () => {
 
     const logRegion = screen.getByRole('region', { name: 'Execution trace log' });
     expect(logRegion).toBeDefined();
-    expect(screen.queryByText('Trace entry 10')).toBeNull();
+    expect(screen.queryByText('Trace entry 14')).toBeNull();
 
     fireEvent.scroll(logRegion);
-    expect(screen.getByText('Trace entry 10')).toBeDefined();
+    expect(screen.getByText('Trace entry 14')).toBeDefined();
     expect(screen.queryByRole('button', { name: /Load more logs/ })).toBeNull();
   });
 
