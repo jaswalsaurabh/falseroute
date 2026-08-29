@@ -1973,9 +1973,17 @@ code {
   padding: 18px 20px;
   border-bottom: 1px solid var(--border-subtle);
 }
+.intrusion-events-card > div.events-toolbar:first-child {
+  display: grid;
+}
 .events-search {
   position: relative;
   width: 100%;
+  min-width: 0;
+}
+.events-search .form-field,
+.events-search .input-field {
+  min-width: 0;
 }
 .events-search-icon {
   position: absolute;
@@ -2155,9 +2163,12 @@ code {
     grid-column: 1 / -1;
   }
   .events-toolbar {
-    grid-template-columns: minmax(320px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
   }
   .events-toolbar-right {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
     justify-content: flex-end;
   }
   .pagination {
