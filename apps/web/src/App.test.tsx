@@ -24,9 +24,9 @@ describe('Web Dashboard Unit Tests', () => {
 
   it('renders controlled demonstration unlock screen by default', async () => {
     render(<App />);
-    expect(await screen.findByText('Controlled Demonstration Unlock')).toBeDefined();
-    expect(await screen.findByLabelText('Operator Access Token')).toBeDefined();
-    expect(await screen.findByRole('button', { name: 'Unlock Dashboard' })).toBeDefined();
+    expect(await screen.findByText('Authenticated Demo Access')).toBeDefined();
+    expect(await screen.findByLabelText('Demo Access Token')).toBeDefined();
+    expect(await screen.findByRole('button', { name: 'Continue to Dashboard' })).toBeDefined();
   });
 
   it('unlocks dashboard when valid operator access token is submitted', async () => {
@@ -99,10 +99,10 @@ describe('Web Dashboard Unit Tests', () => {
 
     render(<App />);
 
-    const input = await screen.findByLabelText('Operator Access Token');
+    const input = await screen.findByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: 'demo-secret-token-123' } });
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
     await waitFor(() => {
@@ -339,9 +339,9 @@ describe('Web Dashboard Unit Tests', () => {
     render(<App />);
 
     // Unlock dashboard
-    const input = await screen.findByLabelText('Operator Access Token');
+    const input = await screen.findByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: 'demo-secret-token-123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Unlock Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Dashboard' }));
 
     // Wait for the dashboard telemetry feed to load with the pending event
     await waitFor(() => {

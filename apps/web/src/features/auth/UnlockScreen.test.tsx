@@ -19,19 +19,19 @@ describe('UnlockScreen', () => {
 
     render(<UnlockScreen onUnlock={mockOnUnlock} />);
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
-    expect(screen.getByText('Please enter the operator access token.')).toBeDefined();
+    expect(screen.getByText('Please enter the demo access token.')).toBeDefined();
     expect(mockOnUnlock).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
 
     // Also test with only whitespace
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = screen.getByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.click(unlockButton);
 
-    expect(screen.getByText('Please enter the operator access token.')).toBeDefined();
+    expect(screen.getByText('Please enter the demo access token.')).toBeDefined();
     expect(mockOnUnlock).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -71,10 +71,10 @@ describe('UnlockScreen', () => {
 
     render(<UnlockScreen onUnlock={mockOnUnlock} />);
 
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = screen.getByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: syntheticToken } });
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
     await waitFor(() => {
@@ -119,15 +119,15 @@ describe('UnlockScreen', () => {
 
     render(<UnlockScreen onUnlock={mockOnUnlock} />);
 
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = screen.getByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: 'not-a-real-invalid-token' } });
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
     await waitFor(() => {
       expect(
-        screen.getByText('Invalid operator access token. Please check your credentials.'),
+        screen.getByText('Invalid demo access token. Please check your credentials.'),
       ).toBeDefined();
     });
 
@@ -140,10 +140,10 @@ describe('UnlockScreen', () => {
 
     render(<UnlockScreen onUnlock={mockOnUnlock} />);
 
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = screen.getByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: syntheticToken } });
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
     await waitFor(() => {
@@ -169,10 +169,10 @@ describe('UnlockScreen', () => {
 
     render(<UnlockScreen onUnlock={mockOnUnlock} />);
 
-    const input = screen.getByLabelText('Operator Access Token');
+    const input = screen.getByLabelText('Demo Access Token');
     fireEvent.change(input, { target: { value: syntheticToken } });
 
-    const unlockButton = screen.getByRole('button', { name: 'Unlock Dashboard' });
+    const unlockButton = screen.getByRole('button', { name: 'Continue to Dashboard' });
     fireEvent.click(unlockButton);
 
     await waitFor(() => {

@@ -17,7 +17,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tokenInput.trim()) {
-      setErrorMessage('Please enter the operator access token.');
+      setErrorMessage('Please enter the demo access token.');
       return;
     }
 
@@ -32,7 +32,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'UNAUTHORIZED') {
-          setErrorMessage('Invalid operator access token. Please check your credentials.');
+          setErrorMessage('Invalid demo access token. Please check your credentials.');
         } else {
           setErrorMessage(err.message);
         }
@@ -49,7 +49,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
   return (
     <div style={{ maxWidth: '480px', margin: '40px auto 0 auto' }}>
       <Card
-        title="Controlled Demonstration Unlock"
+        title="Authenticated Demo Access"
         badge={<Badge variant="simulated">SIMULATED MODE</Badge>}
       >
         <p
@@ -59,8 +59,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
             marginBottom: 'var(--space-unit-lg)',
           }}
         >
-          Enter the operator access token configured on the FalseRoute control-plane API to unlock
-          the deception dashboard.
+          Enter the demo access token to continue to the FalseRoute dashboard.
         </p>
 
         <form
@@ -69,13 +68,13 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
         >
           <Input
             id="operator-token"
-            label="Operator Access Token"
+            label="Demo Access Token"
             type="password"
-            placeholder="Enter token..."
+            placeholder="Enter access token..."
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
             error={errorMessage ?? undefined}
-            helperText="Token remains in browser memory only and is never stored persistently."
+            helperText="This token is kept in browser memory for this session and is not stored permanently."
             autoFocus
           />
 
@@ -85,7 +84,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
             isLoading={isLoading}
             style={{ marginTop: 'var(--space-unit-sm)' }}
           >
-            Unlock Dashboard
+            Continue to Dashboard
           </Button>
         </form>
 
@@ -99,8 +98,8 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ onUnlock }) => {
             color: 'var(--text-muted)',
           }}
         >
-          <strong>Notice:</strong> This is a controlled demonstration of autonomous cyber deception.
-          All traffic, assets, credentials, and actions are strictly simulated.
+          <strong>Notice:</strong> This is a controlled demonstration. All traffic, assets,
+          credentials, and actions are simulated.
         </div>
       </Card>
     </div>
