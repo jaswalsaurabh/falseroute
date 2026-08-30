@@ -30,7 +30,7 @@ export type GeminiAttemptOutcome = z.infer<typeof GeminiAttemptOutcomeSchema>;
 
 export const BUDGET_LIMITS = {
   DAILY_USD: 10.0,
-  DAILY_GEMINI_TOKENS: 100_000,
+  DAILY_GEMINI_TOKENS: 1_000_000,
   HOURLY_TOOL_OPERATIONS: 50,
   MAX_GEMINI_INPUT_TOKENS_PER_EVENT: 8192,
   MAX_GEMINI_OUTPUT_TOKENS_PER_CALL: 2048,

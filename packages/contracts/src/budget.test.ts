@@ -111,7 +111,7 @@ describe('Budget Contracts', () => {
 
   it('declares frozen system budget limit constants matching ADR-0005', () => {
     expect(BUDGET_LIMITS.DAILY_USD).toBe(10.0);
-    expect(BUDGET_LIMITS.DAILY_GEMINI_TOKENS).toBe(100_000);
+    expect(BUDGET_LIMITS.DAILY_GEMINI_TOKENS).toBe(1_000_000);
     expect(BUDGET_LIMITS.HOURLY_TOOL_OPERATIONS).toBe(50);
     expect(BUDGET_LIMITS.MAX_GEMINI_INPUT_TOKENS_PER_EVENT).toBe(8192);
     expect(BUDGET_LIMITS.MAX_GEMINI_OUTPUT_TOKENS_PER_CALL).toBe(2048);
