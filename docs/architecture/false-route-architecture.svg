@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1400" width="1680" height="1400" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b49c5"/>
+    </marker>
+    <marker id="arrowAdvisory" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9a90d8"/>
+    </marker>
+    <marker id="arrowData" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#30246f"/>
+    </marker>
+    <marker id="arrowSim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b7791f"/>
+    </marker>
+  </defs>
+
+  <rect width="1680" height="1400" fill="#f7f6fb"/>
+
+  <!-- Header -->
+  <text x="40" y="54" font-size="34" font-weight="700" fill="#1e1b33">FalseRoute — System Architecture</text>
+  <text x="40" y="84" font-size="15.5" fill="#5c5878">Autonomous intrusion-response control plane. AI advises; deterministic application policy decides; every response effect is simulated and recorded.</text>
+
+  <!-- Legend -->
+  <g font-size="12.5" fill="#5c5878">
+    <line x1="1148" y1="46" x2="1188" y2="46" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+    <text x="1198" y="50">Validated data flow</text>
+    <line x1="1148" y1="72" x2="1188" y2="72" stroke="#9a90d8" stroke-width="2.4" stroke-dasharray="6 4" marker-end="url(#arrowAdvisory)"/>
+    <text x="1198" y="76">Advisory only — cannot authorize</text>
+    <rect x="1148" y="90" width="40" height="14" rx="4" fill="#fdf3e0" stroke="#e0b774" stroke-width="1.4"/>
+    <text x="1198" y="102">Simulated effect — no live infrastructure</text>
+  </g>
+
+  <!-- simulation boundary callout -->
+  <rect x="40" y="98" width="1082" height="34" rx="9" fill="#fdf3e0" stroke="#e0b774" stroke-width="1.6"/>
+  <text x="60" y="120" font-size="13.6" font-weight="650" fill="#8a5d12">The demo records response intent and outcome. It does not redirect traffic, deploy decoys, or modify Cloud Armor.</text>
+
+  <!-- ============ OPERATOR ============ -->
+  <rect x="40" y="150" width="250" height="58" rx="12" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <text x="165" y="176" font-size="17" font-weight="650" fill="#1e1b33" text-anchor="middle">Security Operator</text>
+  <text x="165" y="195" font-size="12.5" fill="#5c5878" text-anchor="middle">Selects a fixed synthetic scenario</text>
+  <line x1="165" y1="208" x2="165" y2="244" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+
+  <!-- ============ WEB ============ -->
+  <rect x="40" y="246" width="250" height="176" rx="14" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <rect x="40" y="246" width="250" height="5" rx="2.5" fill="#5b49c5"/>
+  <text x="60" y="280" font-size="18" font-weight="650" fill="#1e1b33">Web — Operator Console</text>
+  <text x="60" y="300" font-size="12.5" fill="#8b86a6">React 19 · Vite · TypeScript</text>
+  <g font-size="12.8" fill="#403c5e">
+    <text x="60" y="326">• Scenario simulator &amp; campaigns</text>
+    <text x="60" y="348">• Evidence, decisions, tool outcomes</text>
+    <text x="60" y="370">• Live ordered activity stream</text>
+    <text x="60" y="392">• Provenance + simulated-effect labels</text>
+    <text x="60" y="412" font-size="11.8" fill="#8b86a6">No direct DB, Pub/Sub or Gemini access</text>
+  </g>
+
+  <!-- ============ API ============ -->
+  <rect x="340" y="246" width="250" height="176" rx="14" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <rect x="340" y="246" width="250" height="5" rx="2.5" fill="#5b49c5"/>
+  <text x="360" y="280" font-size="18" font-weight="650" fill="#1e1b33">API — Control Plane</text>
+  <text x="360" y="300" font-size="12.5" fill="#8b86a6">Express 5 · Zod contracts</text>
+  <g font-size="12.8" fill="#403c5e">
+    <text x="360" y="326">• Bearer / session auth + CSRF</text>
+    <text x="360" y="348">• Scenario &amp; evidence validation</text>
+    <text x="360" y="370">• Rate, size &amp; connection limits</text>
+    <text x="360" y="392">• Publishes versioned event envelope</text>
+    <text x="360" y="412">• Dead-letter replay, emergency release</text>
+  </g>
+  <line x1="292" y1="320" x2="338" y2="320" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+  <text x="315" y="312" font-size="11.5" fill="#5c5878" text-anchor="middle">HTTPS</text>
+
+  <!-- ============ TRANSPORT ============ -->
+  <rect x="640" y="246" width="250" height="176" rx="14" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <rect x="640" y="246" width="250" height="5" rx="2.5" fill="#5b49c5"/>
+  <text x="660" y="280" font-size="18" font-weight="650" fill="#1e1b33">Event Transport</text>
+  <text x="660" y="300" font-size="12.5" fill="#8b86a6">Pluggable adapter boundary</text>
+  <g font-size="12.8" fill="#403c5e">
+    <text x="660" y="326" font-size="12.2">• Authenticated loopback (demo default)</text>
+    <text x="660" y="348" font-size="12.2">• Google Pub/Sub (staging path)</text>
+    <text x="660" y="370">• OIDC-verified push to worker</text>
+    <text x="660" y="392">• At-least-once delivery</text>
+    <text x="660" y="412" font-size="11.4" fill="#8b86a6">Duplicates detected, never assumed absent</text>
+  </g>
+  <line x1="592" y1="320" x2="638" y2="320" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+  <text x="615" y="312" font-size="11.5" fill="#5c5878" text-anchor="middle">envelope</text>
+
+  <!-- ============ WORKER PANEL ============ -->
+  <rect x="940" y="150" width="700" height="424" rx="16" fill="#ffffff" stroke="#c9c1ea" stroke-width="2"/>
+  <text x="966" y="182" font-size="19" font-weight="700" fill="#1e1b33">Worker — Autonomous Response Orchestrator</text>
+  <text x="966" y="201" font-size="12.5" fill="#8b86a6">Node.js 24 · trust boundary: all provider output is untrusted input</text>
+
+  <path d="M 892 320 L 916 320 L 916 244 L 938 244" fill="none" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+
+  <!-- stage 1 -->
+  <rect x="966" y="216" width="648" height="56" rx="10" fill="#f4f2fd" stroke="#ded9f2" stroke-width="1.4"/>
+  <text x="988" y="240" font-size="14.5" font-weight="650" fill="#30246f">1 · Envelope, schema &amp; evidence validation</text>
+  <text x="988" y="259" font-size="12.3" fill="#5c5878">Size limits, ingestion receipts, duplicate detection, poison quarantine</text>
+
+  <!-- stage 2 -->
+  <rect x="966" y="284" width="648" height="56" rx="10" fill="#f4f2fd" stroke="#ded9f2" stroke-width="1.4"/>
+  <text x="988" y="308" font-size="14.5" font-weight="650" fill="#30246f">2 · Bounded incident context</text>
+  <text x="988" y="327" font-size="12.3" fill="#5c5878">Scenario catalog + validated evidence only — no credentials, no free-form input</text>
+
+  <!-- stage 3 : Gemini advisory -->
+  <rect x="966" y="352" width="648" height="56" rx="10" fill="#faf9ff" stroke="#9a90d8" stroke-width="1.6" stroke-dasharray="7 4"/>
+  <text x="988" y="376" font-size="14.5" font-weight="650" fill="#5b49c5">3 · Gemini Adapter  —  advisory only</text>
+  <text x="988" y="395" font-size="12.3" fill="#5c5878">Closed 5-tool catalog · deadlines, retries, concurrency &amp; token budgets · degrades explicitly</text>
+
+  <!-- stage 4 : policy -->
+  <rect x="966" y="420" width="648" height="56" rx="10" fill="#eeebfb" stroke="#5b49c5" stroke-width="2"/>
+  <text x="988" y="444" font-size="14.5" font-weight="700" fill="#30246f">4 · Deterministic Policy Engine  —  the authority</text>
+  <text x="988" y="463" font-size="12.3" fill="#5c5878">Rejects · narrows · authorizes. Mandatory rules and negative controls always win.</text>
+
+  <!-- stage 5 : gateway -->
+  <rect x="966" y="488" width="648" height="56" rx="10" fill="#f4f2fd" stroke="#ded9f2" stroke-width="1.4"/>
+  <text x="988" y="512" font-size="14.5" font-weight="650" fill="#30246f">5 · Tool Gateway</text>
+  <text x="988" y="531" font-size="12.3" fill="#5c5878">Idempotency keys, durable budget reservations, ownership tokens, fencing, leases</text>
+
+  <line x1="1290" y1="274" x2="1290" y2="282" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+  <line x1="1290" y1="342" x2="1290" y2="350" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+  <line x1="1290" y1="410" x2="1290" y2="418" stroke="#9a90d8" stroke-width="2.4" stroke-dasharray="6 4" marker-end="url(#arrowAdvisory)"/>
+  <line x1="1290" y1="478" x2="1290" y2="486" stroke="#5b49c5" stroke-width="2.4" marker-end="url(#arrow)"/>
+
+  <!-- ============ SIMULATED EFFECTS ============ -->
+  <rect x="1000" y="612" width="640" height="190" rx="14" fill="#fdf9f0" stroke="#e0b774" stroke-width="1.8"/>
+  <text x="1024" y="642" font-size="16.5" font-weight="700" fill="#8a5d12">Effect Adapters — SIMULATED</text>
+  <text x="1024" y="661" font-size="12.3" fill="#a07430">Records intent, result, ownership and cleanup evidence. No live cloud mutation is implemented or enabled.</text>
+  <g>
+    <rect x="1024" y="676" width="292" height="44" rx="9" fill="#ffffff" stroke="#eacfa2" stroke-width="1.3"/>
+    <text x="1040" y="694" font-size="13" font-weight="600" fill="#4a3a1a">Cloud Run decoy deployment</text>
+    <text x="1040" y="711" font-size="11.6" fill="#a07430">simulated inventory + lease</text>
+
+    <rect x="1332" y="676" width="284" height="44" rx="9" fill="#ffffff" stroke="#eacfa2" stroke-width="1.3"/>
+    <text x="1348" y="694" font-size="13" font-weight="600" fill="#4a3a1a">False-route assignment</text>
+    <text x="1348" y="711" font-size="11.6" fill="#a07430">recorded, not a real redirect</text>
+
+    <rect x="1024" y="732" width="292" height="44" rx="9" fill="#ffffff" stroke="#eacfa2" stroke-width="1.3"/>
+    <text x="1040" y="750" font-size="13" font-weight="600" fill="#4a3a1a">Cloud Armor source quarantine</text>
+    <text x="1040" y="767" font-size="11.6" fill="#a07430">policy intent only</text>
+
+    <rect x="1332" y="732" width="284" height="44" rx="9" fill="#ffffff" stroke="#eacfa2" stroke-width="1.3"/>
+    <text x="1348" y="750" font-size="13" font-weight="600" fill="#4a3a1a">Operator alert</text>
+    <text x="1348" y="767" font-size="11.6" fill="#a07430">bounded notification record</text>
+  </g>
+  <line x1="1320" y1="576" x2="1320" y2="610" stroke="#b7791f" stroke-width="2.4" marker-end="url(#arrowSim)"/>
+
+  <!-- lease cleanup -->
+  <rect x="640" y="612" width="320" height="86" rx="12" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <text x="662" y="640" font-size="15" font-weight="650" fill="#1e1b33">Lease Cleanup &amp; Reconciliation</text>
+  <text x="662" y="659" font-size="12.3" fill="#5c5878">Fenced expiry of simulated resources,</text>
+  <text x="662" y="677" font-size="12.3" fill="#5c5878">provider-intent repair, emergency release</text>
+  <line x1="962" y1="700" x2="998" y2="716" stroke="#b7791f" stroke-width="2.2" marker-end="url(#arrowSim)"/>
+
+  <!-- ============ SSE RETURN ============ -->
+  <rect x="40" y="560" width="250" height="82" rx="12" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <text x="62" y="588" font-size="15" font-weight="650" fill="#1e1b33">Authenticated SSE Stream</text>
+  <text x="62" y="607" font-size="12.3" fill="#5c5878">Resumable cursors, bounded catch-up,</text>
+  <text x="62" y="625" font-size="12.3" fill="#5c5878">heartbeats, connection limits</text>
+  <line x1="165" y1="838" x2="165" y2="646" stroke="#30246f" stroke-width="2.4" marker-end="url(#arrowData)"/>
+  <line x1="165" y1="558" x2="165" y2="426" stroke="#30246f" stroke-width="2.4" marker-end="url(#arrowData)"/>
+  <text x="182" y="700" font-size="11.8" fill="#5c5878">ordered activity events</text>
+
+  <!-- ============ PERSISTENCE ============ -->
+  <rect x="40" y="840" width="1600" height="132" rx="16" fill="#ffffff" stroke="#b9afe0" stroke-width="2"/>
+  <text x="66" y="874" font-size="19" font-weight="700" fill="#30246f">PostgreSQL — Durable Source of Truth</text>
+  <text x="1614" y="874" font-size="12.8" fill="#8b86a6" text-anchor="end">Prisma 7 · guarded migrations · transactional ownership · Cloud SQL in staging</text>
+  <g font-size="12.6" fill="#30246f">
+    <rect x="66" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="164" y="916" text-anchor="middle" font-weight="600">Events</text>
+    <text x="164" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">envelopes + receipts</text>
+
+    <rect x="278" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="376" y="916" text-anchor="middle" font-weight="600">Decisions</text>
+    <text x="376" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">with provenance</text>
+
+    <rect x="490" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="588" y="916" text-anchor="middle" font-weight="600">Activity &amp; Audit</text>
+    <text x="588" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">ordered history</text>
+
+    <rect x="702" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="800" y="916" text-anchor="middle" font-weight="600">Operations</text>
+    <text x="800" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">intents + ledger</text>
+
+    <rect x="914" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="1012" y="916" text-anchor="middle" font-weight="600">Leases</text>
+    <text x="1012" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">fenced, time-limited</text>
+
+    <rect x="1126" y="894" width="196" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="1224" y="916" text-anchor="middle" font-weight="600">Budgets</text>
+    <text x="1224" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">token + spend caps</text>
+
+    <rect x="1338" y="894" width="276" height="50" rx="9" fill="#f4f2fd" stroke="#ded9f2"/>
+    <text x="1476" y="916" text-anchor="middle" font-weight="600">Dead Letters &amp; Retries</text>
+    <text x="1476" y="933" text-anchor="middle" font-size="11.4" fill="#5c5878">inspect + controlled replay</text>
+  </g>
+
+  <line x1="465" y1="424" x2="465" y2="838" stroke="#30246f" stroke-width="2.2" marker-end="url(#arrowData)"/>
+  <text x="478" y="640" font-size="11.8" fill="#5c5878">validated event</text>
+  <line x1="962" y1="576" x2="962" y2="838" stroke="#30246f" stroke-width="2.2" marker-end="url(#arrowData)"/>
+  <text x="852" y="800" font-size="11.8" fill="#5c5878">workflow state</text>
+  <line x1="1320" y1="804" x2="1320" y2="838" stroke="#30246f" stroke-width="2.2" marker-end="url(#arrowData)"/>
+  <text x="1334" y="826" font-size="11.8" fill="#5c5878">recorded effect</text>
+
+  <!-- ============ RUNTIME MODES ============ -->
+  <rect x="40" y="1000" width="1600" height="116" rx="14" fill="#ffffff" stroke="#b9afe0" stroke-width="2"/>
+  <text x="66" y="1030" font-size="15.5" font-weight="700" fill="#30246f">Two runtime modes — one workflow boundary</text>
+  <rect x="66" y="1044" width="770" height="56" rx="10" fill="#f4f2fd" stroke="#ded9f2" stroke-width="1.4"/>
+  <text x="86" y="1067" font-size="13.4" font-weight="650" fill="#1e1b33">Demo runtime  ·  what the walkthrough actually runs</text>
+  <text x="86" y="1086" font-size="12.2" fill="#5c5878">Local authenticated loopback transport · simulated effect adapters · no cloud mutation</text>
+  <rect x="856" y="1044" width="758" height="56" rx="10" fill="#f4f2fd" stroke="#ded9f2" stroke-width="1.4"/>
+  <text x="876" y="1067" font-size="13.4" font-weight="650" fill="#1e1b33">Staging path  ·  same validated boundary, deployable</text>
+  <text x="876" y="1086" font-size="12.2" fill="#5c5878">Google Pub/Sub with OIDC push · Cloud Run · Cloud SQL · identical contracts and policy</text>
+
+  <!-- ============ FOOTER BANDS ============ -->
+  <rect x="40" y="1148" width="778" height="150" rx="14" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <text x="66" y="1178" font-size="15.5" font-weight="700" fill="#1e1b33">Shared Packages — one definition per boundary</text>
+  <g font-size="12.4" fill="#403c5e">
+    <text x="66" y="1206">contracts — versioned Zod schemas</text>
+    <text x="66" y="1228">database — Prisma schema, repositories</text>
+    <text x="66" y="1250">config — typed environment parsing</text>
+    <text x="452" y="1206">security — auth &amp; IAM policy rules</text>
+    <text x="452" y="1228">observability — Pino + OpenTelemetry</text>
+    <text x="452" y="1250">typescript-config — strict shared TS</text>
+  </g>
+
+  <rect x="862" y="1148" width="778" height="150" rx="14" fill="#ffffff" stroke="#ded9f2" stroke-width="1.6"/>
+  <text x="888" y="1178" font-size="15.5" font-weight="700" fill="#1e1b33">Google Cloud Deployment Target — Cloud Run services</text>
+  <g font-size="12.4" fill="#403c5e">
+    <text x="888" y="1206">falseroute-api · falseroute-worker · falseroute-web</text>
+    <text x="888" y="1228">Cloud SQL (PostgreSQL) · Pub/Sub · Secret Manager</text>
+    <text x="888" y="1250">Artifact Registry · Terraform · non-root pinned images</text>
+    <text x="1298" y="1206">Gemini via Google Gen AI SDK</text>
+    <text x="1298" y="1228">Immutable image digests</text>
+    <text x="1298" y="1250">Guarded migration workflow</text>
+    <text x="888" y="1276" font-size="11.8" fill="#8b86a6">Deployable definitions and implemented integrations — not mutated by the demo walkthrough.</text>
+  </g>
+
+  <text x="40" y="1344" font-size="13" fill="#8b86a6">Trust boundary: model output is validated at the adapter edge and can never authorize an action. Provenance is carried end to end — OBSERVED · DERIVED · INFERRED · UNAVAILABLE.</text>
+  <text x="40" y="1366" font-size="13" fill="#8b86a6">Out of scope by design: no customer traffic proxying, no arbitrary model-generated commands, no model-chosen cloud resources or credentials, no exactly-once delivery claim.</text>
+</svg>
